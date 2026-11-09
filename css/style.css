@@ -1,0 +1,639 @@
+/* =========================================================
+   MTO Request Order Form – Styles (v3)
+   Covers all latest updates:
+   - Req #1 & #10: Top-most sheet tabs navigation bar with Left/Right arrows + Customer tab,
+                   and Section Header bar inside room editor
+   - Req #4: Aligned checkboxes for กล่องม่าน and ขาจับราง
+   - Req #8: Strictly aligned "_____", "X", "=" columns for รางม่าน / ผ้าม่านทึบ / ผ้าม่านโปร่ง
+   - Req #11: All filled text is bold and black (#000, font-weight: 700)
+   - Req #12: Floating draggable & resizable text boxes on the window section (top layer)
+   - Req #13: Preview controls (Fit Page, Fit Width, Single Page, All Pages)
+   - Req #14: No border box around the room plan (.pbox has no border)
+   ========================================================= */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: 'Sarabun', Tahoma, 'Leelawadee UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #222;
+  background: #eef1f5;
+}
+button, .btn, input, select, textarea {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+button, .btn {
+  cursor: pointer; border: 1px solid #c4c9d2; background: #fff; color: #222;
+  padding: 5px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;
+}
+button:hover, .btn:hover { background: #f3f5f8; }
+button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+button.primary:hover { background: #1a5fcc; }
+button.ghost { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.25); color: #fff; }
+button.ghost:hover { background: rgba(255,255,255,.22); }
+button.danger { color: #c62828; border-color: #e7b3b3; }
+button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+button.wide { width: 100%; justify-content: center; margin: 6px 0; }
+.c { text-align: center !important; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  height: 48px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; background: #1d2433; color: #fff;
+}
+.topbar .brand { font-weight: 700; font-size: 15.5px; display: flex; align-items: center; gap: 10px; }
+.topbar .badge {
+  background: #2f3b52; color: #cfe1ff; font-size: 12px; font-weight: 600;
+  padding: 3px 10px; border-radius: 999px;
+}
+.topbar .actions { display: flex; gap: 6px; align-items: center; }
+.sync-btn {
+  background: #28334a; border-color: #415175; color: #e8f0ff;
+  font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+}
+.sync-btn:hover { background: #32405e; }
+.sync-dot {
+  width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+}
+.sync-dot.sync-local { background: #9aa4b2; }
+.sync-dot.sync-connecting, .sync-dot.sync-saving { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+.sync-dot.sync-online { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.sync-dot.sync-error { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+
+/* ---------- Top-Most Sheet Tabs Bar (Req #1, #10) ---------- */
+.top-sheet-nav {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: #263044;
+  border-bottom: 1px solid #182030;
+}
+.top-sheet-nav .nav-arrow {
+  padding: 4px 9px;
+  background: #34415c;
+  border-color: #465678;
+  color: #fff;
+  font-weight: 700;
+}
+.top-sheet-nav .nav-arrow:hover { background: #415172; }
+.sheet-tabs-scroll {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 3px 0;
+}
+.sheet-tab {
+  white-space: nowrap;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: #334059;
+  border-color: #455473;
+  color: #dbe6ff;
+}
+.sheet-tab:hover { background: #3f4f6e; }
+.sheet-tab.cust-tab {
+  background: #3a3456;
+  border-color: #5c5287;
+  color: #f3eaff;
+}
+.sheet-tab.active {
+  background: #1f6feb !important;
+  border-color: #6ea8fe !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+.sheet-nav-actions { display: flex; gap: 5px; align-items: center; }
+
+/* ---------- Section Jump Header inside Room Editor (Req #10) ---------- */
+.sec-jump-bar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: #f0f3f9;
+  padding: 6px;
+  margin-bottom: 8px;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+}
+.sec-jump {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-weight: 600;
+}
+.sec-jump.active {
+  background: #1d2433;
+  border-color: #1d2433;
+  color: #fff;
+}
+
+.pane-banner {
+  background: #eef4ff;
+  border: 1px solid #bfd6ff;
+  border-left: 4px solid #1f6feb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+/* ---------- VIEW 1: Orders Dashboard ---------- */
+.dashboard {
+  max-width: 1180px; margin: 24px auto; padding: 0 16px;
+}
+.dash-box {
+  background: #fff; border: 1px solid #d5dae1; border-radius: 10px; padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.05);
+}
+.dash-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dash-head h2, .dash-head h3 { margin: 0; }
+.dash-filter { margin: 14px 0; }
+.dash-filter input { padding: 8px 12px !important; font-size: 14px; }
+.dash-tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.dash-tbl th, .dash-tbl td { border: 1px solid #e1e5ea; padding: 8px 10px; }
+.dash-tbl thead th { background: #f1f4f8; font-weight: 700; color: #1d2433; }
+.dash-tbl tbody tr:hover { background: #f8faff; }
+.pill {
+  display: inline-block; background: #e7f0ff; color: #0b3a8c; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; font-size: 12px;
+}
+
+/* ---------- VIEW 2: Workspace Layout ---------- */
+.layout { display: flex; height: calc(100vh - 92px); }
+.layout[hidden], .dashboard[hidden], .top-sheet-nav[hidden], button[hidden], span[hidden], div[hidden] { display: none !important; }
+
+.editor {
+  width: 530px; min-width: 420px; overflow-y: auto; padding: 10px;
+  background: #f8f9fb; border-right: 1px solid #d5dae1;
+}
+
+.sec { background: #fff; border: 1px solid #dde2e8; border-radius: 8px; margin-bottom: 10px; padding: 0 12px; }
+.sec[open] { padding-bottom: 12px; }
+.sec > summary { cursor: pointer; font-weight: 700; padding: 10px 0; color: #1d2433; }
+.sec h4 { margin: 12px 0 6px; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+.sec h4 .no { font-weight: 400; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 10px; }
+.grid2 label, .grid3 label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 2px; }
+.full { grid-column: 1 / -1; }
+.inline { display: flex; gap: 6px; align-items: center; }
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea {
+  width: 100%; padding: 5px 7px; border: 1px solid #c9ced6; border-radius: 5px; background: #fff;
+}
+input:disabled, select:disabled { background: #eff1f5; color: #999; }
+input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-color: #1f6feb; }
+.hint { font-size: 12px; color: #777; margin: 4px 0 0; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0; font-size: 13px; align-items: center; }
+.opts label { margin-right: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.olbl { display: inline-block; min-width: 58px; color: #555; font-weight: 600; }
+
+.plan-mini {
+  height: 150px; border: 1px dashed #b7bec9; border-radius: 6px; margin: 8px 0 0;
+  background: #fafbfc; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.plan-mini svg { width: 100%; height: 100%; }
+
+.notes-ed { padding-left: 22px; margin: 0 0 6px; }
+.notes-ed li { margin-bottom: 4px; }
+.notes-ed .nrow { display: flex; gap: 4px; }
+.notes-ed button { padding: 4px 8px; }
+
+.tbl-wrap { overflow-x: auto; }
+.ed-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ed-tbl th, .ed-tbl td { border: 1px solid #e1e5ea; padding: 4px; }
+.ed-tbl thead th { background: #f1f3f6; font-weight: 600; }
+.ed-tbl tbody th { background: #f8f9fb; text-align: left; white-space: nowrap; font-weight: 600; width: 82px; }
+.ed-tbl input { padding: 4px 5px !important; }
+.th-in { font-weight: 600; }
+
+.qty-grid { display: grid; grid-template-columns: auto 80px auto 80px; gap: 6px 10px; align-items: center; font-size: 13px; }
+.draw-ed, .grommet-ed { display: grid; gap: 8px; }
+.subcard { border: 1px solid #e3e7ec; border-radius: 6px; padding: 8px; background: #fbfcfd; }
+.subcard b { display: block; margin-bottom: 4px; font-size: 12px; }
+
+/* Dimension + Remark pairs (Req #6.1-6.12 & #7.16) */
+.dim-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.dim-pair {
+  display: grid;
+  grid-template-columns: 112px 90px 1fr;
+  gap: 5px;
+  align-items: center;
+}
+.dim-lbl { font-size: 12px; font-weight: 600; color: #333; white-space: nowrap; }
+
+/* window editor card */
+.win-ed { border: 1px solid #d5dce6; border-left: 4px solid #1f6feb; border-radius: 6px; padding: 8px; margin-bottom: 10px; background: #fbfcff; }
+.win-ed-hd { display: flex; gap: 5px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.win-ed-hd .num { background: #1f6feb; color: #fff; border-radius: 4px; padding: 2px 8px; font-weight: 700; white-space: nowrap; }
+.win-ed-hd input { flex: 1; min-width: 80px; }
+.win-ed-hd button { padding: 4px 8px; }
+.rail-summary {
+  margin-top: 8px; padding-top: 6px; border-top: 1px dashed #d5dce6;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px;
+}
+.rail-summary b { display: inline; color: #000; font-size: 13px; }
+.layers-ed { display: grid; gap: 4px; }
+.layer-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.layer-tag { font-size: 12px; font-weight: 700; color: #1d2433; white-space: nowrap; min-width: 48px; }
+.layer-row select { flex: 1; min-width: 110px; }
+.calc-ed { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.calc-ed th { font-weight: 600; color: #555; padding: 2px; text-align: center; }
+.calc-ed th.r { text-align: left; white-space: nowrap; }
+.calc-ed td { padding: 2px; }
+.calc-ed td.op { text-align: center; color: #888; width: 12px; }
+.calc-ed input { padding: 4px !important; text-align: center; }
+.win-thumb { height: 100px; display: flex; justify-content: center; margin: 4px 0; background: #fff; border: 1px solid #eef1f6; border-radius: 4px; }
+.win-thumb svg { height: 100%; }
+
+/* ---------- preview (Req #13) ---------- */
+.preview-wrap { flex: 1; overflow: auto; background: #5b6170; position: relative; }
+.zoombar {
+  position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  background: rgba(29, 36, 51, .95); color: #fff; padding: 6px 12px; font-size: 12.5px;
+}
+.zoombar button { padding: 3px 8px; font-size: 12px; }
+.pages { padding: 20px 0; zoom: var(--zoom, .8); }
+
+/* ---------- modals ---------- */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 50; display: flex; align-items: center; justify-content: center; }
+.modal[hidden] { display: none; }
+.modal-box { background: #fff; border-radius: 10px; width: min(1100px, 96vw); max-height: 96vh; display: flex; flex-direction: column; padding: 12px; }
+.plan-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; }
+.plan-toolbar .tools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.plan-toolbar .chk { font-size: 13px; margin: 0 4px; }
+.plan-hint { font-size: 12px; color: #555; padding: 6px 2px; min-height: 26px; }
+.plan-canvas { flex: 1; overflow: auto; border: 1px solid #ccd2da; border-radius: 6px; }
+#planSvg { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; background: #fff; touch-action: none; user-select: none; }
+
+.db-tabs { display: flex; gap: 6px; border-bottom: 1px solid #dde2e8; padding-bottom: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.db-body { overflow-y: auto; max-height: 68vh; padding: 2px; }
+
+.busy { position: fixed; inset: 0; background: rgba(255,255,255,.75); z-index: 60; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; }
+.busy[hidden] { display: none; }
+
+/* =========================================================
+   A4 SHEET (794 × 1123 px)
+   - Req #11: ปรับตัวอักษรที่กรอกเป็นตัวหนา สีดำทั้งหมด (#000, font-weight: 700)
+   - Req #14: ไม่ต้องมีกรอบล้อมแปลนห้อง (.pbox ไม่มี border)
+   ========================================================= */
+.page {
+  width: 794px;
+  height: 1123px;
+  margin: 0 auto 24px;
+  background: #fff;
+  padding: 14px 20px 12px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,.35);
+  font-family: 'Sarabun', Tahoma, 'Leelawadee UI', sans-serif;
+  font-size: 9.5px;
+  line-height: 1.42;
+  color: #000;
+  display: flex;
+  flex-direction: column;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.page * { box-sizing: border-box; }
+
+/* 1) Header (fixed 48px) */
+.s-hd {
+  display: flex; border: 1px solid #000; background: #d0d0d0;
+  height: 48px; flex: 0 0 48px; overflow: hidden;
+}
+.s-hd .logo { width: 48%; padding: 2px 8px; display: flex; flex-direction: column; justify-content: center; }
+.s-hd .logo .lname { font-family: 'Playfair Display', Georgia, serif; font-size: 24px; line-height: 1; letter-spacing: 1px; }
+.s-hd .logo img { max-height: 30px; max-width: 220px; object-fit: contain; align-self: flex-start; }
+.s-hd .logo .ltitle { font-weight: 700; font-size: 9.5px; margin-top: 1px; line-height: 1.1; }
+.s-hd .addr { flex: 1; padding: 2px 8px; font-size: 8.2px; line-height: 1.25; white-space: pre-line; display: flex; align-items: center; }
+
+/* Rows & Fillable lines (Req #11: ตัวหนา สีดำทั้งหมด) */
+.r {
+  display: flex; align-items: flex-end; gap: 3px;
+  min-height: 15px; line-height: 1.42;
+}
+.lb { white-space: nowrap; flex-shrink: 0; padding-bottom: 1px; }
+.fl {
+  flex: 1 1 0;
+  min-width: 16px;
+  border-bottom: 1px solid #000;
+  min-height: 14px;
+  padding: 1px 3px 0;
+  line-height: 1.38;
+  white-space: nowrap;
+  overflow-x: hidden;
+  overflow-y: visible;
+  text-overflow: ellipsis;
+  color: #000;
+  font-weight: 700;
+  text-align: center;
+}
+.fl.cust-name {
+  text-align: left !important;
+  padding-left: 28px !important;
+}
+.fl.w30 { flex: 0 0 28px; }
+.fl.w36 { flex: 0 0 34px; }
+.fl.w40 { flex: 0 0 38px; }
+.fl.w45 { flex: 0 0 44px; }
+.fl.w50 { flex: 0 0 48px; }
+.fl.w60 { flex: 0 0 58px; }
+.fl.w65 { flex: 0 0 62px; }
+.fl.w70 { flex: 0 0 68px; }
+.fl.w75 { flex: 0 0 74px; }
+.fl.w80 { flex: 0 0 78px; }
+.fl.w85 { flex: 0 0 82px; }
+.fl.w90 { flex: 0 0 88px; }
+.fl.w120 { flex: 0 0 118px; }
+
+.ck { display: inline-flex; align-items: center; white-space: nowrap; margin-right: 5px; flex-shrink: 0; }
+.cb {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 10px; height: 10px; border: 1px solid #000; margin-right: 3px;
+  font-size: 8.5px; line-height: 1; font-weight: 700; color: #000; background: #fff;
+}
+
+/* 2) Customer & Staff Block (fixed 112px) */
+.s-cust {
+  display: flex; gap: 14px; margin-top: 3px;
+  height: 112px; flex: 0 0 112px; overflow: hidden;
+}
+.s-cust .cl { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; }
+.s-cust .cr { width: 228px; flex: 0 0 228px; display: flex; flex-direction: column; justify-content: space-between; }
+.s-cust .disc .dlbl { display: inline-block; width: 32px; flex-shrink: 0; }
+
+/* 3) Map Room & Notes Block (fixed 76px, Req #14: ไม่มีกรอบล้อมแปลนห้อง) */
+.s-map {
+  border: 1px solid #000; margin-top: 3px; padding: 4px 6px;
+  display: flex; gap: 8px;
+  height: 76px; flex: 0 0 76px; overflow: hidden;
+}
+.s-map .pbox {
+  width: 122px; height: 66px; border: none; flex: 0 0 122px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; background: transparent;
+}
+.s-map .pbox svg { width: 100%; height: 100%; }
+.s-map .mid { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+.s-map .mid .map-note-hd { min-height: 13px; line-height: 1.25; margin-top: 1px; }
+.s-map .notes-list {
+  margin: 0; padding-left: 16px;
+  column-count: 2; column-gap: 12px;
+  overflow: hidden; flex: 1;
+}
+.s-map .notes-list li {
+  padding: 0 2px; color: #000; font-weight: 700;
+  line-height: 1.28; break-inside: avoid;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.s-map .rt { width: 215px; flex: 0 0 215px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+.s-map .rt .ol { display: inline-block; width: 42px; flex-shrink: 0; }
+
+/* 4) Window / Door 2x2 Grid (fixed 506px, position:relative for floating note boxes Req #12) */
+.s-wins {
+  position: relative;
+  border: 1px solid #000; border-top: none;
+  display: grid;
+  grid-template-columns: 50% 50%;
+  grid-template-rows: 50% 50%;
+  height: 506px; flex: 0 0 506px;
+  overflow: hidden;
+}
+.wc {
+  padding: 3px 8px;
+  display: flex; flex-direction: column;
+  height: 100%; min-width: 0; min-height: 0; overflow: hidden;
+}
+.wc:nth-child(1), .wc:nth-child(3) { border-right: 1px solid #000; }
+.wc:nth-child(3), .wc:nth-child(4) { border-top: 1px solid #000; }
+.wc .wn { font-weight: 700; font-size: 12.5px; width: 16px; flex-shrink: 0; text-align: center; }
+.wc .wbox {
+  border: 1px solid #000; width: 50px; flex: 0 0 50px; height: 16px;
+  padding: 0 2px; line-height: 14px; font-size: 10.5px; text-align: center;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  color: #000; font-weight: 700;
+}
+
+/* Req #4: กล่องติ๊กของขาจับรางกับกล่องม่านตำแหน่งตรงกันเป็นแนวเดียวเป๊ะ */
+.opt-align-row {
+  display: grid;
+  grid-template-columns: 46px 46px 52px 1fr;
+  align-items: flex-end;
+  padding-left: 60px;
+  min-height: 15px;
+  line-height: 1.4;
+}
+.opt-align-row .opt-lbl { white-space: nowrap; }
+.opt-align-row .opt-col1,
+.opt-align-row .opt-col2 { display: flex; align-items: center; }
+.opt-align-row .opt-spacer { height: 14px; }
+
+.wc .wdiag {
+  flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; margin: 1px 0;
+}
+.wc .wdiag svg { width: 100%; height: 100%; max-height: 138px; }
+
+/* Req #8: "_____" , "X" , "=" ของขนาดราง ผ้าม่านทึบ ผ้าม่านโปร่ง ตรงกันเป็นแนวตั้งเดียวกันเป๊ะ */
+.calc-group { display: flex; flex-direction: column; gap: 1px; }
+.calc-row {
+  display: grid;
+  grid-template-columns: 54px 1fr 14px 1fr 14px 36px 20px 14px 46px 24px;
+  align-items: flex-end;
+  min-height: 15px;
+  line-height: 1.38;
+}
+.calc-row .c-lbl { text-align: left; white-space: nowrap; }
+.calc-row .c-op { text-align: center; font-weight: 600; }
+.calc-row .c-unit { text-align: center; white-space: nowrap; }
+.calc-row .c-unit2 { text-align: right; white-space: nowrap; }
+
+/* Req #12: Floating Note Boxes on top layer of window section (no border/frame on document) */
+.float-note-box {
+  position: absolute;
+  z-index: 30;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.float-note-box .fnb-bar,
+.float-note-box .fnb-resize {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.float-note-box:hover {
+  outline: 1px dashed rgba(31, 111, 235, 0.55);
+  background: rgba(255, 255, 255, 0.75);
+}
+.float-note-box:hover .fnb-bar,
+.float-note-box:hover .fnb-resize,
+.float-note-box:focus-within .fnb-bar,
+.float-note-box:focus-within .fnb-resize {
+  opacity: 1;
+}
+.fnb-bar {
+  height: 18px;
+  background: #1f6feb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-size: 10px;
+}
+.fnb-drag { cursor: move; font-weight: 700; user-select: none; }
+.fnb-tools { display: flex; gap: 2px; }
+.fnb-tools button {
+  padding: 0 4px;
+  font-size: 9.5px;
+  height: 14px;
+  border-radius: 2px;
+  border: none;
+  background: rgba(255,255,255,.2);
+  color: #fff;
+}
+.fnb-tools button:hover { background: rgba(255,255,255,.35); }
+.fnb-text {
+  flex: 1;
+  width: 100%;
+  border: none !important;
+  background: transparent !important;
+  padding: 3px 5px !important;
+  resize: none;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  color: #000;
+  line-height: 1.3;
+  outline: none !important;
+}
+.fnb-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, #1f6feb 50%);
+}
+
+/* 5) Fabric Table (fixed 104px, aligned columns) */
+.s-tb {
+  width: 100%; border-collapse: collapse; margin-top: 0;
+  table-layout: fixed; height: 104px; flex: 0 0 104px; overflow: hidden;
+}
+.s-tb th, .s-tb td {
+  border: 1px solid #000; border-top: none;
+  padding: 1px 4px;
+  line-height: 1.38;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.s-tb thead th {
+  height: 28px; font-weight: 600; text-align: center; line-height: 1.15; font-size: 8.5px;
+  vertical-align: middle; padding: 0;
+}
+.s-tb thead th.th-split { position: relative; }
+.s-tb .split-box {
+  float: left; width: 42px; border-right: 1px solid #000; height: 28px;
+  display: flex; flex-direction: column; justify-content: center; font-size: 7.8px;
+}
+.s-tb .split-box > div {
+  height: 14px; display: flex; align-items: center; gap: 2px; padding-left: 3px;
+}
+.s-tb .split-box > div:first-child { border-bottom: 1px solid #000; }
+.cb-mini {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 9px; height: 9px; border: 1px solid #000; font-size: 7.5px; font-weight: 700; color: #000;
+}
+.s-tb .split-title {
+  height: 28px; display: flex; align-items: center; justify-content: center; text-align: center;
+}
+.s-tb tbody tr { height: 19px; }
+.s-tb tbody th { text-align: left; font-weight: 600; padding-left: 5px; font-size: 8.8px; }
+.s-tb tbody td { color: #000; font-weight: 700; text-align: center; font-size: 9.2px; }
+
+/* 6) Rods & Accessories Table (fixed 202px, aligned first column 112px with s-tb) */
+.s-rod {
+  width: 100%; border-collapse: collapse; margin-top: 0;
+  table-layout: fixed; height: 202px; flex: 0 0 202px; overflow: hidden;
+}
+.s-rod > tbody > tr > td {
+  border: 1px solid #000; border-top: none;
+  padding: 3px 6px; vertical-align: middle; overflow: hidden;
+}
+.s-rod .hcell {
+  text-align: center; font-size: 8.8px; line-height: 1.25; vertical-align: middle;
+}
+.s-rod .hcell .ck { margin-top: 3px; margin-right: 0; }
+.rod-top-grid {
+  display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 4px 14px;
+}
+.hold-grid {
+  display: grid;
+  grid-template-columns: 20px 84px 20px 1fr 1fr;
+  align-items: center; gap: 2px 6px;
+}
+.vt-lbl {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  text-align: center; font-weight: 600; font-size: 8.5px;
+  border-right: 1px solid #bbb; padding: 2px 1px;
+}
+.vt-svg {
+  display: flex; align-items: center; justify-content: center;
+  border-right: 1px solid #bbb; padding: 1px;
+}
+.hlbl { display: inline-block; width: 32px; flex-shrink: 0; }
+.hlbl2 { display: inline-block; width: 54px; flex-shrink: 0; }
+
+.draw-td { padding: 0 !important; vertical-align: top !important; }
+.draw-grid { display: grid; grid-template-columns: 1fr 1fr; height: 100%; }
+.draw-col { padding: 2px 6px; overflow: hidden; }
+.draw-col:first-child { border-right: 1px solid #000; }
+.draw-col .colh {
+  text-align: center; font-weight: 600; border-bottom: 1px solid #000;
+  margin: -2px -6px 2px; padding: 1px 0; font-size: 8.8px;
+}
+.draw-col .r { min-height: 14px; }
+.dw-lbl { display: inline-block; width: 56px; flex-shrink: 0; }
+
+.grom-td { padding: 3px 6px !important; vertical-align: top !important; }
+.grom-wrap { display: flex; height: 100%; gap: 6px; align-items: stretch; }
+.grom-list { flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+.grom-blk { border-bottom: 1px dotted #ccc; padding-bottom: 2px; }
+.grom-blk:last-child { border-bottom: none; padding-bottom: 0; }
+.grom-blk .gtitle { font-weight: 600; font-size: 8.5px; line-height: 1.2; }
+.grom-blk .r { min-height: 13.5px; }
+
+/* 7) Signatures Footer (fixed 40px) */
+.s-sign {
+  display: grid; grid-template-columns: 1fr 1fr 1.15fr 1.15fr;
+  gap: 12px; margin-top: auto; padding-top: 4px;
+  height: 40px; flex: 0 0 40px; overflow: hidden;
+}
+.sign-col .r { min-height: 16px; }
+.sign-col .lb { font-size: 8.4px; }
+
+/* =========================================================
+   PRINT
+   ========================================================= */
+@media print {
+  @page { size: A4; margin: 0; }
+  html, body { height: auto; background: #fff; }
+  .no-print { display: none !important; }
+  .layout { display: block !important; height: auto; }
+  .preview-wrap { overflow: visible; background: #fff; }
+  .pages { zoom: 1 !important; padding: 0; }
+  .page { display: flex !important; margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
+  .page:last-child { break-after: auto; page-break-after: auto; }
+}
