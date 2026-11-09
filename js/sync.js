@@ -14,12 +14,12 @@
  * เมื่อ Deploy ขึ้น Vercel ทุกคนที่เปิดลิงก์จะซิงค์ข้อมูลชุดเดียวกันโดยอัตโนมัติทันที
  */
 const DEFAULT_CLOUD_CONFIG = {
-  provider: '',       // 'firebase_rtdb' | 'firestore' | 'supabase'
-  databaseURL: '',    // สำหรับ Firebase Realtime Database เช่น 'https://mto-plan-default-rtdb.asia-southeast1.firebasedatabase.app'
-  projectId: '',      // สำหรับ Firebase Cloud Firestore
-  apiKey: '',         // สำหรับ Firebase Cloud Firestore
-  supabaseUrl: '',    // สำหรับ Supabase เช่น 'https://xxxx.supabase.co'
-  supabaseKey: '',    // สำหรับ Supabase Anon Key
+  provider: 'supabase', // 'firebase_rtdb' | 'firestore' | 'supabase'
+  databaseURL: '',      // สำหรับ Firebase Realtime Database
+  projectId: '',        // สำหรับ Firebase Cloud Firestore
+  apiKey: '',           // สำหรับ Firebase Cloud Firestore
+  supabaseUrl: 'https://odlymtqwuzcugnwqogqa.supabase.co',
+  supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9kbHltdHF3dXpjdWdud3FvZ3FhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyMTUyOTMsImV4cCI6MjEwOTc5MTI5M30.SXrB_cKQ2nkinFV0YfH5YfxQwx3Yo4-2ItrvQN_WBxg',
   roomKey: 'pasaya_mto_main', // ชื่อห้องข้อมูลส่วนกลางของทีม
 };
 
@@ -305,33 +305,58 @@ const RealtimeSync = (() => {
   }
 
   /* =========================================================
-     Provider 3: Supabase Realtime (Broadcast + Table / Storage)
+     Provider 3: Supabase Realtime (Direct PostgREST + WebSocket Realtime + Polling Fallback)
      ========================================================= */
+  function sbHeaders(extra = {}) {
+    const k = (cfg.supabaseKey || '').trim();
+    return Object.assign({
+      'apikey': k,
+      'Authorization': 'Bearer ' + k,
+      'Content-Type': 'application/json',
+    }, extra);
+  }
+
+  function sbRestUrl(query = '') {
+    const base = (cfg.supabaseUrl || '').trim().replace(/\/+$/, '');
+    return `${base}/rest/v1/mto_workspaces${query}`;
+  }
+
+  async function fetchSupabaseRow(room) {
+    const res = await fetch(sbRestUrl(`?room_key=eq.${encodeURIComponent(room)}&select=room_key,updated_at,payload`), {
+      headers: sbHeaders(),
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Supabase GET HTTP ${res.status}`);
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length ? rows[0] : null;
+  }
+
   async function connectSupabase() {
     if (!cfg.supabaseUrl || !cfg.supabaseKey) {
       setStatus('local', 'โหมดในเครื่อง (คลิกเพื่อตั้งค่า Cloud Sync)');
       return;
     }
     setStatus('connecting', 'กำลังเชื่อมต่อ Supabase Realtime...');
+    const room = (cfg.roomKey || 'pasaya_mto_main').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    try {
+      // 1) ดึงข้อมูลล่าสุดผ่าน PostgREST ทันที (ไม่ต้องรอโหลด SDK)
+      const row = await fetchSupabaseRow(room);
+      if (row && row.payload && Array.isArray(row.payload.orders)) {
+        applyRemotePayload(typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload);
+      } else {
+        await pushToCloudNow();
+      }
+      setStatus('online', 'ซิงค์ Realtime ออนไลน์');
+    } catch (err) {
+      console.warn('Supabase REST init error:', err);
+      setStatus('error', 'เชื่อมต่อ Supabase ไม่สำเร็จ');
+    }
+
+    // 2) เปิด Realtime WebSocket (Broadcast + Postgres Changes)
     try {
       const sbMod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
       supabaseClient = sbMod.createClient(cfg.supabaseUrl.trim(), cfg.supabaseKey.trim());
-      const room = (cfg.roomKey || 'pasaya_mto_main').replace(/[^a-zA-Z0-9_-]/g, '_');
-
-      // ลองดึงข้อมูลล่าสุดจากตาราง mto_workspaces (ถ้าสร้างตารางไว้แล้ว)
-      try {
-        const { data, error } = await supabaseClient
-          .from('mto_workspaces')
-          .select('payload')
-          .eq('room_key', room)
-          .maybeSingle();
-        if (!error && data && data.payload) {
-          applyRemotePayload(typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload);
-        } else if (!error && !data) {
-          await pushToCloudNow();
-        }
-      } catch (e) { /* table optional if using broadcast */ }
-
       if (supabaseChannel) supabaseClient.removeChannel(supabaseChannel);
       supabaseChannel = supabaseClient.channel('mto_room_' + room, {
         config: { broadcast: { self: false } },
@@ -341,38 +366,52 @@ const RealtimeSync = (() => {
         .on('broadcast', { event: 'mto_sync' }, ({ payload }) => {
           if (payload) {
             applyRemotePayload(payload);
-            setStatus('online', 'ซิงค์ Supabase ออนไลน์');
+            setStatus('online', 'ซิงค์ Realtime ออนไลน์');
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'mto_workspaces', filter: `room_key=eq.${room}` }, chg => {
           if (chg.new && chg.new.payload) {
             applyRemotePayload(typeof chg.new.payload === 'string' ? JSON.parse(chg.new.payload) : chg.new.payload);
+            setStatus('online', 'ซิงค์ Realtime ออนไลน์');
           }
         })
         .subscribe(st => {
           if (st === 'SUBSCRIBED') {
-            setStatus('online', 'ซิงค์ Supabase ออนไลน์');
+            setStatus('online', 'ซิงค์ Realtime ออนไลน์');
           }
         });
     } catch (err) {
-      console.warn('Supabase init error:', err);
-      setStatus('error', 'เชื่อมต่อ Supabase ไม่สำเร็จ');
+      console.warn('Supabase WebSocket fallback to polling:', err);
     }
+
+    // 3) Safety polling ทุก 3 วินาที เผื่อเครือข่ายบางแห่งบล็อก WebSocket
+    startFallbackPolling(async () => {
+      const row = await fetchSupabaseRow(room);
+      if (row && row.payload) {
+        const p = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+        if (p && p.rev && p.rev !== lastRev) {
+          applyRemotePayload(p);
+          setStatus('online', 'ซิงค์ Realtime ออนไลน์');
+        }
+      }
+    });
   }
 
   async function pushSupabase(payload) {
-    if (!supabaseClient) return;
     const room = (cfg.roomKey || 'pasaya_mto_main').replace(/[^a-zA-Z0-9_-]/g, '_');
     if (supabaseChannel) {
       supabaseChannel.send({ type: 'broadcast', event: 'mto_sync', payload }).catch(() => {});
     }
-    try {
-      await supabaseClient.from('mto_workspaces').upsert({
+    const res = await fetch(sbRestUrl('?on_conflict=room_key'), {
+      method: 'POST',
+      headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({
         room_key: room,
         updated_at: payload.updatedAt,
         payload,
-      }, { onConflict: 'room_key' });
-    } catch (e) { /* ignore if table not created yet */ }
+      }),
+    });
+    if (!res.ok) throw new Error(`Supabase UPSERT HTTP ${res.status}`);
   }
 
   /* =========================================================
