@@ -751,7 +751,7 @@ function rCalc(t, r, u1, u2) {
   </div>`;
 }
 
-function rWinCell(w, n) {
+function rWinCell(w, n, winIdx = 0) {
   w = w || {};
   const cType = formatCurtainType(w);
   const showHook = curtainNeedsHook(w.curtainStyle1, w.curtainStyle2);
@@ -764,7 +764,7 @@ function rWinCell(w, n) {
   const isBlind1 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle1);
   const isBlind2 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle2);
 
-  return `<div class="wc">
+  return `<div class="wc" data-preview-win="${winIdx}" title="คลิกเพื่อแก้ไขข้อมูลหน้าต่าง/ประตู บานที่ ${esc(numLabel)}">
     <div class="r"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(w.label)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
     <div class="opt-align-row">
       <span class="opt-lbl">กล่องม่าน</span>
@@ -812,7 +812,7 @@ function rNoteBoxes(sheet, sIdx, cIdx) {
 
 function rWinGrid(list, startNo, sheet, sIdx, cIdx) {
   let h = '';
-  for (let k = 0; k < 4; k++) h += rWinCell(list[k], startNo + k + 1);
+  for (let k = 0; k < 4; k++) h += rWinCell(list[k], startNo + k + 1, startNo + k);
   return `<div class="s-wins" data-sidx="${sIdx}" data-cidx="${cIdx}">${h}${rNoteBoxes(sheet, sIdx, cIdx)}</div>`;
 }
 

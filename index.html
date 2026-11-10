@@ -111,7 +111,7 @@
           <p class="hint">กรอกข้อมูลในหน้านี้เพียงครั้งเดียว ระบบจะนำไปแสดงในใบงานทุกหน้าของออเดอร์โดยอัตโนมัติ (ลูกค้า 1 ชื่อสามารถสร้างได้หลายแปลนงานสำหรับที่พักอาศัยหลายที่)</p>
         </div>
 
-        <details class="sec" open>
+        <details class="sec" id="secCustomer" open>
           <summary>1. ข้อมูลลูกค้า (รองรับลูกค้า 1 ชื่อมีหลายแปลนงาน / หลายที่พักอาศัย)</summary>
           <div class="subcard" style="margin-bottom:8px">
             <div class="inline" style="flex-wrap:wrap;justify-content:space-between">
@@ -141,7 +141,7 @@
           </div>
         </details>
 
-        <details class="sec" open>
+        <details class="sec" id="secStaff" open>
           <summary>2. ข้อมูลพนักงาน & เลขที่ใบงาน</summary>
           <div class="grid2">
             <label class="full">เลขที่ (ORDER NO) — กรอกเอง หรือใส่ "-" หากยังไม่มี<input data-shared="staff.orderNo" placeholder="-"></label>
@@ -157,7 +157,7 @@
           </div>
         </details>
 
-        <details class="sec" open>
+        <details class="sec" id="secDiscount" open>
           <summary>5. ส่วนลด (%)</summary>
           <div class="grid2">
             <label>ผ้าม่านทึบ (%)<input type="number" min="0" max="100" step="0.5" data-shared="discount.blackout"></label>
@@ -167,7 +167,7 @@
           </div>
         </details>
 
-        <details class="sec" open>
+        <details class="sec" id="secSign" open>
           <summary>✍️ ลงชื่อท้ายใบงาน</summary>
           <div class="grid2">
             <label>ชื่อผู้ขอ (Request Name)<input data-shared="sign.requester" placeholder="(ใช้ชื่อพนักงานถ้าว่าง)"></label>
@@ -181,7 +181,7 @@
           </div>
         </details>
 
-        <details class="sec">
+        <details class="sec" id="secCompany">
           <summary>⚙️ หัวกระดาษ (ข้อมูลบริษัท)</summary>
           <div class="grid2">
             <label>ชื่อบริษัท / โลโก้ (ข้อความ)<input data-shared="company.name"></label>
@@ -513,10 +513,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=11"></script>
-  <script src="js/plan.js?v=11"></script>
-  <script src="js/render.js?v=11"></script>
-  <script src="js/sync.js?v=11"></script>
-  <script src="js/app.js?v=11"></script>
+  <script src="js/db.js?v=12"></script>
+  <script src="js/plan.js?v=12"></script>
+  <script src="js/render.js?v=12"></script>
+  <script src="js/sync.js?v=12"></script>
+  <script src="js/app.js?v=12"></script>
 </body>
 </html>

@@ -1553,6 +1553,171 @@ document.addEventListener('click', e => {
   }
 });
 
+function scrollAndFlashEditor(targetEl, focusSelector) {
+  if (!targetEl) return;
+  if (targetEl.tagName === 'DETAILS') targetEl.open = true;
+  const parentDetails = targetEl.closest('details.sec');
+  if (parentDetails) parentDetails.open = true;
+
+  isSyncingScroll = true;
+  targetEl.classList.remove('jump-flash');
+  void targetEl.offsetWidth; // trigger reflow for animation restart
+  targetEl.classList.add('jump-flash');
+  targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  if (focusSelector) {
+    const inputEl = targetEl.querySelector(focusSelector) || document.querySelector(focusSelector);
+    if (inputEl && typeof inputEl.focus === 'function') {
+      setTimeout(() => {
+        try { inputEl.focus({ preventScroll: true }); } catch (e) {}
+      }, 180);
+    }
+  }
+
+  setTimeout(() => { isSyncingScroll = false; }, 450);
+  setTimeout(() => { targetEl.classList.remove('jump-flash'); }, 1150);
+}
+
+function switchToCustomerSection(secId, focusSelector) {
+  activeTabMode = 'customer';
+  renderTopSheetNav();
+  syncSharedInputs();
+  const secEl = document.getElementById(secId);
+  scrollAndFlashEditor(secEl, focusSelector);
+}
+
+function switchToSheetSection(targetSheetIdx, secId, focusSelector, customTargetElFn) {
+  const ord = currentOrder();
+  if (!ord) return;
+  const clampedSheetIdx = Math.max(0, Math.min(targetSheetIdx, ord.sheets.length - 1));
+  const needSheetRender = (activeTabMode !== 'sheet' || activeSheetIdx !== clampedSheetIdx);
+  activeTabMode = 'sheet';
+  activeSheetIdx = clampedSheetIdx;
+
+  if (needSheetRender) {
+    renderTopSheetNav();
+    renderWindowsEditor();
+    renderNotesEditor();
+    renderDrawAndGrommetEditor();
+    renderPlanMini();
+    syncSheetInputs();
+  } else {
+    renderTopSheetNav();
+  }
+
+  // หากกำลังกรองเฉพาะหมวดอื่นอยู่ ให้สลับมาหมวดที่คลิกทันที
+  if (activeSectionFilter !== 'all' && activeSectionFilter !== secId) {
+    applySectionFilter(secId);
+  } else {
+    applySectionFilter(activeSectionFilter);
+  }
+
+  const secEl = document.getElementById(secId);
+  if (secEl) secEl.open = true;
+  const targetEl = (customTargetElFn && customTargetElFn()) || secEl;
+  scrollAndFlashEditor(targetEl, focusSelector);
+}
+
+// คลิกที่ส่วนใดของใบ PDF ด้านขวา -> เปลี่ยนหน้าข้อมูลด้านซ้ายไปยังส่วนนั้นทันที
+document.getElementById('preview').addEventListener('click', e => {
+  if (e.target.closest('.float-note-box')) return;
+  const pageEl = e.target.closest('.page[data-page-idx]');
+  if (!pageEl) return;
+
+  const ord = currentOrder();
+  if (!ord) return;
+  const pIdx = +pageEl.dataset.pageIdx;
+  const sIdx = +pageEl.dataset.sheetIdx;
+  currentPreviewPageIdx = pIdx;
+  const totalPages = document.querySelectorAll('#preview .page').length || 1;
+  const indEl = document.getElementById('singlePageIndicator');
+  if (indEl) indEl.textContent = `${currentPreviewPageIdx + 1}/${totalPages}`;
+
+  if (e.target.closest('.s-hd')) {
+    switchToCustomerSection('secCompany', '[data-shared="company.name"]');
+    return;
+  }
+  if (e.target.closest('.s-cust .disc')) {
+    switchToCustomerSection('secDiscount', '[data-shared="discount.blackout"]');
+    return;
+  }
+  if (e.target.closest('.s-cust .cr')) {
+    switchToCustomerSection('secStaff', '[data-shared="staff.orderNo"]');
+    return;
+  }
+  if (e.target.closest('.s-cust')) {
+    switchToCustomerSection('secCustomer', '[data-shared="customer.name"]');
+    return;
+  }
+  if (e.target.closest('.s-sign')) {
+    switchToCustomerSection('secSign', '[data-shared="sign.requester"]');
+    return;
+  }
+  if (e.target.closest('.s-map .notes-list, .s-map .map-note-hd')) {
+    switchToSheetSection(sIdx, 'secNotes', '[data-note="0"]');
+    return;
+  }
+  if (e.target.closest('.s-map .pbox')) {
+    switchToSheetSection(sIdx, 'secPlan', '[data-sheet="room.name"]');
+    return;
+  }
+  if (e.target.closest('.s-map')) {
+    switchToSheetSection(sIdx, 'secPlan', '[data-sheet="room.name"]');
+    return;
+  }
+  const winCell = e.target.closest('.wc[data-preview-win]');
+  if (winCell) {
+    const wIdx = +winCell.dataset.previewWin;
+    const sh = ord.sheets[sIdx];
+    if (sh) {
+      let added = false;
+      while (sh.windows.length <= wIdx) {
+        sh.windows.push(newWindow(sh.windows.length + 1));
+        added = true;
+      }
+      if (added) {
+        activeSheetIdx = sIdx;
+        renderWindowsEditor();
+        renderTopSheetNav();
+      }
+    }
+    let focusSel = `[data-sheet="windows.${wIdx}.label"]`;
+    if (e.target.closest('.calc-group')) {
+      focusSel = `[data-sheet="windows.${wIdx}.widthFormulaId1"]`;
+    } else if (e.target.closest('.wdiag')) {
+      focusSel = `[data-sheet="windows.${wIdx}.width"]`;
+    }
+    switchToSheetSection(
+      sIdx,
+      'secWins',
+      focusSel,
+      () => document.querySelector(`.win-ed[data-win-idx="${wIdx}"]`)
+    );
+    return;
+  }
+  if (e.target.closest('.s-tb')) {
+    switchToSheetSection(sIdx, 'secFabrics', '[data-sheet="fabrics.blackout.name"]');
+    return;
+  }
+  if (e.target.closest('.s-rod')) {
+    switchToSheetSection(sIdx, 'secRods', '[data-sheet="rods.pleat.model"]');
+    return;
+  }
+});
+
+// ดับเบิลคลิกที่รูปแปลนห้องบนใบ PDF ด้านขวา -> เปิดหน้าต่างวาดแปลนห้องทันที
+document.getElementById('preview').addEventListener('dblclick', e => {
+  const pbox = e.target.closest('.s-map .pbox');
+  if (!pbox) return;
+  const pageEl = pbox.closest('.page[data-sheet-idx]');
+  if (pageEl) {
+    activeTabMode = 'sheet';
+    activeSheetIdx = +pageEl.dataset.sheetIdx;
+    renderAllWorkspace();
+  }
+  actions.openPlan();
+});
+
 document.getElementById('planMini').addEventListener('click', () => actions.openPlan());
 document.getElementById('btnGoFirstRoom').addEventListener('click', () => {
   activeTabMode = 'sheet';
