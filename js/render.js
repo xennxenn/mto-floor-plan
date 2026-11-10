@@ -272,10 +272,11 @@ function drawChainUV(q, u) {
  * วาดหน้ากากการใช้งานผ้าม่านโดยไม่มีแถบขอบด้านบน (ตามที่ผู้ใช้กำหนด)
  * และหากเป็นม่านม้วนจะมีป้ายเลขกำกับ (เช่น ผืน 1, ผืน 2) แสดงชัดเจน
  */
-function drawMaskOnQuad(q, op, tagText, isNarrowWing = false) {
+function drawMaskOnQuad(q, op, tagText, isNarrowWing = false, splitRatio = 0.5) {
   if (!op) return '';
   let out = '';
   const wRatio = isNarrowWing ? 0.68 : 0.36;
+  const sr = (Number.isFinite(splitRatio) && splitRatio > 0.12 && splitRatio < 0.88) ? splitRatio : 0.5;
 
   switch (op) {
     case 'left':
@@ -284,11 +285,18 @@ function drawMaskOnQuad(q, op, tagText, isNarrowWing = false) {
     case 'right':
       out += drawDrapeSideOnQuad(q, 'R', wRatio) + drawArrowUV(q, isNarrowWing ? 0.12 : 0.24, isNarrowWing ? 0.62 : 0.72, 0.36);
       break;
-    case 'split':
-      out += drawDrapeSideOnQuad(q, 'L', isNarrowWing ? 0.44 : 0.34) +
-        drawDrapeSideOnQuad(q, 'R', isNarrowWing ? 0.44 : 0.34) +
-        drawArrowUV(q, 0.45, 0.22, 0.36) + drawArrowUV(q, 0.55, 0.78, 0.36);
+    case 'split': {
+      const lWidth = isNarrowWing ? 0.44 : Math.max(0.22, Math.min(0.58, sr * 0.68));
+      const rWidth = isNarrowWing ? 0.44 : Math.max(0.22, Math.min(0.58, (1 - sr) * 0.68));
+      const aLStart = Math.max(0.18, sr - 0.04);
+      const aLEnd   = Math.max(0.12, sr * 0.44);
+      const aRStart = Math.min(0.82, sr + 0.04);
+      const aREnd   = Math.min(0.88, sr + (1 - sr) * 0.56);
+      out += drawDrapeSideOnQuad(q, 'L', lWidth) +
+        drawDrapeSideOnQuad(q, 'R', rWidth) +
+        drawArrowUV(q, aLStart, aLEnd, 0.36) + drawArrowUV(q, aRStart, aREnd, 0.36);
       break;
+    }
     case 'chainL':
       out += drawChainUV(q, isNarrowWing ? 0.16 : 0.08);
       break;
@@ -323,12 +331,13 @@ function drawPolylineArrow(pts) {
  * วาดผ้าม่านที่คลุมต่อเนื่องกันข้ามชุดพื้นผิว (เช่น [leftWing, center, rightWing] หรือ [leftWing, leftHalfCenter])
  * โดยไม่มีแถบขอบด้านบน และไม่แยกบานดัดโค้งออกจากบานตรง
  */
-function drawContinuousSpanMask(leftQ, centerQ, rightQ, op, tagText) {
+function drawContinuousSpanMask(leftQ, centerQ, rightQ, op, tagText, splitRatio = 0.5) {
   if (!op) return '';
   const quads = [leftQ, centerQ, rightQ].filter(Boolean);
   if (!quads.length) return '';
+  const sr = (Number.isFinite(splitRatio) && splitRatio > 0.12 && splitRatio < 0.88) ? splitRatio : 0.5;
   if (quads.length === 1) {
-    return drawMaskOnQuad(quads[0], op, tagText, !centerQ);
+    return drawMaskOnQuad(quads[0], op, tagText, !centerQ, sr);
   }
 
   let out = '';
@@ -383,26 +392,28 @@ function drawContinuousSpanMask(leftQ, centerQ, rightQ, op, tagText) {
       out += drawPolylineArrow(pts);
     }
   } else if (op === 'split') {
+    const aLStart = Math.max(0.18, sr - 0.05);
+    const aRStart = Math.min(0.82, sr + 0.05);
     if (leftQ) {
       out += drawDrapeSideOnQuad(leftQ, 'L', 0.72);
       const ptsL = centerQ
-        ? [quadPt(centerQ, 0.44, vArr), quadPt(centerQ, 0.0, vArr), quadPt(leftQ, 0.52, vArr)]
+        ? [quadPt(centerQ, aLStart, vArr), quadPt(centerQ, 0.0, vArr), quadPt(leftQ, 0.52, vArr)]
         : [quadPt(leftQ, 0.90, vArr), quadPt(leftQ, 0.52, vArr)];
       out += drawPolylineArrow(ptsL);
     } else if (centerQ) {
-      out += drawDrapeSideOnQuad(centerQ, 'L', 0.34);
-      out += drawArrowUV(centerQ, 0.44, 0.22, vArr);
+      out += drawDrapeSideOnQuad(centerQ, 'L', Math.max(0.22, Math.min(0.56, sr * 0.68)));
+      out += drawArrowUV(centerQ, aLStart, Math.max(0.12, sr * 0.44), vArr);
     }
 
     if (rightQ) {
       out += drawDrapeSideOnQuad(rightQ, 'R', 0.72);
       const ptsR = centerQ
-        ? [quadPt(centerQ, 0.56, vArr), quadPt(centerQ, 1.0, vArr), quadPt(rightQ, 0.48, vArr)]
+        ? [quadPt(centerQ, aRStart, vArr), quadPt(centerQ, 1.0, vArr), quadPt(rightQ, 0.48, vArr)]
         : [quadPt(rightQ, 0.10, vArr), quadPt(rightQ, 0.48, vArr)];
       out += drawPolylineArrow(ptsR);
     } else if (centerQ) {
-      out += drawDrapeSideOnQuad(centerQ, 'R', 0.34);
-      out += drawArrowUV(centerQ, 0.56, 0.78, vArr);
+      out += drawDrapeSideOnQuad(centerQ, 'R', Math.max(0.22, Math.min(0.56, (1 - sr) * 0.68)));
+      out += drawArrowUV(centerQ, aRStart, Math.min(0.88, sr + (1 - sr) * 0.56), vArr);
     }
   } else if (op === 'chainL') {
     const firstQ = leftQ || centerQ || rightQ;
@@ -424,8 +435,9 @@ function drawContinuousSpanMask(leftQ, centerQ, rightQ, op, tagText) {
  * วาดเลเยอร์การใช้งานผ้าม่านทั้งหมด:
  * - หากเป็นม่านม้วน (chainL / chainR หรือประเภทม่านมีคำว่า "ม่านม้วน") จะแสดงเลขกำกับ (เช่น ผืน 1, ผืน 2) เหมือนเวอร์ชั่นก่อนหน้า
  * - รองรับจำนวนบานในกรอบมากกว่า 4 บาน (pane1 .. paneN)
+ * - รองรับการแบ่งผ้าม่านผืนซ้าย/ผืนขวาไม่เท่ากัน (splitRatio)
  */
-function renderAllCurtainLayers(layers, surfaces, pCount = 2, isRollerWindow = false) {
+function renderAllCurtainLayers(layers, surfaces, pCount = 2, isRollerWindow = false, splitRatio = 0.5) {
   const list = (layers || []).filter(l => l && l.op);
   if (!list.length) return '';
   let out = '';
@@ -451,20 +463,20 @@ function renderAllCurtainLayers(layers, surfaces, pCount = 2, isRollerWindow = f
         out += `<line x1="${topP.x}" y1="${topP.y}" x2="${botP.x}" y2="${botP.y}" stroke="#000" stroke-width="0.9" stroke-dasharray="3 2"/>`;
       }
       const tag = resolveTag(ly, idx, n);
-      out += drawContinuousSpanMask(incLeft, centerSub, incRight, ly.op, tag);
+      out += drawContinuousSpanMask(incLeft, centerSub, incRight, ly.op, tag, n === 1 ? splitRatio : 0.5);
     });
   }
 
   // 2) เลเยอร์ที่เลือกซีกซ้ายรวมดัดโค้ง (leftHalfAll) หรือซีกขวารวมดัดโค้ง (rightHalfAll)
   list.filter(l => l.target === 'leftHalfAll').forEach((ly) => {
     const globalIdx = list.indexOf(ly);
-    const leftHalfCenter = subQuad(surfaces.center, 0, 0.5, 0, 1);
-    out += drawContinuousSpanMask(surfaces.leftWing, leftHalfCenter, null, ly.op, resolveTag(ly, globalIdx, list.length));
+    const leftHalfCenter = subQuad(surfaces.center, 0, splitRatio, 0, 1);
+    out += drawContinuousSpanMask(surfaces.leftWing, leftHalfCenter, null, ly.op, resolveTag(ly, globalIdx, list.length), 0.5);
   });
   list.filter(l => l.target === 'rightHalfAll').forEach((ly) => {
     const globalIdx = list.indexOf(ly);
-    const rightHalfCenter = subQuad(surfaces.center, 0.5, 1, 0, 1);
-    out += drawContinuousSpanMask(null, rightHalfCenter, surfaces.rightWing, ly.op, resolveTag(ly, globalIdx, list.length));
+    const rightHalfCenter = subQuad(surfaces.center, splitRatio, 1, 0, 1);
+    out += drawContinuousSpanMask(null, rightHalfCenter, surfaces.rightWing, ly.op, resolveTag(ly, globalIdx, list.length), 0.5);
   });
 
   // 3) เลเยอร์ที่เลือกแต่ละช่องบาน (pane1 .. paneN รองรับมากกว่า 4 บาน)
@@ -475,7 +487,7 @@ function renderAllCurtainLayers(layers, surfaces, pCount = 2, isRollerWindow = f
     const totalP = Math.max(pCount, pIdx + 1);
     const u0 = pIdx / totalP, u1 = (pIdx + 1) / totalP;
     const paneQuad = subQuad(surfaces.center, u0, u1, 0, 1);
-    out += drawMaskOnQuad(paneQuad, ly.op, resolveTag(ly, globalIdx, list.length), false);
+    out += drawMaskOnQuad(paneQuad, ly.op, resolveTag(ly, globalIdx, list.length), false, 0.5);
   });
 
   // 4) เลเยอร์ที่เลือกเฉพาะกรอบบานตรงกลาง ('center') หรือเฉพาะปีกซ้าย ('leftWing') หรือเฉพาะปีกขวา ('rightWing')
@@ -490,7 +502,7 @@ function renderAllCurtainLayers(layers, surfaces, pCount = 2, isRollerWindow = f
         out += `<line x1="${topP.x}" y1="${topP.y}" x2="${botP.x}" y2="${botP.y}" stroke="#000" stroke-width="0.9" stroke-dasharray="3 2"/>`;
       }
       const tag = resolveTag(ly, idx, n);
-      out += drawMaskOnQuad(sq, ly.op, tag, false);
+      out += drawMaskOnQuad(sq, ly.op, tag, false, n === 1 ? splitRatio : 0.5);
     });
   }
 
@@ -668,9 +680,46 @@ function windowSVG(w) {
     s += `<rect x="${px}" y="${y0 + 4.5}" width="${pw}" height="${y1 - y0 - 9}" fill="none" stroke="#000" stroke-width="0.95"/>`;
   }
 
-  // ==================== 5) เลเยอร์บนสุด: หน้ากากการใช้งานผ้าม่านภายในกรอบ ====================
+  // ==================== 5) เลเยอร์บนสุด: หน้ากากการใช้งานผ้าม่านภายในกรอบ + จุดแบ่งรางม่านไม่เท่ากัน ====================
+  const sLNum = numVal(w.splitLeft);
+  const sRNum = numVal(w.splitRight);
+  const hasUnequalSplit = Boolean(w.unequalSplit && (hasVal(w.splitLeft) || hasVal(w.splitRight)));
+  const splitRatio = (hasUnequalSplit && sLNum > 0 && sRNum > 0)
+    ? Math.max(0.18, Math.min(0.82, sLNum / (sLNum + sRNum)))
+    : 0.5;
+
   const isRollerWindow = /ม่านม้วน/.test(String(w.curtainStyle1 || '')) || /ม่านม้วน/.test(String(w.curtainStyle2 || ''));
-  s += renderAllCurtainLayers(w.layers, surfaces, pCount, isRollerWindow);
+  s += renderAllCurtainLayers(w.layers, surfaces, pCount, isRollerWindow, splitRatio);
+
+  if (hasUnequalSplit) {
+    const splitX = Math.round(leftOuterX + (rightOuterX - leftOuterX) * splitRatio);
+    const sLText = hasVal(w.splitLeft) ? String(w.splitLeft).trim() : '';
+    const sRText = hasVal(w.splitRight) ? String(w.splitRight).trim() : '';
+    const ySplitDim = y0 + 13;
+
+    // เส้นประจุดแบ่งที่รางม่านและสัญลักษณ์ขีดแบ่งบนรางม่านเดียวกัน
+    s += `<line x1="${splitX}" y1="${y0 - 4}" x2="${splitX}" y2="${y1}" stroke="#000" stroke-width="1.35" stroke-dasharray="3.5 2"/>`;
+    s += `<polygon points="${splitX},${y0 + 1} ${splitX - 4},${y0 - 4.5} ${splitX + 4},${y0 - 4.5}" fill="#000"/>`;
+
+    // เส้นบอกขนาดช่วงที่แบ่ง (ซ้าย / ขวา) บนรางม่าน
+    s += `<line x1="${leftOuterX + 2}" y1="${ySplitDim}" x2="${rightOuterX - 2}" y2="${ySplitDim}" stroke="#000" stroke-width="1.15"/>`;
+    s += `<line x1="${leftOuterX + 2}" y1="${ySplitDim - 3.5}" x2="${leftOuterX + 2}" y2="${ySplitDim + 3.5}" stroke="#000" stroke-width="1.15"/>`;
+    s += `<line x1="${splitX}" y1="${ySplitDim - 4.5}" x2="${splitX}" y2="${ySplitDim + 4.5}" stroke="#000" stroke-width="1.35"/>`;
+    s += `<line x1="${rightOuterX - 2}" y1="${ySplitDim - 3.5}" x2="${rightOuterX - 2}" y2="${ySplitDim + 3.5}" stroke="#000" stroke-width="1.15"/>`;
+
+    if (sLText) {
+      const lx = Math.round((leftOuterX + splitX) / 2);
+      const bw = Math.max(22, sLText.length * 6.8 + 8);
+      s += `<rect x="${Math.round(lx - bw / 2)}" y="${ySplitDim - 7.5}" width="${bw}" height="13" rx="2.5" fill="#fff" stroke="#000" stroke-width="0.9"/>`;
+      s += `<text x="${lx}" y="${ySplitDim + 2.5}" text-anchor="middle" font-size="10.2" font-weight="700" fill="#000">${esc(sLText)}</text>`;
+    }
+    if (sRText) {
+      const rx = Math.round((splitX + rightOuterX) / 2);
+      const bw = Math.max(22, sRText.length * 6.8 + 8);
+      s += `<rect x="${Math.round(rx - bw / 2)}" y="${ySplitDim - 7.5}" width="${bw}" height="13" rx="2.5" fill="#fff" stroke="#000" stroke-width="0.9"/>`;
+      s += `<text x="${rx}" y="${ySplitDim + 2.5}" text-anchor="middle" font-size="10.2" font-weight="700" fill="#000">${esc(sRText)}</text>`;
+    }
+  }
 
   s += '</svg>';
   return s;

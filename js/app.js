@@ -20,6 +20,9 @@ function newWindow(planNo = '') {
     calcMode: 'auto', // 'auto' | 'manual'
     customRailW: '',
     customRailH: '',
+    unequalSplit: false,
+    splitLeft: '',
+    splitRight: '',
     railModel: '',
     curtainStyle1: '',
     curtainStyle2: '',
@@ -900,6 +903,28 @@ function windowEditorHTML(w, i, planOpenings) {
         `}
         <button type="button" data-act="fillSize" data-i="${i}">↘ ส่งค่าราง/ม่านลงตารางคำนวณ</button>
       </div>
+      <div style="margin-top:6px;padding:7px 9px;background:#f7faff;border:1px dashed #90caf9;border-radius:6px">
+        <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <label class="inline" style="font-weight:700;color:#0d47a1;cursor:pointer">
+            <input type="checkbox" ${b('unequalSplit')}>
+            ✂️ แบ่งผ้าม่านผืนซ้าย / ผืนขวา ไม่เท่ากัน (กำหนดจุดแบ่งที่รางม่านเดียวกัน)
+          </label>
+          ${w.unequalSplit ? `<span style="font-size:11.5px;color:#1565c0;font-weight:700">ขนาดผ้าม่าน: <b>${esc(w.splitLeft || '?')}/${esc(w.splitRight || '?')}</b> | ขนาดรางม่าน: <b>${esc(railW || w.rail?.a || '-')}</b></span>` : ''}
+        </div>
+        ${w.unequalSplit ? `
+          <div class="grid2" style="margin-top:6px">
+            <label>ขนาดช่วงแบ่งผืนซ้าย (ซม.)
+              <input type="number" step="any" ${b('splitLeft')} placeholder="เช่น 150">
+            </label>
+            <label>ขนาดช่วงแบ่งผืนขวา (ซม.)
+              <input type="number" step="any" ${b('splitRight')} placeholder="เช่น 250">
+            </label>
+          </div>
+          <div style="font-size:11px;color:#455a64;margin-top:3px">
+            * แสดงจุดแบ่งและขนาดช่วงที่แบ่งกำกับไว้บนแปลนหน้าต่าง/ประตู โดยความกว้างผ้าม่านแสดงเป็น <b>ผืนซ้าย/ผืนขวา</b> (เช่น 150/250) แต่ขนาดรางม่านยังคงเป็นความกว้างรวม (เช่น 400)
+          </div>
+        ` : ''}
+      </div>
     </div>
 
     <div class="subcard" style="margin:6px 0">
@@ -1136,14 +1161,56 @@ function changed(sheetPath, sharedPath) {
       const field = mWin[2];
       const w = sh.windows[idx];
       if (w) {
-        if (/^(curtainStyle1|curtainStyle2|rodType|hookSize|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel)$/.test(field)) {
+        if (/^(curtainStyle1|curtainStyle2|rodType|hookSize|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit)$/.test(field)) {
           if (!curtainNeedsHook(w.curtainStyle1, w.curtainStyle2)) w.hookSize = '';
           w.paneStyle = String(getPaneCount(w));
+          if (field === 'unequalSplit' && w.unequalSplit) {
+            if (!w.layers || !w.layers.length) w.layers = [{ op: 'split', target: 'all', label: '' }];
+            else if (!w.layers[0].op) w.layers[0].op = 'split';
+          }
           if (w.calcMode !== 'manual') {
             autoCalculateWindow(w, sh);
+          } else if (field === 'unequalSplit') {
+            const rw = calcRailWidth(w) || w.width;
+            if (w.unequalSplit && w.splitLeft && w.splitRight) {
+              if (rw) w.rail.a = rw;
+              w.blackout.a = `${w.splitLeft}/${w.splitRight}`;
+              if (w.sheer.a) w.sheer.a = `${w.splitLeft}/${w.splitRight}`;
+            } else if (!w.unequalSplit && rw) {
+              w.blackout.a = rw;
+              if (w.sheer.a) w.sheer.a = rw;
+            }
           }
           renderWindowsEditor();
           syncSheetInputs();
+        } else if (field === 'splitLeft' || field === 'splitRight') {
+          const rwNum = +calcRailWidth(w) || +w.width || +w.rail?.a || 0;
+          if (field === 'splitLeft' && w.splitLeft !== '' && rwNum > 0) {
+            const sl = +w.splitLeft || 0;
+            if (sl > 0 && sl < rwNum) {
+              w.splitRight = String(Math.round((rwNum - sl) * 100) / 100);
+            }
+          } else if (field === 'splitRight' && w.splitRight !== '' && rwNum > 0) {
+            const sr = +w.splitRight || 0;
+            if (sr > 0 && sr < rwNum) {
+              w.splitLeft = String(Math.round((rwNum - sr) * 100) / 100);
+            }
+          }
+          if (w.calcMode !== 'manual') {
+            autoCalculateWindow(w, sh);
+          } else if (w.unequalSplit && (w.splitLeft || w.splitRight)) {
+            const rw = calcRailWidth(w) || w.width;
+            if (rw) w.rail.a = rw;
+            const splitStr = `${w.splitLeft || 0}/${w.splitRight || 0}`;
+            w.blackout.a = splitStr;
+            w.blackout.n = '2';
+            if (w.sheer.a || w.curtainStyle2) {
+              w.sheer.a = splitStr;
+              w.sheer.n = '2';
+            }
+          }
+          const winCard = document.querySelector(`.win-ed[data-win-idx="${idx}"]`);
+          if (winCard) syncSheetInputs(winCard);
         } else if (/^(width|height|extL|extR|extT|extB|customRailW|customRailH)$/.test(field)) {
           if (w.calcMode !== 'manual') {
             autoCalculateWindow(w, sh);
@@ -1405,7 +1472,19 @@ const actions = {
     const w = sh.windows[i];
     const rw = calcRailWidth(w) || w.width;
     const rh = calcRailHeight(w) || w.height;
-    if (rw) { w.rail.a = rw; w.blackout.a = rw; w.sheer.a = rw; }
+    if (rw) {
+      w.rail.a = rw;
+      if (w.unequalSplit && (w.splitLeft || w.splitRight)) {
+        const splitStr = `${w.splitLeft || 0}/${w.splitRight || 0}`;
+        w.blackout.a = splitStr;
+        w.blackout.n = '2';
+        w.sheer.a = splitStr;
+        w.sheer.n = '2';
+      } else {
+        w.blackout.a = rw;
+        w.sheer.a = rw;
+      }
+    }
     if (rh) { w.blackout.b = rh; w.sheer.b = rh; }
     renderWindowsEditor(); changed();
   },

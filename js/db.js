@@ -697,14 +697,27 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     FW_FAB: 140, YR: 0, HEM_SIDE: 15, HEM_TB: 35, PANELS: P, YR_CNT: 0,
   };
 
-  // 1) คำนวณขนาดความกว้างผ้าม่าน (a)
+  // 1) คำนวณขนาดความกว้างผ้าม่าน (a) — รองรับกรณีแบ่งผืนซ้าย/ผืนขวาไม่เท่ากันบนรางเดียวกัน (เช่น 150/250 แต่รางม่านเป็น 400)
+  const hasUnequalSplit = !!(w.unequalSplit && (num(w.splitLeft) > 0 || num(w.splitRight) > 0));
+  let splitL = num(w.splitLeft);
+  let splitR = num(w.splitRight);
+  if (hasUnequalSplit) {
+    if (splitL > 0 && splitR <= 0 && RW > splitL) splitR = Math.round((RW - splitL) * 100) / 100;
+    if (splitR > 0 && splitL <= 0 && RW > splitR) splitL = Math.round((RW - splitR) * 100) / 100;
+  }
+
   let a = '';
-  if (wf && wf.widthExp) {
+  if (hasUnequalSplit && (splitL > 0 || splitR > 0)) {
+    a = `${splitL || 0}/${splitR || 0}`;
+    vars.P = 2;
+    vars.WC = (splitL + splitR) / 2;
+  } else if (wf && wf.widthExp) {
     a = evalFormulaExpr(wf.widthExp, vars, wf.roundMode || 'none');
+    vars.WC = num(a) || RW;
   } else if (RW) {
     a = String(RW);
+    vars.WC = RW;
   }
-  vars.WC = num(a) || RW;
 
   // 2) คำนวณขนาดความสูงผ้าม่าน (b)
   let b = '';
@@ -715,20 +728,29 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
   }
   vars.HC = num(b) || RH;
 
+  const effPieces = hasUnequalSplit ? 2 : P;
+
   // 3) กรณีเป็นม่านม้วน / มู่ลี่ -> คำนวณเป็นตารางเมตร ขั้นต่ำ 1.5 ตร.ม./ผืน
   const styleName = opts.curtainStyle || (wf && wf.curtainStyle) || '';
   const passedBlind = opts.blindItem || opts.blindRule || null;
   if (isBlindOrRollerStyle(styleName) || passedBlind) {
     const blindRule = passedBlind || (masterDB.blinds || []).find(bl => bl.curtainStyle === styleName) || { minSqm: 1.5, roundMode: 'ceil_1dec' };
     const minSqm = Math.max(1.5, num(blindRule.minSqm) || 1.5);
-    const rawSqmPerPiece = (vars.WC / 100) * (vars.HC / 100);
-    const sqmPerPiece = (vars.WC > 0 && vars.HC > 0) ? Math.max(minSqm, rawSqmPerPiece) : 0;
-    const totalSqm = sqmPerPiece * P;
+    let totalSqm = 0;
+    if (hasUnequalSplit && (splitL > 0 || splitR > 0)) {
+      const sqmL = (splitL > 0 && vars.HC > 0) ? Math.max(minSqm, (splitL / 100) * (vars.HC / 100)) : 0;
+      const sqmR = (splitR > 0 && vars.HC > 0) ? Math.max(minSqm, (splitR / 100) * (vars.HC / 100)) : 0;
+      totalSqm = sqmL + sqmR;
+    } else {
+      const rawSqmPerPiece = (vars.WC / 100) * (vars.HC / 100);
+      const sqmPerPiece = (vars.WC > 0 && vars.HC > 0) ? Math.max(minSqm, rawSqmPerPiece) : 0;
+      totalSqm = sqmPerPiece * effPieces;
+    }
     const t = totalSqm > 0 ? applyRoundMode(totalSqm, blindRule.roundMode || 'ceil_1dec') : '';
     return {
-      a, b, n: (RW || RH) ? String(P) : '', t,
+      a, b, n: (RW || RH || hasUnequalSplit) ? String(effPieces) : '', t,
       RW, RH, unit1: 'ผืน', unit2: 'ตร.ม.',
-      details: { mode: 'blind_sqm', minSqm, rawSqmPerPiece: Math.round(rawSqmPerPiece * 100) / 100, sqmPerPiece: Math.round(sqmPerPiece * 100) / 100 },
+      details: { mode: 'blind_sqm', minSqm },
     };
   }
 
@@ -753,10 +775,24 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
   vars.HEM_SIDE = num(fRule && fRule.sideHem);
   vars.HEM_TB = num(fRule && fRule.topBottomHem);
 
-  const panelsStr = (fRule && fRule.panelCountExp)
-    ? evalFormulaExpr(fRule.panelCountExp, vars, 'ceil_int')
-    : String(Math.ceil(((vars.WC * vars.G) + vars.HEM_SIDE) / Math.max(1, vars.FW_FAB)) * P);
-  vars.PANELS = num(panelsStr) || P;
+  if (hasUnequalSplit && (splitL > 0 || splitR > 0)) {
+    const varsL = Object.assign({}, vars, { WC: splitL, P: 1 });
+    const varsR = Object.assign({}, vars, { WC: splitR, P: 1 });
+    const pL = (fRule && fRule.panelCountExp)
+      ? num(evalFormulaExpr(fRule.panelCountExp, varsL, 'ceil_int'))
+      : Math.ceil(((splitL * vars.G) + vars.HEM_SIDE) / Math.max(1, vars.FW_FAB));
+    const pR = (fRule && fRule.panelCountExp)
+      ? num(evalFormulaExpr(fRule.panelCountExp, varsR, 'ceil_int'))
+      : Math.ceil(((splitR * vars.G) + vars.HEM_SIDE) / Math.max(1, vars.FW_FAB));
+    vars.PANELS = (pL || 1) + (pR || 1);
+    vars.P = 2;
+    vars.WC = (splitL + splitR) / 2;
+  } else {
+    const panelsStr = (fRule && fRule.panelCountExp)
+      ? evalFormulaExpr(fRule.panelCountExp, vars, 'ceil_int')
+      : String(Math.ceil(((vars.WC * vars.G) + vars.HEM_SIDE) / Math.max(1, vars.FW_FAB)) * effPieces);
+    vars.PANELS = num(panelsStr) || effPieces;
+  }
 
   const yrCntStr = (fRule && fRule.yRepeatCountExp)
     ? evalFormulaExpr(fRule.yRepeatCountExp, vars, 'ceil_int')
@@ -769,7 +805,7 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
   }
 
   return {
-    a, b, n: (RW || RH) ? String(P) : '', t,
+    a, b, n: (RW || RH || hasUnequalSplit) ? String(effPieces) : '', t,
     RW, RH, unit1: 'ผืน', unit2: 'หลา',
     details: {
       mode: grainType,
@@ -807,12 +843,358 @@ function formatCurtainType(w) {
   return (w.curtainType || '').trim();
 }
 
-/* ---------------- Modal UI for Master DB (Admin Only) ---------------- */
+/* ---------------- Modal UI for Master DB (Admin Only + Per-Tab TXT/CSV Import & Pattern) ---------------- */
+const DB_IMPORT_SCHEMAS = {
+  staff: {
+    title: 'ฐานข้อมูลพนักงาน & ผู้ใช้งาน (Login)',
+    pattern: 'username, password, role, name, dept, branch',
+    desc: 'คอลัมน์: รหัสผู้ใช้ (Username), รหัสผ่าน (Password), สิทธิ์ (admin หรือ staff), ชื่อพนักงาน, แผนก, สาขา',
+    example: [
+      'username, password, role, name, dept, branch',
+      'T58121, Admin, admin, นฤชา, ขาย, สาขาเซ็นทรัลลาดพร้าว',
+      'EMP001, 1234, staff, สมชาย ใจดี, ขาย, สาขาสยามพารากอน',
+    ].join('\n'),
+    headers: ['username', 'รหัสผู้ใช้', 'user'],
+    parseRow(cols, idx) {
+      if (!cols[0] && !cols[3]) return null;
+      return {
+        id: 'st_imp_' + Date.now() + '_' + idx,
+        username: cols[0] || '',
+        password: cols[1] || '1234',
+        role: String(cols[2] || '').toLowerCase() === 'admin' ? 'admin' : 'staff',
+        name: cols[3] || cols[0] || '',
+        dept: cols[4] || '',
+        branch: cols[5] || '',
+      };
+    },
+  },
+  fabrics: {
+    title: 'ฐานข้อมูลผ้า',
+    pattern: 'name, design, fabricWidth, yRepeat, calcMode',
+    desc: 'คอลัมน์: ชื่อผ้า, ดีไซน์ผ้า, ขนาดหน้าผ้า(ซม.), Y-Repeat(ซม.), รูปแบบเกรน (opaque / both / sheer — เฉพาะหน้าผ้า > 270 ซม. จึงใช้ both หรือ sheer ได้)',
+    example: [
+      'name, design, fabricWidth, yRepeat, calcMode',
+      'PASAYA Blackout, BO-140, 140, 0, opaque',
+      'PASAYA Wide Width, WW-300, 300, 0, both',
+      'PASAYA Jacquard, JQ-280, 280, 32, both',
+    ].join('\n'),
+    headers: ['name', 'ชื่อผ้า', 'cs des'],
+    parseRow(cols, idx) {
+      if (!cols[0]) return null;
+      const fw = parseFloat(cols[2]) || 140;
+      const yr = parseFloat(cols[3]) || 0;
+      const rawMode = String(cols[4] || 'opaque').toLowerCase();
+      const allowSheer = canFabricUseSheerGrain(fw);
+      const calcMode = allowSheer
+        ? (rawMode === 'sheer' ? 'sheer' : (rawMode === 'both' ? 'both' : 'opaque'))
+        : 'opaque';
+      return {
+        id: 'fab_imp_' + Date.now() + '_' + idx,
+        name: cols[0],
+        design: cols[1] || '',
+        fabricWidth: fw,
+        yRepeat: yr,
+        calcMode,
+      };
+    },
+  },
+  widthFormulas: {
+    title: 'ฐานข้อมูลขนาดความกว้างผ้าม่าน',
+    pattern: 'curtainStyle, label, railWidth, pieces, gatherRatio, overlap, sideReturn, widthExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบผ้าม่าน, ชื่อเงื่อนไข, ขนาดราง(RW), จำนวนผืน(P), ระยะย่น(G), เผื่อเกย(OV), เผื่ออ้อมข้าง(SR), สูตรความกว้างผ้า, การปัดเศษ (ceil_int / floor_int / ceil_1dec / none)',
+    example: [
+      'curtainStyle, label, railWidth, pieces, gatherRatio, overlap, sideReturn, widthExp, roundMode',
+      'ม่านจีบ, ม่านจีบ แยกกลาง 2 ผืน, RW, 2, 2.5, 10, 15, ((RW + OV + SR) / P), ceil_int',
+      'ม่านลอน, ม่านลอน แยกกลาง 2 ผืน, RW, 2, 2.2, 10, 10, ((RW + OV + SR) / P), ceil_int',
+    ].join('\n'),
+    headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
+    parseRow(cols, idx) {
+      if (!cols[0] && !cols[1]) return null;
+      return {
+        id: 'wf_imp_' + Date.now() + '_' + idx,
+        curtainStyle: cols[0] || '*',
+        label: cols[1] || cols[0] || 'เงื่อนไขความกว้าง',
+        railWidth: cols[2] || 'RW',
+        pieces: parseInt(cols[3], 10) || 2,
+        gatherRatio: parseFloat(cols[4]) || 2.5,
+        overlap: parseFloat(cols[5]) || 0,
+        sideReturn: parseFloat(cols[6]) || 0,
+        widthExp: cols[7] || '((RW + OV + SR) / P)',
+        roundMode: cols[8] || 'ceil_int',
+      };
+    },
+  },
+  heightFormulas: {
+    title: 'ฐานข้อมูลขนาดความสูงผ้าม่าน',
+    pattern: 'curtainStyle, rodType, hookSize, label, heightExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบผ้าม่าน, ประเภทรางม่าน, ขนาดตะขอ(หรือ *), ชื่อเงื่อนไขความสูง, สูตรความสูงผ้า, การปัดเศษ (none / floor_int / ceil_int / ceil_1dec)',
+    example: [
+      'curtainStyle, rodType, hookSize, label, heightExp, roundMode',
+      'ม่านจีบ, รางม่านจีบ, No.5, ม่านจีบ + รางม่านจีบ + ตะขอ No.5 (หักราง 2 ซม.), RH - 2, none',
+      'ม่านลอน, รางม่านลอน, *, ม่านลอน + รางม่านลอน (หักราง 2.5 ซม.), RH - 2.5, none',
+    ].join('\n'),
+    headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
+    parseRow(cols, idx) {
+      if (!cols[0] && !cols[3]) return null;
+      return {
+        id: 'hf_imp_' + Date.now() + '_' + idx,
+        curtainStyle: cols[0] || '*',
+        rodType: cols[1] || '*',
+        hookSize: cols[2] || '*',
+        label: cols[3] || 'เงื่อนไขความสูง',
+        heightExp: cols[4] || 'RH',
+        roundMode: cols[5] || 'none',
+      };
+    },
+  },
+  fabricCalcRules: {
+    title: 'ฐานข้อมูลคำนวณปริมาณผ้า (เกรนม่านทึบ / เกรนม่านโปร่ง)',
+    pattern: 'curtainStyle, grainType, label, fabricWidth, yRepeat, gatherRatio, sideHem, topBottomHem, pieces, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบม่าน, เกรน(opaque/sheer), ชื่อสูตร, ขนาดหน้าผ้า(FW_FAB), Y-Repeat(YR), ระยะย่น(G), พับริม(HEM_SIDE), พับบนล่าง(HEM_TB), จำนวนผืน(P), สูตรจำนวนหน้าผ้า(PANELS), สูตรจำนวนY-Repeat(YR_CNT), สูตรปริมาณผ้า(หลา), การปัดเศษ',
+    example: [
+      'curtainStyle, grainType, label, fabricWidth, yRepeat, gatherRatio, sideHem, topBottomHem, pieces, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
+      'ม่านจีบ, opaque, เกรนม่านทึบ - ม่านจีบ, 140, 0, 2.5, 15, 35, 2, CEIL(((WC * G) + HEM_SIDE) / FW_FAB) * P, YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0, (PANELS * (YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB))) / 90, ceil_1dec',
+      'ม่านจีบ, sheer, เกรนม่านโปร่ง - ม่านจีบ, 300, 0, 2.5, 15, 35, 2, P, 0, (((WC * G) + HEM_SIDE) * P) / 90, ceil_1dec',
+    ].join('\n'),
+    headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
+    parseRow(cols, idx) {
+      if (!cols[0] && !cols[2]) return null;
+      return {
+        id: 'fcr_imp_' + Date.now() + '_' + idx,
+        curtainStyle: cols[0] || '*',
+        grainType: String(cols[1] || '').toLowerCase() === 'sheer' ? 'sheer' : 'opaque',
+        label: cols[2] || 'สูตรคำนวณปริมาณผ้า',
+        fabricWidth: parseFloat(cols[3]) || 140,
+        yRepeat: parseFloat(cols[4]) || 0,
+        gatherRatio: parseFloat(cols[5]) || 2.5,
+        sideHem: parseFloat(cols[6]) || 15,
+        topBottomHem: parseFloat(cols[7]) || 35,
+        pieces: parseInt(cols[8], 10) || 2,
+        panelCountExp: cols[9] || 'CEIL(((WC * G) + HEM_SIDE) / FW_FAB) * P',
+        yRepeatCountExp: cols[10] || 'YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0',
+        qtyExp: cols[11] || '(PANELS * (YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB))) / 90',
+        roundMode: cols[12] || 'ceil_1dec',
+      };
+    },
+  },
+  rails: {
+    title: 'ฐานข้อมูลรางและอุปกรณ์',
+    pattern: 'name, rodCategory, curtainStyle, defaultColor',
+    desc: 'คอลัมน์: ชื่อรางและอุปกรณ์, ประเภทรางม่าน (รางม่านจีบ/รางโชว์/รางม่านลอน/รางม่านพับ), ใช้กับรูปแบบม่านอะไร, สีมาตรฐาน',
+    example: [
+      'name, rodCategory, curtainStyle, defaultColor',
+      'รางม่านจีบ มาตรฐาน (M), รางม่านจีบ, ม่านจีบ, ขาว',
+      'รางโชว์ ลายไม้สัก 28 มม., รางโชว์, ม่านตาไก่, ลายไม้สัก',
+    ].join('\n'),
+    headers: ['name', 'ชื่อราง', 'ชื่ออุปกรณ์'],
+    parseRow(cols, idx) {
+      if (!cols[0]) return null;
+      return {
+        id: 'rl_imp_' + Date.now() + '_' + idx,
+        name: cols[0],
+        rodCategory: cols[1] || 'รางม่านจีบ',
+        curtainStyle: cols[2] || '*',
+        defaultColor: cols[3] || '',
+      };
+    },
+  },
+  blinds: {
+    title: 'ฐานข้อมูลมู่ลี่และม่านม้วน (ตร.ม.)',
+    pattern: 'name, curtainStyle, minSqm, roundMode',
+    desc: 'คอลัมน์: ชื่อมู่ลี่/ม่านม้วน, รูปแบบม่าน (ม่านม้วน/มู่ลี่ไม้/มู่ลี่อลูมิเนียม), ขายขั้นต่ำ(ตร.ม./ผืน อย่างน้อย 1.5), การปัดเศษ (ceil_1dec / ceil_int / floor_int / none)',
+    example: [
+      'name, curtainStyle, minSqm, roundMode',
+      'ม่านม้วน Blackout, ม่านม้วน, 1.5, ceil_1dec',
+      'มู่ลี่ไม้ Basswood 50mm, มู่ลี่ไม้, 1.5, ceil_1dec',
+    ].join('\n'),
+    headers: ['name', 'ชื่อมู่ลี่', 'ชื่อม่านม้วน'],
+    parseRow(cols, idx) {
+      if (!cols[0]) return null;
+      return {
+        id: 'bl_imp_' + Date.now() + '_' + idx,
+        name: cols[0],
+        curtainStyle: cols[1] || 'ม่านม้วน',
+        minSqm: Math.max(1.5, parseFloat(cols[2]) || 1.5),
+        roundMode: cols[3] || 'ceil_1dec',
+      };
+    },
+  },
+  curtains: {
+    title: 'ฐานข้อมูลรูปแบบผ้าม่าน',
+    pattern: 'name, useHook',
+    desc: 'คอลัมน์: ชื่อรูปแบบผ้าม่าน, ใช้ตะขอหรือไม่ (true / false หรือ 1 / 0 หรือ ใช่ / ไม่ใช่)',
+    example: [
+      'name, useHook',
+      'ม่านจีบ, true',
+      'ม่านลอน, true',
+      'ม่านตาไก่, false',
+    ].join('\n'),
+    headers: ['name', 'ชื่อรูปแบบผ้าม่าน', 'รูปแบบผ้าม่าน'],
+    parseRow(cols, idx) {
+      if (!cols[0]) return null;
+      const h = String(cols[1] || '').toLowerCase();
+      return {
+        id: 'ct_imp_' + Date.now() + '_' + idx,
+        name: cols[0],
+        useHook: h === 'true' || h === '1' || h === 'yes' || h === 'ใช่',
+      };
+    },
+  },
+  hooks: {
+    title: 'ฐานข้อมูลขนาดตะขอ',
+    pattern: 'name',
+    desc: 'คอลัมน์: ชื่อขนาดตะขอ (1 บรรทัดต่อ 1 รายการ)',
+    example: [
+      'name',
+      'No.5',
+      'No.7',
+      'No.9',
+    ].join('\n'),
+    headers: ['name', 'ขนาดตะขอ'],
+    parseRow(cols, idx) {
+      if (!cols[0]) return null;
+      return { id: 'hk_imp_' + Date.now() + '_' + idx, name: cols[0] };
+    },
+  },
+  remarks: {
+    title: 'ฐานข้อมูลข้อความหมายเหตุรอบบาน',
+    pattern: 'name',
+    desc: 'คอลัมน์: ข้อความหมายเหตุรอบบาน (1 บรรทัดต่อ 1 รายการ)',
+    example: [
+      'name',
+      'ชนแอร์',
+      'ปลั๊กไฟ',
+      'ติดบิ้วอิน',
+    ].join('\n'),
+    headers: ['name', 'ข้อความหมายเหตุ', 'หมายเหตุ'],
+    parseRow(cols, idx) {
+      if (!cols[0]) return null;
+      return { id: 'rm_imp_' + Date.now() + '_' + idx, name: cols[0] };
+    },
+  },
+};
+
+function splitDelimitedLine(line) {
+  const s = String(line || '').trim();
+  if (!s) return [];
+  // รองรับทั้ง Tab, Pipe (|) และ Comma (,) พร้อมเครื่องหมายคำพูด "..."
+  const delim = s.includes('\t') ? '\t' : (s.includes('|') && !s.includes(',') ? '|' : ',');
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '"') {
+      if (inQuotes && s[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === delim && !inQuotes) {
+      out.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
 const MasterDBModal = (() => {
   let activeTab = 'staff';
   let onUpdate = null;
+  let importStatusMsg = '';
+  let showPasteBox = false;
+  let importMode = 'append'; // 'append' | 'replace'
 
   const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function renderImportBox(tab) {
+    const schema = DB_IMPORT_SCHEMAS[tab];
+    if (!schema) return '';
+    return `
+      <div class="subcard" style="margin-bottom:10px;background:#f4f8ff;border:1px solid #bfd6ff">
+        <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div>
+            <b style="color:#0b3a8c;font-size:12.5px">📥 นำเข้าข้อมูล "${escH(schema.title)}" จากไฟล์ .txt หรือ .csv (แยกเฉพาะฐานข้อมูลหน้านี้)</b>
+            <div style="font-size:11.5px;color:#333;margin-top:2px">
+              <b>Pattern ข้อมูลที่ต้องนำเข้า:</b> <code style="background:#fff;padding:2px 6px;border:1px solid #ccd8ee;border-radius:4px;color:#b42318;font-weight:700">${escH(schema.pattern)}</code>
+            </div>
+            <div style="font-size:11px;color:#555;margin-top:2px">${escH(schema.desc)}</div>
+          </div>
+          <div class="inline" style="flex-wrap:wrap">
+            <select id="dbImportModeSel" style="width:auto;font-size:12px" title="เลือกรูปแบบการนำเข้า">
+              <option value="append" ${importMode === 'append' ? 'selected' : ''}>➕ เพิ่มต่อท้ายข้อมูลเดิม</option>
+              <option value="replace" ${importMode === 'replace' ? 'selected' : ''}>🔄 แทนที่ข้อมูลเดิมในหมวดนี้</option>
+            </select>
+            <button type="button" class="primary" data-db-import-file="${escH(tab)}">📂 เลือกไฟล์ .txt / .csv นำเข้า</button>
+            <button type="button" data-db-toggle-paste="${escH(tab)}">📋 วางข้อความนำเข้า</button>
+            <button type="button" data-db-dl-sample="${escH(tab)}" title="ดาวน์โหลดไฟล์ตัวอย่างตาม Pattern ของฐานข้อมูลหน้านี้">⬇ ไฟล์ตัวอย่าง (.csv/.txt)</button>
+          </div>
+        </div>
+        <details style="margin-top:6px;font-size:11.5px">
+          <summary style="cursor:pointer;color:#1f6feb;font-weight:600">👁️ ดูตัวอย่างข้อมูล (Pattern Example สำหรับไฟล์ .txt และ .csv ของหมวดนี้)</summary>
+          <pre style="margin:4px 0 0;padding:6px 8px;background:#fff;border:1px solid #d5e0f2;border-radius:4px;font-size:11px;overflow-x:auto;line-height:1.4">${escH(schema.example)}</pre>
+        </details>
+        ${showPasteBox ? `
+          <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #bfd6ff">
+            <textarea id="dbPasteTextarea" rows="4" placeholder="วางข้อมูลตาม Pattern (${escH(schema.pattern)}) บรรทัดละ 1 รายการ..." style="font-family:monospace;font-size:12px"></textarea>
+            <div class="inline" style="margin-top:4px;justify-content:flex-end">
+              <button type="button" data-db-cancel-paste="1">ยกเลิก</button>
+              <button type="button" class="primary" data-db-run-paste="${escH(tab)}">✔ นำเข้าข้อมูลที่วาง</button>
+            </div>
+          </div>
+        ` : ''}
+        ${importStatusMsg ? `<div style="margin-top:6px;padding:4px 8px;background:#e6f7ed;border:1px solid #8fd1a8;border-radius:4px;color:#0f5132;font-size:12px;font-weight:600">${escH(importStatusMsg)}</div>` : ''}
+      </div>
+    `;
+  }
+
+  function importTextIntoTab(tab, rawText, mode = 'append') {
+    const schema = DB_IMPORT_SCHEMAS[tab];
+    if (!schema || !Array.isArray(masterDB[tab])) return 0;
+    const text = String(rawText || '').replace(/^\uFEFF/, '');
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#') && !l.startsWith('//'));
+    const parsedItems = [];
+    lines.forEach((line, idx) => {
+      const cols = splitDelimitedLine(line);
+      if (!cols.length) return;
+      if (idx === 0) {
+        const firstCol = String(cols[0] || '').trim().toLowerCase();
+        if (schema.headers && schema.headers.some(h => firstCol === h.toLowerCase())) {
+          return; // ข้ามบรรทัด Header อัตโนมัติ
+        }
+      }
+      const item = schema.parseRow(cols, idx);
+      if (item) parsedItems.push(item);
+    });
+    if (!parsedItems.length) {
+      alert('ไม่พบข้อมูลที่ตรงตาม Pattern สำหรับนำเข้า กรุณาตรวจสอบรูปแบบข้อมูล');
+      return 0;
+    }
+    if (mode === 'replace') {
+      masterDB[tab] = parsedItems;
+    } else {
+      masterDB[tab].push(...parsedItems);
+    }
+    saveMasterDB();
+    importStatusMsg = `✔ นำเข้าข้อมูลเข้าสู่ "${schema.title}" สำเร็จจำนวน ${parsedItems.length} รายการ`;
+    showPasteBox = false;
+    render();
+    if (onUpdate) onUpdate();
+    return parsedItems.length;
+  }
+
+  function downloadSampleForTab(tab) {
+    const schema = DB_IMPORT_SCHEMAS[tab];
+    if (!schema) return;
+    const blob = new Blob(['\uFEFF' + schema.example + '\n'], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `pattern_${tab}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
 
   function curtainSelectOpts(selected) {
     const opts = [['*', 'ทั้งหมด (*)'], ...(masterDB.curtains || []).map(c => [c.name, c.name])];
@@ -1145,9 +1527,14 @@ const MasterDBModal = (() => {
         <button type="button" class="primary" style="margin-top:8px" data-db-add="remarks">➕ เพิ่มข้อความหมายเหตุ</button>
       `;
     }
+      body.innerHTML = renderImportBox(activeTab) + body.innerHTML;
   }
 
   function onEditChange(e) {
+    if (e.target && e.target.id === 'dbImportModeSel') {
+      importMode = e.target.value;
+      return;
+    }
     const k = e.target.dataset.dbEdit;
     if (!k) return;
     const [list, idx, field] = k.split('.');
@@ -1170,8 +1557,33 @@ const MasterDBModal = (() => {
     onUpdate = cb;
     refreshRemarksDatalist();
     const modal = document.getElementById('dbModal');
+    let fileInput = document.getElementById('dbImportFileInput');
+    if (!fileInput) {
+      fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.id = 'dbImportFileInput';
+      fileInput.accept = '.txt,.csv,text/plain,text/csv';
+      fileInput.hidden = true;
+      document.body.appendChild(fileInput);
+      fileInput.addEventListener('change', e => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        const targetTab = fileInput.dataset.targetTab || activeTab;
+        const rd = new FileReader();
+        rd.onload = () => {
+          importTextIntoTab(targetTab, rd.result, importMode);
+          fileInput.value = '';
+        };
+        rd.readAsText(f, 'UTF-8');
+      });
+    }
     document.querySelectorAll('[data-dbtab]').forEach(b => {
-      b.addEventListener('click', () => { activeTab = b.dataset.dbtab; render(); });
+      b.addEventListener('click', () => {
+        activeTab = b.dataset.dbtab;
+        importStatusMsg = '';
+        showPasteBox = false;
+        render();
+      });
     });
     document.getElementById('dbClose').addEventListener('click', () => {
       modal.hidden = true;
@@ -1180,6 +1592,39 @@ const MasterDBModal = (() => {
     modal.addEventListener('input', onEditChange);
     modal.addEventListener('change', onEditChange);
     modal.addEventListener('click', e => {
+      const impFileBtn = e.target.closest('[data-db-import-file]');
+      if (impFileBtn) {
+        fileInput.dataset.targetTab = impFileBtn.dataset.dbImportFile || activeTab;
+        fileInput.click();
+        return;
+      }
+      const togglePasteBtn = e.target.closest('[data-db-toggle-paste]');
+      if (togglePasteBtn) {
+        showPasteBox = !showPasteBox;
+        importStatusMsg = '';
+        render();
+        return;
+      }
+      if (e.target.closest('[data-db-cancel-paste]')) {
+        showPasteBox = false;
+        render();
+        return;
+      }
+      const runPasteBtn = e.target.closest('[data-db-run-paste]');
+      if (runPasteBtn) {
+        const ta = document.getElementById('dbPasteTextarea');
+        if (ta && ta.value.trim()) {
+          importTextIntoTab(runPasteBtn.dataset.dbRunPaste || activeTab, ta.value, importMode);
+        } else {
+          alert('กรุณาวางข้อความตาม Pattern ก่อนกดนำเข้า');
+        }
+        return;
+      }
+      const dlSampleBtn = e.target.closest('[data-db-dl-sample]');
+      if (dlSampleBtn) {
+        downloadSampleForTab(dlSampleBtn.dataset.dbDlSample || activeTab);
+        return;
+      }
       const add = e.target.closest('[data-db-add]');
       if (add) {
         const t = add.dataset.dbAdd;
