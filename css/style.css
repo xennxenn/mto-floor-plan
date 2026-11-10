@@ -210,6 +210,7 @@ button.wide { width: 100%; justify-content: center; margin: 6px 0; }
 /* ---------- VIEW 2: Workspace Layout ---------- */
 .layout { display: flex; height: calc(100vh - 92px); }
 .layout[hidden], .dashboard[hidden], .login-view[hidden], .top-sheet-nav[hidden], header[hidden], main[hidden], label[hidden], button[hidden], span[hidden], div[hidden] { display: none !important; }
+body.role-staff .admin-only-db { display: none !important; }
 
 .editor {
   width: 530px; min-width: 420px; overflow-y: auto; padding: 10px;
@@ -291,8 +292,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
 .calc-ed td { padding: 2px; }
 .calc-ed td.op { text-align: center; color: #888; width: 12px; }
 .calc-ed input { padding: 4px !important; text-align: center; }
-.win-thumb { height: 100px; display: flex; justify-content: center; margin: 4px 0; background: #fff; border: 1px solid #eef1f6; border-radius: 4px; }
-.win-thumb svg { height: 100%; }
+.win-thumb { height: 148px; display: flex; justify-content: center; margin: 4px 0; background: #fff; border: 1px solid #eef1f6; border-radius: 4px; }
+.win-thumb svg { height: 100%; width: 100%; max-width: 340px; }
+.calc-mode-bar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 6px; padding: 6px 8px; margin-top: 6px; background: #eef4ff; border: 1px solid #bfd6ff; border-radius: 6px; font-size: 12px;
+}
+.calc-mode-bar label { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #1d2433; cursor: pointer; }
+.calc-auto-box {
+  margin-top: 6px; padding: 6px 8px; background: #f5f8ff; border: 1px solid #dbe5f5; border-radius: 6px; display: grid; gap: 5px;
+}
 
 /* ---------- preview (Req #13) ---------- */
 .preview-wrap { flex: 1; overflow: auto; background: #5b6170; position: relative; }
@@ -403,13 +412,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
   font-size: 8.5px; line-height: 1; font-weight: 700; color: #000; background: #fff;
 }
 
-/* 2) Customer & Staff Block (fixed 112px) */
+/* 2) Customer & Staff Block (fixed 116px) */
 .s-cust {
   display: flex; gap: 14px; margin-top: 3px;
-  height: 112px; flex: 0 0 112px; overflow: hidden;
+  height: 116px; flex: 0 0 116px; overflow: hidden;
 }
 .s-cust .cl { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; }
 .s-cust .cr { width: 228px; flex: 0 0 228px; display: flex; flex-direction: column; justify-content: space-between; }
+.s-cust .cr .r { min-height: 14px; line-height: 1.32; }
 .s-cust .disc .dlbl { display: inline-block; width: 32px; flex-shrink: 0; }
 
 /* 3) Map Room & Notes Block (fixed 76px, Req #14: ไม่มีกรอบล้อมแปลนห้อง) */
@@ -438,14 +448,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
 .s-map .rt { width: 215px; flex: 0 0 215px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
 .s-map .rt .ol { display: inline-block; width: 42px; flex-shrink: 0; }
 
-/* 4) Window / Door 2x2 Grid (fixed 506px, position:relative for floating note boxes Req #12) */
+/* 4) Window / Door 2x2 Grid (fixed 502px, position:relative for floating note boxes Req #12) */
 .s-wins {
   position: relative;
   border: 1px solid #000; border-top: none;
   display: grid;
   grid-template-columns: 50% 50%;
   grid-template-rows: 50% 50%;
-  height: 506px; flex: 0 0 506px;
+  height: 502px; flex: 0 0 502px;
   overflow: hidden;
 }
 .wc {
@@ -481,7 +491,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
   flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
   overflow: hidden; margin: 1px 0;
 }
-.wc .wdiag svg { width: 100%; height: 100%; max-height: 138px; }
+.wc .wdiag svg { width: 100%; height: 100%; max-height: 150px; }
 
 /* Req #8: "_____" , "X" , "=" ของขนาดราง ผ้าม่านทึบ ผ้าม่านโปร่ง ตรงกันเป็นแนวตั้งเดียวกันเป๊ะ */
 .calc-group { display: flex; flex-direction: column; gap: 1px; }

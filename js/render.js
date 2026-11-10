@@ -129,11 +129,15 @@ const numVal = v => {
 const hasVal = v => v !== undefined && v !== null && String(v).trim() !== '';
 
 function calcRailWidth(w) {
+  if (!w) return '';
+  if (w.calcMode === 'manual' && hasVal(w.customRailW)) return String(w.customRailW).trim();
   if (!hasVal(w.width) && !hasVal(w.extL) && !hasVal(w.extR)) return '';
   const sum = numVal(w.width) + numVal(w.extL) + numVal(w.extR);
   return sum ? String(Math.round(sum * 100) / 100) : '';
 }
 function calcRailHeight(w) {
+  if (!w) return '';
+  if (w.calcMode === 'manual' && hasVal(w.customRailH)) return String(w.customRailH).trim();
   if (!hasVal(w.height) && !hasVal(w.extT) && !hasVal(w.extB)) return '';
   const sum = numVal(w.height) + numVal(w.extT) + numVal(w.extB);
   return sum ? String(Math.round(sum * 100) / 100) : '';
@@ -515,13 +519,12 @@ function windowSVG(w) {
   w = w || {};
   const shape = String(w.cornerShape || '1');
   const wings = shapeWings(shape);
-  const paneStyle = w.paneStyle || 'double';
-  const VW = 360, VH = 190;
+  const VW = 316, VH = 172;
 
-  // ปีกดัดโค้ง 90° กว้าง 26px เพื่อแสดงการรวบผ้าม่านชัดเจน
-  const wingDX = 26, wingDY = 14;
-  const x0 = 104, x1 = 220;
-  const y0 = 60, y1 = 136;
+  // ขยายรูปแปลนหน้าต่าง/ประตูให้ใหญ่ขึ้นชัดเจน ดูง่ายไม่เล็กไป
+  const wingDX = 28, wingDY = 14;
+  const x0 = 82, x1 = 226;
+  const y0 = 42, y1 = 136;
   const surfaces = getFrameSurfaces(x0, x1, y0, y1, wings, wingDX, wingDY);
 
   const leftOuterX = wings.left ? x0 - wingDX : x0;
@@ -535,14 +538,14 @@ function windowSVG(w) {
   //    และตัวเลขของ พื้นที่ด้านซ้าย / พื้นที่ด้านขวา / พื้นที่ด้านบน / พื้นที่ด้านล่าง อยู่นอกเส้น!
   // 3) เหนือเฟรมหน้าต่าง (ระหว่าง leftOuterX ถึง vLineX) แสดงสัญลักษณ์ "+" คั่นเป็น: เผื่อซ้าย + ความกว้าง + เผื่อขวา (เช่น 50 + 150 + 50)
   // 4) ด้านขวาของเฟรมหน้าต่าง (ระหว่าง topOuterY ถึง botOuterY) แสดงสัญลักษณ์ "+" คั่นเป็น: เผื่อบน + ความสูง + เผื่อล่าง
-  const hLineY = topOuterY - 12;
-  const vLineX = wings.right ? rightOuterX + 6 : rightOuterX;
+  const hLineY = topOuterY - 10;
+  const vLineX = wings.right ? rightOuterX + 5 : rightOuterX;
 
-  const hLineX0 = leftOuterX - 28;
-  const hLineX1 = vLineX + 34;
+  const hLineX0 = leftOuterX - 24;
+  const hLineX1 = vLineX + 28;
 
-  const vLineY0 = hLineY - 18;
-  const vLineY1 = botOuterY + 18;
+  const vLineY0 = hLineY - 14;
+  const vLineY1 = botOuterY + 14;
 
   const cx = (leftOuterX + rightOuterX) / 2;
   const cy = (y0 + y1) / 2;
@@ -550,34 +553,28 @@ function windowSVG(w) {
   let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet" font-family="Sarabun, Tahoma, sans-serif">`;
 
   // ==================== 1) เส้นความกว้างแนวนอน + สัญลักษณ์ "+" (50 + 150 + 50) ตามรูป 151942 ====================
-  // เส้นแนวนอนหลักจาก hLineX0 ตัดผ่าน leftOuterX และตัดผ่านเส้นความสูง vLineX ไปสิ้นสุดที่ hLineX1
-  s += `<line x1="${hLineX0}" y1="${hLineY}" x2="${hLineX1}" y2="${hLineY}" stroke="#000" stroke-width="1.15"/>`;
-  // ขีดปิดปลายเส้นด้านซ้ายสุด (hLineX0) และด้านขวาสุด (hLineX1)
-  s += `<line x1="${hLineX0}" y1="${hLineY - 5}" x2="${hLineX0}" y2="${hLineY + 5}" stroke="#000" stroke-width="1.05"/>`;
-  s += `<line x1="${hLineX1}" y1="${hLineY - 5}" x2="${hLineX1}" y2="${hLineY + 5}" stroke="#000" stroke-width="1.05"/>`;
+  s += `<line x1="${hLineX0}" y1="${hLineY}" x2="${hLineX1}" y2="${hLineY}" stroke="#000" stroke-width="1.25"/>`;
+  s += `<line x1="${hLineX0}" y1="${hLineY - 5}" x2="${hLineX0}" y2="${hLineY + 5}" stroke="#000" stroke-width="1.15"/>`;
+  s += `<line x1="${hLineX1}" y1="${hLineY - 5}" x2="${hLineX1}" y2="${hLineY + 5}" stroke="#000" stroke-width="1.15"/>`;
 
-  // เส้นขอบซ้ายของเฟรมหน้าต่างลากขึ้นไปตัดเส้นแนวนอน (ตามรูป 151942)
   const leftFrameTopY = surfaces.leftWing ? surfaces.leftWing.tl.y : y0;
-  s += `<line x1="${leftOuterX}" y1="${leftFrameTopY}" x2="${leftOuterX}" y2="${hLineY - 5}" stroke="#000" stroke-width="1.05"/>`;
+  s += `<line x1="${leftOuterX}" y1="${leftFrameTopY}" x2="${leftOuterX}" y2="${hLineY - 5}" stroke="#000" stroke-width="1.15"/>`;
 
-  // ตำแหน่งสัญลักษณ์ "+" 2 จุดเหนือเฟรมหน้าต่าง (คั่นระหว่าง เผื่อซ้าย + ความกว้าง + เผื่อขวา เช่น 50 + 150 + 50)
   const spanW = vLineX - leftOuterX;
   const plusX1 = Math.round(leftOuterX + spanW * 0.30);
   const plusX2 = Math.round(leftOuterX + spanW * 0.70);
   [plusX1, plusX2].forEach(px => {
-    // วาดสัญลักษณ์ "+" บนเส้นแนวนอนตามรูป 151942
-    s += `<line x1="${px}" y1="${hLineY - 9}" x2="${px}" y2="${hLineY}" stroke="#000" stroke-width="1.0"/>`;
-    s += `<line x1="${px - 4.5}" y1="${hLineY - 4.5}" x2="${px + 4.5}" y2="${hLineY - 4.5}" stroke="#000" stroke-width="1.0"/>`;
+    s += `<line x1="${px}" y1="${hLineY - 9}" x2="${px}" y2="${hLineY}" stroke="#000" stroke-width="1.1"/>`;
+    s += `<line x1="${px - 4.5}" y1="${hLineY - 4.5}" x2="${px + 4.5}" y2="${hLineY - 4.5}" stroke="#000" stroke-width="1.1"/>`;
   });
 
   const yTopNum = hLineY - 3;
-  const yTopNote = hLineY - 13;
+  const yTopNote = hLineY - 12;
   const drawHText = (x, anchor, textStr, noteStr, yNum = yTopNum, yNote = yTopNote) => {
     if (textStr) s += `<text x="${x}" y="${yNum}" text-anchor="${anchor}" font-size="11.2" font-weight="700" fill="#000">${esc(textStr)}</text>`;
     if (noteStr) s += `<text x="${x}" y="${yNote}" text-anchor="${anchor}" font-size="9.2" font-weight="700" fill="#000">${esc(noteStr)}</text>`;
   };
 
-  // ตัวเลขในแนวความกว้างเฟรม: [เผื่อซ้าย] + [ความกว้าง] + [เผื่อขวา] (เช่น 50 + 150 + 50)
   const pExtL = valWithNote(w.extL, w.noteExtL);
   drawHText((leftOuterX + plusX1) / 2, 'middle', pExtL.v, pExtL.n);
 
@@ -587,34 +584,30 @@ function windowSVG(w) {
   const pExtR = valWithNote(w.extR, w.noteExtR);
   drawHText((plusX2 + vLineX) / 2, 'middle', pExtR.v, pExtR.n);
 
-  // เลขของ "พื้นที่ด้านซ้าย" และ "พื้นที่ด้านขวา" ต้องอยู่นอกเส้น (นอกขีดปลายเส้น hLineX0 และ hLineX1)
   const pWallL = valWithNote(w.wallL, w.noteWallL);
-  drawHText(hLineX0 - 4, 'end', pWallL.v, pWallL.n, hLineY + 4, hLineY - 7);
+  drawHText(hLineX0 - 3, 'end', pWallL.v, pWallL.n, hLineY + 4, hLineY - 6);
 
   const pWallR = valWithNote(w.wallR, w.noteWallR);
-  drawHText(hLineX1 + 4, 'start', pWallR.v, pWallR.n, hLineY + 4, hLineY - 7);
+  drawHText(hLineX1 + 3, 'start', pWallR.v, pWallR.n, hLineY + 4, hLineY - 6);
 
   // ==================== 2) เส้นความสูงแนวตั้ง + สัญลักษณ์ "+" ด้านขวาเฟรม ตามรูป 151942 ====================
-  // เส้นแนวตั้งหลักลากจาก vLineY0 (เหนือเส้นแนวนอน) ตัดผ่านเส้นแนวนอนที่ (vLineX, hLineY) ลงมาถึง vLineY1
-  s += `<line x1="${vLineX}" y1="${vLineY0}" x2="${vLineX}" y2="${vLineY1}" stroke="#000" stroke-width="1.15"/>`;
-  // ขีดปิดปลายเส้นด้านบนสุด (vLineY0) และด้านล่างสุด (vLineY1)
-  s += `<line x1="${vLineX - 5}" y1="${vLineY0}" x2="${vLineX + 5}" y2="${vLineY0}" stroke="#000" stroke-width="1.05"/>`;
-  s += `<line x1="${vLineX - 5}" y1="${vLineY1}" x2="${vLineX + 5}" y2="${vLineY1}" stroke="#000" stroke-width="1.05"/>`;
+  s += `<line x1="${vLineX}" y1="${vLineY0}" x2="${vLineX}" y2="${vLineY1}" stroke="#000" stroke-width="1.25"/>`;
+  s += `<line x1="${vLineX - 5}" y1="${vLineY0}" x2="${vLineX + 5}" y2="${vLineY0}" stroke="#000" stroke-width="1.15"/>`;
+  s += `<line x1="${vLineX - 5}" y1="${vLineY1}" x2="${vLineX + 5}" y2="${vLineY1}" stroke="#000" stroke-width="1.15"/>`;
 
-  // เส้นยื่นบอกระดับขอบบนและขอบล่างของเฟรมทางด้านขวา พร้อมเส้น bracket แนวตั้งและเครื่องหมาย "+" 2 จุด ตามรูป 151942
-  const brkX = vLineX + 7;
+  const brkX = vLineX + 6;
   const spanH = botOuterY - topOuterY;
-  s += `<line x1="${vLineX}" y1="${topOuterY}" x2="${vLineX + 11}" y2="${topOuterY}" stroke="#000" stroke-width="1.0"/>`;
-  s += `<line x1="${vLineX}" y1="${botOuterY}" x2="${vLineX + 11}" y2="${botOuterY}" stroke="#000" stroke-width="1.0"/>`;
-  s += `<line x1="${brkX}" y1="${topOuterY}" x2="${brkX}" y2="${Math.round(topOuterY + spanH * 0.36)}" stroke="#000" stroke-width="0.95"/>`;
-  s += `<line x1="${brkX}" y1="${Math.round(topOuterY + spanH * 0.64)}" x2="${brkX}" y2="${botOuterY}" stroke="#000" stroke-width="0.95"/>`;
+  s += `<line x1="${vLineX}" y1="${topOuterY}" x2="${vLineX + 10}" y2="${topOuterY}" stroke="#000" stroke-width="1.05"/>`;
+  s += `<line x1="${vLineX}" y1="${botOuterY}" x2="${vLineX + 10}" y2="${botOuterY}" stroke="#000" stroke-width="1.05"/>`;
+  s += `<line x1="${brkX}" y1="${topOuterY}" x2="${brkX}" y2="${Math.round(topOuterY + spanH * 0.36)}" stroke="#000" stroke-width="1.0"/>`;
+  s += `<line x1="${brkX}" y1="${Math.round(topOuterY + spanH * 0.64)}" x2="${brkX}" y2="${botOuterY}" stroke="#000" stroke-width="1.0"/>`;
 
   const plusY1 = Math.round(topOuterY + spanH * 0.33);
   const plusY2 = Math.round(topOuterY + spanH * 0.67);
-  const plusVX = vLineX + 21;
+  const plusVX = vLineX + 19;
   [plusY1, plusY2].forEach(py => {
-    s += `<line x1="${plusVX - 4.5}" y1="${py}" x2="${plusVX + 4.5}" y2="${py}" stroke="#000" stroke-width="1.0"/>`;
-    s += `<line x1="${plusVX}" y1="${py - 4.5}" x2="${plusVX}" y2="${py + 4.5}" stroke="#000" stroke-width="1.0"/>`;
+    s += `<line x1="${plusVX - 4.5}" y1="${py}" x2="${plusVX + 4.5}" y2="${py}" stroke="#000" stroke-width="1.1"/>`;
+    s += `<line x1="${plusVX}" y1="${py - 4.5}" x2="${plusVX}" y2="${py + 4.5}" stroke="#000" stroke-width="1.1"/>`;
   });
 
   const drawVText = (xPos, yPos, anchor, textStr, noteStr) => {
@@ -624,7 +617,6 @@ function windowSVG(w) {
     }
   };
 
-  // ตัวเลขในแนวความสูงเฟรม: [เผื่อบน] + [ความสูง] + [เผื่อล่าง]
   const pExtT = valWithNote(w.extT, w.noteExtT);
   drawVText(plusVX, Math.round((topOuterY + plusY1) / 2 + 3), 'middle', pExtT.v, pExtT.n);
 
@@ -634,15 +626,13 @@ function windowSVG(w) {
   const pExtB = valWithNote(w.extB, w.noteExtB);
   drawVText(plusVX, Math.round((plusY2 + botOuterY) / 2 + 4), 'middle', pExtB.v, pExtB.n);
 
-  // เลขของ "พื้นที่ด้านบน" และ "พื้นที่ด้านล่าง" ต้องอยู่นอกเส้น (เหนือขีดบนสุด vLineY0 และใต้ขีดล่างสุด vLineY1)
   const pCeilT = valWithNote(w.ceilT, w.noteCeilT);
-  drawVText(vLineX, vLineY0 - 4, 'middle', pCeilT.v, pCeilT.n);
+  drawVText(vLineX, vLineY0 - 3, 'middle', pCeilT.v, pCeilT.n);
 
   const pFloorB = valWithNote(w.floorB, w.noteFloorB);
-  drawVText(vLineX, vLineY1 + 12, 'middle', pFloorB.v, pFloorB.n);
+  drawVText(vLineX, vLineY1 + 11, 'middle', pFloorB.v, pFloorB.n);
 
   // ==================== 3) ความสูงเต็ม & ความกว้างเต็ม ====================
-  // ความสูงเต็ม อยู่ด้านซ้ายสุดในแนวระนาบเดียวกับความสูง
   const fullHPair = valWithNote(w.fullH, w.noteFullH);
   const leftFullText = fullHPair.v ? `= สูงเต็ม ${fullHPair.v}` : (hasVal(w.drop) ? `= ${w.drop}` : '= สูงเต็ม');
   s += `<text x="2" y="${cy + 3}" text-anchor="start" font-size="10.0" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
@@ -650,34 +640,32 @@ function windowSVG(w) {
     s += `<text x="2" y="${cy + 14}" text-anchor="start" font-size="9.0" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
   }
 
-  // ขนาดความกว้างเต็ม ("= กว้างเต็ม ...") อยู่ด้านล่างของบานประตู/หน้าต่างในแนวตั้งเดียวกับความกว้าง
   const fullWPair = valWithNote(w.fullW, w.noteFullW);
   const botFullText = fullWPair.v
     ? `= กว้างเต็ม ${fullWPair.v}${fullWPair.n ? ' (' + fullWPair.n + ')' : ''}`
     : (fullWPair.n ? `= กว้างเต็ม (${fullWPair.n})` : '= กว้างเต็ม');
-  s += `<text x="${cx}" y="${botOuterY + 16}" text-anchor="middle" font-size="10.0" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
+  s += `<text x="${cx}" y="${botOuterY + 13}" text-anchor="middle" font-size="10.0" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
 
-  // ==================== 4) วาดกรอบหน้าต่าง/ประตู (แบบ 1–9) และรองรับจำนวนบานในกรอบมากกว่า 4 บาน ====================
+  // ==================== 4) วาดกรอบหน้าต่าง/ประตู (แบบ 1–9) ขนาดใหญ่ชัดเจน ====================
   if (surfaces.leftWing) {
-    s += quadPolygonSVG(surfaces.leftWing, `fill="#fff" stroke="#000" stroke-width="1.35" stroke-linejoin="round"`);
+    s += quadPolygonSVG(surfaces.leftWing, `fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round"`);
     const innerLW = subQuad(surfaces.leftWing, 0.10, 0.90, 0.06, 0.94);
-    s += quadPolygonSVG(innerLW, `fill="none" stroke="#000" stroke-width="0.8"`);
+    s += quadPolygonSVG(innerLW, `fill="none" stroke="#000" stroke-width="0.95"`);
   }
   if (surfaces.rightWing) {
-    s += quadPolygonSVG(surfaces.rightWing, `fill="#fff" stroke="#000" stroke-width="1.35" stroke-linejoin="round"`);
+    s += quadPolygonSVG(surfaces.rightWing, `fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round"`);
     const innerRW = subQuad(surfaces.rightWing, 0.10, 0.90, 0.06, 0.94);
-    s += quadPolygonSVG(innerRW, `fill="none" stroke="#000" stroke-width="0.8"`);
+    s += quadPolygonSVG(innerRW, `fill="none" stroke="#000" stroke-width="0.95"`);
   }
 
-  // กรอบบานกลาง (รองรับจำนวนช่องบานตั้งแต่ 1 ถึงมากกว่า 4 บาน)
-  s += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="#fff" stroke="#000" stroke-width="1.35"/>`;
+  s += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="#fff" stroke="#000" stroke-width="1.5"/>`;
   const pCount = getPaneCount(w);
-  const ix0 = x0 + 4, ix1 = x1 - 4;
-  const gap = pCount > 6 ? 2 : (pCount > 4 ? 3 : 4);
+  const ix0 = x0 + 4.5, ix1 = x1 - 4.5;
+  const gap = pCount > 6 ? 2 : (pCount > 4 ? 3 : 4.5);
   const pw = Math.max(4, (ix1 - ix0 - gap * (pCount - 1)) / pCount);
   for (let k = 0; k < pCount; k++) {
     const px = ix0 + k * (pw + gap);
-    s += `<rect x="${px}" y="${y0 + 4}" width="${pw}" height="${y1 - y0 - 8}" fill="none" stroke="#000" stroke-width="0.85"/>`;
+    s += `<rect x="${px}" y="${y0 + 4.5}" width="${pw}" height="${y1 - y0 - 9}" fill="none" stroke="#000" stroke-width="0.95"/>`;
   }
 
   // ==================== 5) เลเยอร์บนสุด: หน้ากากการใช้งานผ้าม่านภายในกรอบ ====================
@@ -702,6 +690,7 @@ function rHeader(order) {
 function rCustomer(order, pageNo, totalPages) {
   const c = order.customer, st = order.staff, d = order.discount;
   const pageText = `${pageNo}/${totalPages}`;
+  const orderNoDisplay = (st.orderNo && String(st.orderNo).trim()) ? String(st.orderNo).trim() : '-';
   return `<div class="s-cust">
     <div class="cl">
       <div class="r">${L('CUSTOMER NAME (ชื่อลูกค้า) :')}${F(c.name, 'cust-name')}</div>
@@ -713,6 +702,7 @@ function rCustomer(order, pageNo, totalPages) {
       <div class="r">${L('DELIVERY PLACE (สถานที่ส่ง) :')}${F(c.deliveryPlace)}</div>
     </div>
     <div class="cr">
+      <div class="r">${L('ORDER NO (เลขที่) :')}${F(orderNoDisplay)}</div>
       <div class="r">${L('PAGE NO (แผ่นที่) :')}${F(pageText)}</div>
       <div class="r">${L('S.R. (ชื่อพนักงาน) :')}${F(st.name)}</div>
       <div class="r">${L('DEPT. (แผนก) :')}${F(st.dept)}</div>
@@ -771,6 +761,8 @@ function rWinCell(w, n) {
     ? `ผนังชิดเพดาน${w.wallCeilingNote ? ' (' + w.wallCeilingNote + ')' : ''}`
     : '';
   const numLabel = w.planNo || n;
+  const isBlind1 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle1);
+  const isBlind2 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle2);
 
   return `<div class="wc">
     <div class="r"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(w.label)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
@@ -789,8 +781,8 @@ function rWinCell(w, n) {
     <div class="wdiag">${windowSVG(w)}</div>
     <div class="calc-group">
       ${rCalc('รางม่าน', w.rail, 'ชั้น', 'เมตร')}
-      ${rCalc('ผ้าม่านทึบ', w.blackout, 'ผืน', 'หลา')}
-      ${rCalc('ผ้าม่านโปร่ง', w.sheer, 'ผืน', 'หลา')}
+      ${rCalc('ผ้าม่านทึบ', w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา')}
+      ${rCalc('ผ้าม่านโปร่ง', w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา')}
     </div>
   </div>`;
 }

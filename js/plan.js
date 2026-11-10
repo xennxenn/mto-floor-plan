@@ -210,21 +210,31 @@ function planItemSVG(it, i, opts = {}) {
     }
     case 'window':
     case 'door': {
-      // กรอบสี่เหลี่ยมทับเส้นกรอบแปลน ขยายความหนากรอบให้เท่ากับขนาดกรอบตัวเลขกำกับ (2 * halfThick === badge height)
+      // ใช้กรอบเลขที่กำกับแสดงทับจุดตำแหน่งหน้าต่าง/ประตูเลย เพื่อความสวยงามและมองง่าย
       const pts = itemPoints(it);
-      const isDoor = it.type === 'door';
-      const halfThick = ps ? Math.round(6.9 / ps) : 19;
-      const bandSw = ps ? Math.max(1.3, Math.round((1.0 / ps) * 10) / 10) : 3;
-      const centerSw = ps ? Math.max(0.8, Math.round((0.6 / ps) * 10) / 10) : 2;
-      const stroke = isDoor ? '#5d2f0d' : '#000';
-      const fill = isDoor ? '#ffd180' : '#b3d4ff';
-      const polyPts = buildThickBandPolygon(pts, halfThick);
-      const centerLine = pts.map(p => `${p.x},${p.y}`).join(' ');
-      g += `<polygon points="${polyPts}" fill="${fill}" stroke="${stroke}" stroke-width="${bandSw}" stroke-linejoin="miter"/>`;
-      g += `<polyline points="${centerLine}" fill="none" stroke="${stroke}" stroke-width="${centerSw}" ${isDoor ? 'stroke-dasharray="8 5"' : ''}/>`;
-      if (ed) g += `<polyline points="${centerLine}" fill="none" stroke="transparent" stroke-width="44"/>`;
       const mid = polylineMidpoint(pts);
-      g += planLabelBadge(mid.x, mid.y, it.label, stroke, ps);
+      const labelText = it.label || '?';
+      if (pts.length >= 3) {
+        // กรณีดัดโค้งเข้ามุมตามผนัง: ใช้กรอบสีขาวขอบดำชิ้นเดียวตามแนวเข้ามุม พร้อมตัวเลขกำกับตรงกลาง (ไม่มีเส้นผ่ากลางและไม่มีกรอบซ้อน)
+        const halfThick = ps ? Math.round(6.9 / ps) : 19;
+        const bandSw = ps ? Math.max(1.3, Math.round((1.0 / ps) * 10) / 10) : 3;
+        const polyPts = buildThickBandPolygon(pts, halfThick);
+        const fontSize = ps ? Math.round(9.8 / ps) : 28;
+        const yOff = Math.round(fontSize * 0.35);
+        g += `<polygon points="${polyPts}" fill="#fff" stroke="#000" stroke-width="${bandSw}" stroke-linejoin="miter"/>`;
+        g += `<text x="${mid.x}" y="${mid.y + yOff}" text-anchor="middle" font-size="${fontSize}" font-weight="700" fill="#000" stroke="#fff" stroke-width="${ps ? 2 : 4}" paint-order="stroke" font-family="Sarabun, Tahoma, sans-serif">${planEsc(labelText)}</text>`;
+      } else {
+        // บานปกติ: ใช้กรอบเลขที่กำกับแสดงทับจุดตำแหน่งหน้าต่าง/ประตูบนเส้นผนังโดยตรง
+        if (ed) {
+          const centerLine = pts.map(p => `${p.x},${p.y}`).join(' ');
+          g += `<polyline points="${centerLine}" fill="none" stroke="#1f6feb" stroke-width="2" stroke-dasharray="4 3"/>`;
+        }
+        g += planLabelBadge(mid.x, mid.y, labelText, '#000', ps);
+      }
+      if (ed) {
+        const centerLine = pts.map(p => `${p.x},${p.y}`).join(' ');
+        g += `<polyline points="${centerLine}" fill="none" stroke="transparent" stroke-width="44"/>`;
+      }
       break;
     }
     case 'entrance': {

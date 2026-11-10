@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=9">
+  <link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -23,7 +23,7 @@
         <span id="syncStatusDot" class="sync-dot sync-connecting"></span>
         <span id="syncStatusText">กำลังเชื่อมต่อ Realtime...</span>
       </button>
-      <button id="btnMasterDb" title="ตั้งค่าฐานข้อมูล พนักงาน / รูปแบบผ้าม่าน / ขนาดตะขอ / หมายเหตุ / สูตรคำนวณกว้าง-สูง">🗄️ ฐานข้อมูล</button>
+      <button id="btnMasterDb" class="admin-only-db" hidden title="ตั้งค่าฐานข้อมูลระบบ (เฉพาะแอดมิน)">🗄️ ฐานข้อมูล</button>
       <span id="orderActions" class="actions" hidden>
         <button id="btnSaveJson" title="ส่งออกออเดอร์นี้เป็นไฟล์ JSON">💾 ส่งออกไฟล์</button>
         <button id="btnPrint" title="พิมพ์ / บันทึกเป็น PDF ผ่านเบราว์เซอร์">🖨️ พิมพ์</button>
@@ -76,20 +76,21 @@
       </div>
 
       <div class="dash-filter">
-        <input id="orderSearch" placeholder="🔍 ค้นหาจากชื่อลูกค้า, เบอร์โทร, พนักงาน, สาขา...">
+        <input id="orderSearch" placeholder="🔍 ค้นหาจากเลขที่ Order, ชื่อลูกค้า, สถานที่ติดตั้ง, เบอร์โทร, พนักงาน, สาขา...">
       </div>
 
       <div class="tbl-wrap">
         <table class="dash-tbl">
           <thead>
             <tr>
-              <th>ชื่อลูกค้า</th>
-              <th style="width:140px">เบอร์มือถือ</th>
-              <th style="width:170px">พนักงาน (S.R.)</th>
-              <th style="width:160px">สาขา</th>
-              <th style="width:95px">จำนวนหน้า</th>
-              <th style="width:155px">แก้ไขล่าสุด</th>
-              <th style="width:210px">จัดการ</th>
+              <th style="width:125px">เลขที่ (ORDER NO)</th>
+              <th>ชื่อลูกค้า / สถานที่ติดตั้ง</th>
+              <th style="width:130px">เบอร์มือถือ</th>
+              <th style="width:155px">พนักงาน (S.R.)</th>
+              <th style="width:145px">สาขา</th>
+              <th style="width:85px">จำนวนหน้า</th>
+              <th style="width:140px">แก้ไขล่าสุด</th>
+              <th style="width:245px">จัดการ</th>
             </tr>
           </thead>
           <tbody id="ordersTableBody"></tbody>
@@ -107,11 +108,19 @@
       <div id="customerEditorPane" hidden>
         <div class="pane-banner">
           <b>👤 ข้อมูลลูกค้า พนักงาน ส่วนลด และผู้ลงนาม (ใช้ร่วมกันทุกหน้าในออเดอร์นี้)</b>
-          <p class="hint">กรอกข้อมูลในหน้านี้เพียงครั้งเดียว ระบบจะนำไปแสดงในใบงานทุกหน้าของออเดอร์โดยอัตโนมัติ</p>
+          <p class="hint">กรอกข้อมูลในหน้านี้เพียงครั้งเดียว ระบบจะนำไปแสดงในใบงานทุกหน้าของออเดอร์โดยอัตโนมัติ (ลูกค้า 1 ชื่อสามารถสร้างได้หลายแปลนงานสำหรับที่พักอาศัยหลายที่)</p>
         </div>
 
         <details class="sec" open>
-          <summary>1. ข้อมูลลูกค้า</summary>
+          <summary>1. ข้อมูลลูกค้า (รองรับลูกค้า 1 ชื่อมีหลายแปลนงาน / หลายที่พักอาศัย)</summary>
+          <div class="subcard" style="margin-bottom:8px">
+            <div class="inline" style="flex-wrap:wrap;justify-content:space-between">
+              <select id="existingCustomerSelect" style="flex:1;min-width:210px">
+                <option value="">-- ดึงข้อมูลจากรายชื่อลูกค้าที่มีอยู่แล้ว --</option>
+              </select>
+              <button type="button" id="btnNewPlanSameCustomer" title="สร้างแปลนงานใหม่โดยใช้ชื่อและข้อมูลติดต่อของลูกค้ารายนี้ (สำหรับที่พักอาศัยแห่งที่ 2, 3...)">🏠+ สร้างแปลนงานเพิ่มให้ลูกค้ารายนี้</button>
+            </div>
+          </div>
           <div class="grid2">
             <label class="full">ชื่อลูกค้า<input data-shared="customer.name"></label>
             <label>เลขที่<input data-shared="customer.houseNo"></label>
@@ -133,12 +142,13 @@
         </details>
 
         <details class="sec" open>
-          <summary>2. ข้อมูลพนักงาน</summary>
+          <summary>2. ข้อมูลพนักงาน & เลขที่ใบงาน</summary>
           <div class="grid2">
+            <label class="full">เลขที่ (ORDER NO) — กรอกเอง หรือใส่ "-" หากยังไม่มี<input data-shared="staff.orderNo" placeholder="-"></label>
             <label class="full" id="staffSelectWrap">เลือกจากฐานข้อมูลพนักงาน
               <span class="inline">
                 <select id="staffSelect"><option value="">-- เลือกพนักงาน หรือพิมพ์เองด้านล่าง --</option></select>
-                <button type="button" data-act="openDbStaff" id="btnOpenDbStaffInline" title="จัดการรายชื่อพนักงาน">🗄️</button>
+                <button type="button" data-act="openDbStaff" id="btnOpenDbStaffInline" class="admin-only-db" title="จัดการรายชื่อพนักงาน">🗄️</button>
               </span>
             </label>
             <label>ชื่อพนักงาน (S.R.)<input data-shared="staff.name"></label>
@@ -232,7 +242,7 @@
           <summary>6. หน้าต่าง / ประตู (1 หน้ามี 4 บาน — เกิน 4 บานขึ้นหน้าใหม่อัตโนมัติ)</summary>
           <div class="inline" style="margin-bottom:8px;flex-wrap:wrap">
             <button type="button" data-act="syncFromPlan" title="ดึงจุดจากแปลนห้องมาเรียงตามลำดับ">🔄 ดึงจุดจากแปลนห้องตามลำดับ</button>
-            <button type="button" data-act="openDbRemarks" title="ตั้งค่าข้อความหมายเหตุ เช่น ชนแอร์ ปลั๊กไฟ บิ้วอิน">🏷️ ตั้งค่าข้อความหมายเหตุรอบบาน</button>
+            <button type="button" data-act="openDbRemarks" class="admin-only-db" title="ตั้งค่าข้อความหมายเหตุ เช่น ชนแอร์ ปลั๊กไฟ บิ้วอิน">🏷️ ตั้งค่าข้อความหมายเหตุรอบบาน</button>
           </div>
           <div id="windowsEditor"></div>
           <button type="button" class="primary wide" data-act="addWin">➕ เพิ่มหน้าต่าง / ประตู</button>
@@ -240,6 +250,11 @@
 
         <details class="sec room-sec" id="secFabrics" open>
           <summary>7. ข้อมูลผ้า</summary>
+          <div class="inline admin-only-db" style="margin-bottom:6px;flex-wrap:wrap">
+            <button type="button" data-act="openDbFabrics" class="admin-only-db">🧵 ตั้งค่าฐานข้อมูลผ้า</button>
+            <button type="button" data-act="openDbFabricCalc" class="admin-only-db">🧮 ตั้งค่าสูตรคำนวณปริมาณผ้า</button>
+            <button type="button" data-act="openDbBlinds" class="admin-only-db">🪟 ตั้งค่าฐานข้อมูลมู่ลี่/ม่านม้วน</button>
+          </div>
           <div class="tbl-wrap">
             <table class="ed-tbl">
               <thead>
@@ -259,7 +274,7 @@
                     <label><input type="checkbox" data-sheet="fabrics.blackout.isOpaque">ทึบ</label>
                     <label><input type="checkbox" data-sheet="fabrics.blackout.isSheer">โปร่ง</label>
                   </td>
-                  <td><input data-sheet="fabrics.blackout.name"></td>
+                  <td><input list="dlFabrics" data-sheet="fabrics.blackout.name"></td>
                   <td><input data-sheet="fabrics.blackout.design"></td>
                   <td><input data-sheet="fabrics.blackout.color"></td>
                   <td><input data-sheet="fabrics.blackout.qty"></td>
@@ -270,7 +285,7 @@
                     <label><input type="checkbox" data-sheet="fabrics.sheer.isOpaque">ทึบ</label>
                     <label><input type="checkbox" data-sheet="fabrics.sheer.isSheer">โปร่ง</label>
                   </td>
-                  <td><input data-sheet="fabrics.sheer.name"></td>
+                  <td><input list="dlFabrics" data-sheet="fabrics.sheer.name"></td>
                   <td><input data-sheet="fabrics.sheer.design"></td>
                   <td><input data-sheet="fabrics.sheer.color"></td>
                   <td><input data-sheet="fabrics.sheer.qty"></td>
@@ -278,7 +293,7 @@
                 <tr>
                   <th>ม่านม้วน</th>
                   <td class="c">-</td>
-                  <td><input data-sheet="fabrics.roller.name"></td>
+                  <td><input list="dlBlinds" data-sheet="fabrics.roller.name"></td>
                   <td><input data-sheet="fabrics.roller.design"></td>
                   <td><input data-sheet="fabrics.roller.color"></td>
                   <td><input data-sheet="fabrics.roller.qty"></td>
@@ -286,7 +301,7 @@
                 <tr>
                   <th>มู่ลี่</th>
                   <td class="c">-</td>
-                  <td><input data-sheet="fabrics.blinds.name"></td>
+                  <td><input list="dlBlinds" data-sheet="fabrics.blinds.name"></td>
                   <td><input data-sheet="fabrics.blinds.design"></td>
                   <td><input data-sheet="fabrics.blinds.color"></td>
                   <td><input data-sheet="fabrics.blinds.qty"></td>
@@ -294,7 +309,7 @@
                 <tr>
                   <th><input class="th-in" data-sheet="fabrics.other.label" placeholder="อื่นๆ"></th>
                   <td class="c">-</td>
-                  <td><input data-sheet="fabrics.other.name"></td>
+                  <td><input list="dlFabrics" data-sheet="fabrics.other.name"></td>
                   <td><input data-sheet="fabrics.other.design"></td>
                   <td><input data-sheet="fabrics.other.color"></td>
                   <td><input data-sheet="fabrics.other.qty"></td>
@@ -306,17 +321,20 @@
 
         <details class="sec room-sec" id="secRods" open>
           <summary>8. รางม่าน และอุปกรณ์เสริม</summary>
+          <div class="inline admin-only-db" style="margin-bottom:6px;flex-wrap:wrap">
+            <button type="button" data-act="openDbRails" class="admin-only-db">🛤️ ตั้งค่าฐานข้อมูลรางและอุปกรณ์</button>
+          </div>
 
           <h4>ประเภทรางม่าน (ROD TYPE) <label class="no"><input type="checkbox" data-sheet="rods.typeNo"> NO</label></h4>
           <div class="tbl-wrap">
             <table class="ed-tbl">
               <thead><tr><th>ประเภท</th><th>รุ่น</th><th>สี</th></tr></thead>
               <tbody>
-                <tr><th>รางม่านจีบ</th><td><input data-sheet="rods.pleat.model"></td><td><input data-sheet="rods.pleat.color"></td></tr>
-                <tr><th>รางโชว์</th><td><input data-sheet="rods.show.model"></td><td><input data-sheet="rods.show.color"></td></tr>
+                <tr><th>รางม่านจีบ</th><td><input list="dlRails" data-sheet="rods.pleat.model"></td><td><input data-sheet="rods.pleat.color"></td></tr>
+                <tr><th>รางโชว์</th><td><input list="dlRails" data-sheet="rods.show.model"></td><td><input data-sheet="rods.show.color"></td></tr>
                 <tr><th>หัวปิดราง</th><td colspan="2"><input data-sheet="rods.show.cap" placeholder="(สำหรับรางโชว์)"></td></tr>
-                <tr><th>รางม่านลอน</th><td><input data-sheet="rods.wave.model"></td><td><input data-sheet="rods.wave.color"></td></tr>
-                <tr><th>รางม่านพับ</th><td><input data-sheet="rods.fold.model"></td><td><input data-sheet="rods.fold.color"></td></tr>
+                <tr><th>รางม่านลอน</th><td><input list="dlRails" data-sheet="rods.wave.model"></td><td><input data-sheet="rods.wave.color"></td></tr>
+                <tr><th>รางม่านพับ</th><td><input list="dlRails" data-sheet="rods.fold.model"></td><td><input data-sheet="rods.fold.color"></td></tr>
               </tbody>
             </table>
           </div>
@@ -401,20 +419,24 @@
     </div>
   </div>
 
-  <!-- ================= MASTER DATABASE MODAL ================= -->
+  <!-- ================= MASTER DATABASE MODAL (Admin Only) ================= -->
   <div id="dbModal" class="modal no-print" hidden>
-    <div class="modal-box" style="max-width:980px">
+    <div class="modal-box" style="max-width:1240px">
       <div class="dash-head" style="margin-bottom:8px">
-        <h3>🗄️ ตั้งค่าฐานข้อมูลระบบ</h3>
+        <h3>🗄️ ตั้งค่าฐานข้อมูลระบบ (เฉพาะผู้ดูแลระบบ Admin)</h3>
         <button type="button" id="dbClose" class="primary">✔ เสร็จสิ้น</button>
       </div>
       <div class="db-tabs">
-        <button type="button" data-dbtab="staff" id="dbTabStaffBtn" class="active">👤 พนักงาน & ผู้ใช้งาน (Login)</button>
-        <button type="button" data-dbtab="curtains">🪟 รูปแบบผ้าม่าน</button>
+        <button type="button" data-dbtab="staff" id="dbTabStaffBtn" class="active">👤 พนักงาน & Login</button>
+        <button type="button" data-dbtab="fabrics">🧵 ฐานข้อมูลผ้า</button>
+        <button type="button" data-dbtab="widthFormulas">📐 ขนาดความกว้างผ้าม่าน</button>
+        <button type="button" data-dbtab="heightFormulas">📏 ขนาดความสูงผ้าม่าน</button>
+        <button type="button" data-dbtab="fabricCalcRules">🧮 คำนวณปริมาณผ้า (เกรนทึบ/โปร่ง)</button>
+        <button type="button" data-dbtab="rails">🛤️ รางและอุปกรณ์</button>
+        <button type="button" data-dbtab="blinds">🪟 มู่ลี่และม่านม้วน (ตร.ม.)</button>
+        <button type="button" data-dbtab="curtains">🎀 รูปแบบผ้าม่าน</button>
         <button type="button" data-dbtab="hooks">🪝 ขนาดตะขอ</button>
         <button type="button" data-dbtab="remarks">🏷️ ข้อความหมายเหตุรอบบาน</button>
-        <button type="button" data-dbtab="widthFormulas">📐 คำนวณความกว้างผ้าม่าน</button>
-        <button type="button" data-dbtab="heightFormulas">📏 คำนวณความสูงผ้าม่าน</button>
       </div>
       <div id="dbBody" class="db-body"></div>
     </div>
@@ -483,15 +505,18 @@
   </div>
 
   <datalist id="dlRemarks"></datalist>
+  <datalist id="dlFabrics"></datalist>
+  <datalist id="dlBlinds"></datalist>
+  <datalist id="dlRails"></datalist>
 
   <div id="busy" class="busy no-print" hidden><div>⏳ กำลังสร้าง PDF...</div></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=9"></script>
-  <script src="js/plan.js?v=9"></script>
-  <script src="js/render.js?v=9"></script>
-  <script src="js/sync.js?v=9"></script>
-  <script src="js/app.js?v=9"></script>
+  <script src="js/db.js?v=10"></script>
+  <script src="js/plan.js?v=10"></script>
+  <script src="js/render.js?v=10"></script>
+  <script src="js/sync.js?v=10"></script>
+  <script src="js/app.js?v=10"></script>
 </body>
 </html>
