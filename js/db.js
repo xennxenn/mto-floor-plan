@@ -560,10 +560,23 @@ function saveMasterDB() {
 }
 
 function refreshRemarksDatalist() {
-  const dl = document.getElementById('dlRemarks');
-  if (!dl) return;
   const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  dl.innerHTML = (masterDB.remarks || []).map(r => `<option value="${escH(r.name)}">`).join('');
+  const dlRemarks = document.getElementById('dlRemarks');
+  if (dlRemarks) {
+    dlRemarks.innerHTML = (masterDB.remarks || []).map(r => `<option value="${escH(r.name)}">`).join('');
+  }
+  const dlFabrics = document.getElementById('dlFabrics');
+  if (dlFabrics) {
+    dlFabrics.innerHTML = (masterDB.fabrics || []).map(f => `<option value="${escH(f.name)}">${escH(f.design || '')} (หน้าผ้า ${escH(f.fabricWidth)} ซม.)</option>`).join('');
+  }
+  const dlBlinds = document.getElementById('dlBlinds');
+  if (dlBlinds) {
+    dlBlinds.innerHTML = (masterDB.blinds || []).map(b => `<option value="${escH(b.name)}">${escH(b.curtainStyle || '')}</option>`).join('');
+  }
+  const dlRails = document.getElementById('dlRails');
+  if (dlRails) {
+    dlRails.innerHTML = (masterDB.rails || []).map(r => `<option value="${escH(r.name)}">${escH(r.rodCategory || '')}</option>`).join('');
+  }
 }
 
 /**
@@ -637,6 +650,21 @@ function getFabricCalcRulesForWindow(curtainStyle, grainType) {
   });
   return matched.length ? matched : all;
 }
+const getFabricCalcRulesForStyle = getFabricCalcRulesForWindow;
+
+function getRailsForStyle(curtainStyle) {
+  const all = masterDB.rails || [];
+  if (!curtainStyle) return all;
+  const matched = all.filter(r => !r.curtainStyle || r.curtainStyle === '*' || r.curtainStyle === curtainStyle || curtainStyle.includes(r.curtainStyle));
+  return matched.length ? matched : all;
+}
+
+function getBlindsForStyle(curtainStyle) {
+  const all = masterDB.blinds || [];
+  if (!curtainStyle) return all;
+  const matched = all.filter(b => !b.curtainStyle || b.curtainStyle === '*' || b.curtainStyle === curtainStyle || curtainStyle.includes(b.curtainStyle));
+  return matched.length ? matched : all;
+}
 
 function isBlindOrRollerStyle(styleName) {
   const s = String(styleName || '').trim();
@@ -689,8 +717,9 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
 
   // 3) กรณีเป็นม่านม้วน / มู่ลี่ -> คำนวณเป็นตารางเมตร ขั้นต่ำ 1.5 ตร.ม./ผืน
   const styleName = opts.curtainStyle || (wf && wf.curtainStyle) || '';
-  if (isBlindOrRollerStyle(styleName) || opts.blindRule) {
-    const blindRule = opts.blindRule || (masterDB.blinds || []).find(bl => bl.curtainStyle === styleName) || { minSqm: 1.5, roundMode: 'ceil_1dec' };
+  const passedBlind = opts.blindItem || opts.blindRule || null;
+  if (isBlindOrRollerStyle(styleName) || passedBlind) {
+    const blindRule = passedBlind || (masterDB.blinds || []).find(bl => bl.curtainStyle === styleName) || { minSqm: 1.5, roundMode: 'ceil_1dec' };
     const minSqm = Math.max(1.5, num(blindRule.minSqm) || 1.5);
     const rawSqmPerPiece = (vars.WC / 100) * (vars.HC / 100);
     const sqmPerPiece = (vars.WC > 0 && vars.HC > 0) ? Math.max(minSqm, rawSqmPerPiece) : 0;
@@ -704,7 +733,7 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
   }
 
   // 4) คำนวณปริมาณผ้า แยกเกรนม่านทึบ ('opaque') และเกรนม่านโปร่ง ('sheer')
-  const fabricItem = opts.fabricItem || null;
+  const fabricItem = opts.fabric || opts.fabricItem || null;
   let grainType = opts.grainType || 'opaque';
   const fabW = num(fabricItem && fabricItem.fabricWidth) || num(opts.fabricRule && opts.fabricRule.fabricWidth) || (grainType === 'sheer' ? 300 : 140);
   // บังคับกฎ: เฉพาะผ้าที่มีขนาดหน้าผ้าเกิน 270 ซม. ขึ้นไปถึงใช้เกรนม่านโปร่งได้

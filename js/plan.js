@@ -210,27 +210,40 @@ function planItemSVG(it, i, opts = {}) {
     }
     case 'window':
     case 'door': {
-      // ใช้กรอบเลขที่กำกับแสดงทับจุดตำแหน่งหน้าต่าง/ประตูเลย เพื่อความสวยงามและมองง่าย
-      const pts = itemPoints(it);
-      const mid = polylineMidpoint(pts);
+      // วาดกรอบขาวขอบดำครอบคลุมทั้งหมดตามแนวที่ลากเส้น (เหมือนกันทั้งบานตรงและบานดัดโค้งเข้ามุม) พร้อมตัวเลขกำกับตรงกลาง
+      const rawPts = itemPoints(it);
       const labelText = it.label || '?';
-      if (pts.length >= 3) {
-        // กรณีดัดโค้งเข้ามุมตามผนัง: ใช้กรอบสีขาวขอบดำชิ้นเดียวตามแนวเข้ามุม พร้อมตัวเลขกำกับตรงกลาง (ไม่มีเส้นผ่ากลางและไม่มีกรอบซ้อน)
-        const halfThick = ps ? Math.round(6.9 / ps) : 19;
-        const bandSw = ps ? Math.max(1.3, Math.round((1.0 / ps) * 10) / 10) : 3;
-        const polyPts = buildThickBandPolygon(pts, halfThick);
-        const fontSize = ps ? Math.round(9.8 / ps) : 28;
-        const yOff = Math.round(fontSize * 0.35);
-        g += `<polygon points="${polyPts}" fill="#fff" stroke="#000" stroke-width="${bandSw}" stroke-linejoin="miter"/>`;
-        g += `<text x="${mid.x}" y="${mid.y + yOff}" text-anchor="middle" font-size="${fontSize}" font-weight="700" fill="#000" stroke="#fff" stroke-width="${ps ? 2 : 4}" paint-order="stroke" font-family="Sarabun, Tahoma, sans-serif">${planEsc(labelText)}</text>`;
-      } else {
-        // บานปกติ: ใช้กรอบเลขที่กำกับแสดงทับจุดตำแหน่งหน้าต่าง/ประตูบนเส้นผนังโดยตรง
-        if (ed) {
-          const centerLine = pts.map(p => `${p.x},${p.y}`).join(' ');
-          g += `<polyline points="${centerLine}" fill="none" stroke="#1f6feb" stroke-width="2" stroke-dasharray="4 3"/>`;
+      const halfThick = ps ? Math.round(6.9 / ps) : 19;
+      const bandSw = ps ? Math.max(1.3, Math.round((1.0 / ps) * 10) / 10) : 3;
+      const fontSize = ps ? Math.round(9.8 / ps) : 28;
+      const yOff = Math.round(fontSize * 0.35);
+
+      // กรณีลากเส้นตรงสั้นกว่าความกว้างตัวอักษร ให้ขยายความยาวขั้นต่ำเพื่อให้กรอบครอบตัวเลขได้สวยงามเสมอ
+      let pts = rawPts;
+      if (rawPts.length === 2) {
+        const dx = rawPts[1].x - rawPts[0].x;
+        const dy = rawPts[1].y - rawPts[0].y;
+        const len = Math.hypot(dx, dy);
+        const minLen = ps
+          ? Math.max(halfThick * 2, Math.round((String(labelText).length * 6.8 + 6.5) / ps))
+          : Math.max(halfThick * 2, String(labelText).length * 18 + 20);
+        if (len < minLen) {
+          const cx = (rawPts[0].x + rawPts[1].x) / 2;
+          const cy = (rawPts[0].y + rawPts[1].y) / 2;
+          const ux = len > 0.5 ? dx / len : 1;
+          const uy = len > 0.5 ? dy / len : 0;
+          pts = [
+            { x: cx - ux * (minLen / 2), y: cy - uy * (minLen / 2) },
+            { x: cx + ux * (minLen / 2), y: cy + uy * (minLen / 2) },
+          ];
         }
-        g += planLabelBadge(mid.x, mid.y, labelText, '#000', ps);
       }
+
+      const mid = polylineMidpoint(pts);
+      const polyPts = buildThickBandPolygon(pts, halfThick);
+      g += `<polygon points="${polyPts}" fill="#fff" stroke="#000" stroke-width="${bandSw}" stroke-linejoin="miter"/>`;
+      g += `<text x="${mid.x}" y="${mid.y + yOff}" text-anchor="middle" font-size="${fontSize}" font-weight="700" fill="#000" stroke="#fff" stroke-width="${ps ? 2 : 4}" paint-order="stroke" font-family="Sarabun, Tahoma, sans-serif">${planEsc(labelText)}</text>`;
+
       if (ed) {
         const centerLine = pts.map(p => `${p.x},${p.y}`).join(' ');
         g += `<polyline points="${centerLine}" fill="none" stroke="transparent" stroke-width="44"/>`;
@@ -647,8 +660,12 @@ const PlanEditor = (() => {
     document.getElementById('planCancel').onclick = close;
     document.getElementById('planOk').onclick = () => {
       finishActivePoly();
-      if (onSave) onSave(clone(items));
+      const savedItems = clone(items);
+      const cb = onSave;
       close();
+      if (cb) {
+        try { cb(savedItems); } catch (err) { console.error('planOk callback error:', err); }
+      }
     };
   }
 
