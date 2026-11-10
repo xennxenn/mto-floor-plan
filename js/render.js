@@ -692,8 +692,9 @@ function windowSVG(w) {
    Blocks on the A4 Form
    ========================================================= */
 function rHeader(order) {
-  const c = order.company;
-  const logo = c.logo ? `<img src="${c.logo}" alt="logo">` : `<div class="lname">${esc(c.name)}</div>`;
+  const c = order.company || {};
+  const logoSrc = c.logo || 'pasaya-logo.png';
+  const logo = `<img src="${logoSrc}" alt="PASAYA" class="pasaya-hd-logo">`;
   return `<div class="s-hd"><div class="logo">${logo}<div class="ltitle">${esc(c.title)}</div></div>
     <div class="addr">${esc(c.address)}</div></div>`;
 }
@@ -712,7 +713,6 @@ function rCustomer(order, pageNo, totalPages) {
       <div class="r">${L('DELIVERY PLACE (สถานที่ส่ง) :')}${F(c.deliveryPlace)}</div>
     </div>
     <div class="cr">
-      <div class="r">${L('ORDER NO (เลขที่) :')}${F(st.orderNo)}</div>
       <div class="r">${L('PAGE NO (แผ่นที่) :')}${F(pageText)}</div>
       <div class="r">${L('S.R. (ชื่อพนักงาน) :')}${F(st.name)}</div>
       <div class="r">${L('DEPT. (แผนก) :')}${F(st.dept)}</div>

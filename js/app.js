@@ -9,6 +9,7 @@
    ========================================================= */
 const ORDERS_STORAGE_KEY = 'mto-orders-list-v2';
 const LEGACY_STORAGE_KEY = 'mto-order-form-v1';
+const LOCAL_AUTH_KEY = 'mto-local-auth-session-v1';
 
 const calcRow = () => ({ a: '', b: '', n: '', t: '' });
 
@@ -19,7 +20,12 @@ function newWindow(planNo = '') {
     curtainStyle1: '',
     curtainStyle2: '',
     curtainType: '',
+    rodType: '',
     hookSize: '',
+    widthFormulaId1: '',
+    heightFormulaId1: '',
+    widthFormulaId2: '',
+    heightFormulaId2: '',
     box: '',
     boxSize: '',
     mount: '',
@@ -98,10 +104,10 @@ function newSheet(index = 1) {
 }
 
 function defaultOrder(orderSeq = 1) {
-  const numStr = String(orderSeq).padStart(4, '0');
   return {
     id: 'ord_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     updatedAt: new Date().toISOString(),
+    ownerUsername: '',
     company: {
       name: 'PASAYA',
       title: 'REQUEST FORM FOR MADE TO ORDER',
@@ -113,11 +119,79 @@ function defaultOrder(orderSeq = 1) {
       subdistrict: '', district: '', province: '', zipcode: '',
       mobile: '', tel: '', email: '', deliveryDate: '', deliveryPlace: '',
     },
-    staff: { name: '', dept: '', branch: '', orderNo: `MTO-${numStr}` },
+    staff: { name: '', dept: '', branch: '', orderNo: '' },
     discount: { blackout: '', sheer: '', labor: '', equipment: '' },
     sign: { requester: '', requesterDate: '', customer: '', customerDate: '', installer: '', installerDate: '', cs: '', csDate: '' },
     sheets: [newSheet(1)],
   };
+}
+
+/* ---------------- Local Auth & Role Access Control ---------------- */
+function getCurrentUser() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LOCAL_AUTH_KEY));
+    if (!raw || !raw.username) return null;
+    const uname = String(raw.username).trim().toLowerCase();
+    const staffList = (typeof masterDB !== 'undefined' && Array.isArray(masterDB.staff)) ? masterDB.staff : [];
+    const found = staffList.find(s => String(s.username || '').trim().toLowerCase() === uname);
+    if (found) return found;
+    if (uname === 't58121') {
+      return { username: 'T58121', role: 'admin', name: 'แอดมิน (T58121)', dept: 'Admin', branch: 'สำนักงานใหญ่' };
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isUserLoggedIn() {
+  return !!getCurrentUser();
+}
+
+function isAdminUser() {
+  const u = getCurrentUser();
+  return !!(u && u.role === 'admin');
+}
+
+function canAccessOrder(ord) {
+  const u = getCurrentUser();
+  if (!u || !ord) return false;
+  if (u.role === 'admin') return true;
+  const uName = String(u.username || '').trim().toLowerCase();
+  const oOwner = String(ord.ownerUsername || '').trim().toLowerCase();
+  if (uName && oOwner && uName === oOwner) return true;
+  const staffFullName = String(u.name || '').trim();
+  const ordStaffName = String((ord.staff && ord.staff.name) || '').trim();
+  if (staffFullName && ordStaffName && staffFullName === ordStaffName) return true;
+  return false;
+}
+
+function showLoginView() {
+  activeOrderId = null;
+  const loginView = document.getElementById('loginView');
+  if (loginView) loginView.hidden = false;
+  document.getElementById('mainTopbar').hidden = true;
+  document.getElementById('topSheetNav').hidden = true;
+  document.getElementById('dashboardView').hidden = true;
+  document.getElementById('workspaceView').hidden = true;
+  const errEl = document.getElementById('loginError');
+  if (errEl) errEl.hidden = true;
+}
+
+function applyUserRoleUI() {
+  const u = getCurrentUser();
+  if (!u) { showLoginView(); return; }
+  document.getElementById('loginView').hidden = true;
+  document.getElementById('mainTopbar').hidden = false;
+  const badge = document.getElementById('userBadge');
+  if (badge) {
+    badge.hidden = false;
+    badge.textContent = `👤 ${u.name || u.username} (${u.role === 'admin' ? 'Admin' : 'พนักงาน'})`;
+  }
+  const btnLogout = document.getElementById('btnLogout');
+  if (btnLogout) btnLogout.hidden = false;
+  const staffDbTab = document.querySelector('#dbModal .db-tabs [data-db-tab="staff"]');
+  if (staffDbTab) staffDbTab.hidden = (u.role !== 'admin');
 }
 
 /* ---------------- Deep merge / migration helpers ---------------- */
@@ -227,25 +301,26 @@ function fmtDateTime(iso) {
 }
 
 function renderDashboard() {
+  if (!isUserLoggedIn()) { showLoginView(); return; }
   const q = (document.getElementById('orderSearch').value || '').trim().toLowerCase();
   const tbody = document.getElementById('ordersTableBody');
-  const filtered = orders.filter(o => {
+  const accessible = orders.filter(o => canAccessOrder(o));
+  const filtered = accessible.filter(o => {
     if (!q) return true;
-    const hay = [o.staff.orderNo, o.customer.name, o.customer.mobile, o.staff.name, o.staff.branch]
+    const hay = [o.customer.name, o.customer.mobile, o.staff.name, o.staff.branch]
       .map(x => String(x || '').toLowerCase()).join(' ');
     return hay.includes(q);
   });
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="c" style="padding:24px;color:#777">ไม่พบรายการออเดอร์ — กด "➕ สร้างออเดอร์ใหม่" ด้านบน</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="c" style="padding:24px;color:#777">ไม่พบรายการออเดอร์ — กด "➕ สร้างออเดอร์ใหม่" ด้านบน</td></tr>`;
     return;
   }
 
   tbody.innerHTML = filtered.map(o => {
     const pageCount = expandOrderPages(o).length;
     return `<tr>
-      <td><b>${esc(o.staff.orderNo || '(ยังไม่ระบุ)')}</b></td>
-      <td>${esc(o.customer.name || '(ยังไม่ระบุชื่อลูกค้า)')}</td>
+      <td><b>${esc(o.customer.name || '(ยังไม่ระบุชื่อลูกค้า)')}</b></td>
       <td class="c">${esc(o.customer.mobile || '-')}</td>
       <td class="c">${esc(o.staff.name || '-')}</td>
       <td class="c">${esc(o.staff.branch || '-')}</td>
@@ -261,6 +336,8 @@ function renderDashboard() {
 }
 
 function showDashboard() {
+  if (!isUserLoggedIn()) { showLoginView(); return; }
+  applyUserRoleUI();
   activeOrderId = null;
   document.getElementById('dashboardView').hidden = false;
   document.getElementById('workspaceView').hidden = true;
@@ -272,8 +349,10 @@ function showDashboard() {
 }
 
 function openOrder(orderId, mode = 'sheet', sheetIdx = 0) {
+  if (!isUserLoggedIn()) { showLoginView(); return; }
   const ord = orders.find(o => o.id === orderId);
-  if (!ord) return;
+  if (!ord || !canAccessOrder(ord)) return;
+  applyUserRoleUI();
   activeOrderId = ord.id;
   // ถ้ายังไม่ได้กรอกชื่อลูกค้าเลย ให้เปิดแท็บข้อมูลลูกค้าก่อน
   activeTabMode = (!ord.customer.name && mode === 'auto') ? 'customer' : (mode === 'customer' ? 'customer' : 'sheet');
@@ -297,7 +376,7 @@ function updateTopBadge() {
   const ord = currentOrder();
   if (!ord) return;
   const badge = document.getElementById('topOrderBadge');
-  badge.textContent = `${ord.staff.orderNo || 'ไม่มีเลขที่'} • ${ord.customer.name || 'ยังไม่ระบุชื่อลูกค้า'}`;
+  badge.textContent = `${ord.customer.name || 'ยังไม่ระบุชื่อลูกค้า'}${ord.staff.name ? ' • ' + ord.staff.name : ''}`;
 }
 
 function renderTopSheetNav() {
@@ -342,8 +421,12 @@ function applySectionFilter(secId) {
 
 function renderStaffDropdown() {
   const sel = document.getElementById('staffSelect');
-  sel.innerHTML = `<option value="">-- เลือกพนักงานจากฐานข้อมูล (${masterDB.staff.length} คน) --</option>` +
-    masterDB.staff.map((s, i) => `<option value="${i}">${esc(s.name)} (${esc(s.dept || '-')} / ${esc(s.branch || '-')})</option>`).join('');
+  const u = getCurrentUser();
+  const visibleStaff = (u && u.role !== 'admin')
+    ? masterDB.staff.map((s, i) => ({ s, i })).filter(({ s }) => String(s.username || '').toLowerCase() === String(u.username || '').toLowerCase())
+    : masterDB.staff.map((s, i) => ({ s, i }));
+  sel.innerHTML = `<option value="">-- เลือกพนักงานจากฐานข้อมูล (${visibleStaff.length} คน) --</option>` +
+    visibleStaff.map(({ s, i }) => `<option value="${i}">${esc(s.name)} (${esc(s.dept || '-')} / ${esc(s.branch || '-')})</option>`).join('');
 }
 
 function syncSharedInputs(root = document) {
@@ -411,6 +494,8 @@ function windowEditorHTML(w, i, planOpenings) {
     masterDB.curtains.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
   const hookOpts = `<option value="">-- เลือกขนาดตะขอ --</option>` +
     masterDB.hooks.map(h => `<option value="${esc(h.name)}">${esc(h.name)}</option>`).join('');
+  const rodTypeOpts = `<option value="">-- เลือกประเภทรางม่าน --</option>` +
+    ['รางม่านจีบ', 'รางโชว์', 'รางม่านลอน', 'รางม่านพับ'].map(rt => `<option value="${esc(rt)}">${esc(rt)}</option>`).join('');
 
   // Req #9: จุดที่สามารถเลือกตำแหน่งจากแปลนห้องมาแสดงตามลำดับได้เลย
   const planSelectOpts = `<option value="">-- เลือกจุดจากแปลน --</option>` +
@@ -424,8 +509,19 @@ function windowEditorHTML(w, i, planOpenings) {
   const railW = calcRailWidth(w);
   const railH = calcRailHeight(w);
 
-  const formulaOpts = `<option value="">-- เลือกสูตรคำนวณผ้าม่าน --</option>` +
-    (masterDB.formulas || []).map((f, fi) => `<option value="${fi}">${esc(f.name)}</option>`).join('');
+  const wfList1 = getWidthFormulasForStyle(w.curtainStyle1);
+  const hfList1 = getHeightFormulasForWindow(w.curtainStyle1, w.rodType, w.hookSize);
+  const wfList2 = getWidthFormulasForStyle(w.curtainStyle2 || w.curtainStyle1);
+  const hfList2 = getHeightFormulasForWindow(w.curtainStyle2 || w.curtainStyle1, w.rodType, w.hookSize);
+
+  const wfOpts1 = `<option value="">-- เลือกสูตรกว้าง (${wfList1.length} ค่า) --</option>` +
+    wfList1.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.label)} (${esc(f.widthExp)})</option>`).join('');
+  const hfOpts1 = `<option value="">-- เลือกสูตรสูง (${hfList1.length} ค่า) --</option>` +
+    hfList1.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.rodType ? `${f.rodType} ` : '')}${esc(f.hookSize ? `ตะขอ ${f.hookSize} ` : '')}${esc(f.label)} (${esc(f.heightExp)})</option>`).join('');
+  const wfOpts2 = `<option value="">-- เลือกสูตรกว้าง (${wfList2.length} ค่า) --</option>` +
+    wfList2.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.label)} (${esc(f.widthExp)})</option>`).join('');
+  const hfOpts2 = `<option value="">-- เลือกสูตรสูง (${hfList2.length} ค่า) --</option>` +
+    hfList2.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.rodType ? `${f.rodType} ` : '')}${esc(f.hookSize ? `ตะขอ ${f.hookSize} ` : '')}${esc(f.label)} (${esc(f.heightExp)})</option>`).join('');
 
   const calc = (key, title, u1, u2) => `<tr><th class="r">${title}</th>
     <td><input ${b(key + '.a')} placeholder="กว้าง"></td><td class="op">×</td>
@@ -468,6 +564,9 @@ function windowEditorHTML(w, i, planOpenings) {
       </label>
       <label>รูปแบบผ้าม่านชั้นที่ 2 (ม่านโปร่ง - ถ้าต่างกันจะคั่น "/")
         <select ${b('curtainStyle2')}>${curtainOpts}</select>
+      </label>
+      <label>ประเภทรางม่าน (ใช้จับคู่คำนวณความสูง)
+        <select ${b('rodType')}>${rodTypeOpts}</select>
       </label>
       <label>ขนาดตะขอ ${needHook ? '<b>(ม่านจีบ/ลอน)</b>' : '<small>(เฉพาะม่านจีบ/ลอน)</small>'}
         <span class="inline">
@@ -546,13 +645,27 @@ function windowEditorHTML(w, i, planOpenings) {
     <div class="win-thumb" data-thumb="${i}">${windowSVG(w)}</div>
 
     <div class="subcard" style="margin-top:6px">
-      <div class="inline" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:4px">
+      <div class="inline" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:6px">
         <b style="margin:0">🧮 คำนวณขนาดราง / ผ้าม่านทึบ / ผ้าม่านโปร่ง</b>
         <div class="inline">
-          <select id="formulaPick_${i}" style="max-width:210px">${formulaOpts}</select>
-          <button type="button" class="primary" data-act="applyFormula" data-i="${i}" title="คำนวณตามสูตรที่เลือก (หรือจับคู่ตามประเภทม่านอัตโนมัติ)">⚡ คำนวณตามสูตร</button>
-          <button type="button" data-act="openDbFormulas" title="เพิ่ม/ลบ/แก้ไขสูตรคำนวณในฐานข้อมูล">🗄️ สูตร</button>
+          <button type="button" class="primary" data-act="applyFormula" data-i="${i}" title="คำนวณตามสูตรความกว้างและความสูงที่เลือก">⚡ คำนวณตามสูตร</button>
+          <button type="button" data-act="openDbWidthFormulas" title="ฐานข้อมูลคำนวณขนาดความกว้างผ้าม่าน">📐 ฐานข้อมูลกว้าง</button>
+          <button type="button" data-act="openDbHeightFormulas" title="ฐานข้อมูลคำนวณขนาดความสูงผ้าม่าน">📏 ฐานข้อมูลสูง</button>
         </div>
+      </div>
+      <div class="grid2" style="margin-bottom:6px">
+        <label>สูตรความกว้าง (ผ้าม่านทึบ)
+          <select ${b('widthFormulaId1')}>${wfOpts1}</select>
+        </label>
+        <label>สูตรความสูง (ผ้าม่านทึบ)
+          <select ${b('heightFormulaId1')}>${hfOpts1}</select>
+        </label>
+        <label>สูตรความกว้าง (ผ้าม่านโปร่ง)
+          <select ${b('widthFormulaId2')}>${wfOpts2}</select>
+        </label>
+        <label>สูตรความสูง (ผ้าม่านโปร่ง)
+          <select ${b('heightFormulaId2')}>${hfOpts2}</select>
+        </label>
       </div>
       <table class="calc-ed">
         <tr><th></th><th>ขนาดกว้าง</th><th></th><th>ขนาดสูง/ชั้น</th><th></th><th>จำนวน</th><th></th><th>รวม</th></tr>
@@ -705,7 +818,7 @@ function touchAndSave() {
 function changed(sheetPath, sharedPath) {
   const sh = currentSheet();
   if (sh && sheetPath) {
-    if (/^windows\.\d+\.(curtainStyle1|curtainStyle2|box|mount|wallCeilingAttach|paneStyle)$/.test(sheetPath)) {
+    if (/^windows\.\d+\.(curtainStyle1|curtainStyle2|rodType|hookSize|box|mount|wallCeilingAttach|paneStyle)$/.test(sheetPath)) {
       const m = /^windows\.(\d+)\./.exec(sheetPath);
       const w = sh.windows[+m[1]];
       if (!curtainNeedsHook(w.curtainStyle1, w.curtainStyle2)) w.hookSize = '';
@@ -972,8 +1085,6 @@ const actions = {
   applyFormula(i) {
     const sh = currentSheet(); if (!sh) return;
     const w = sh.windows[i];
-    const sel = document.getElementById(`formulaPick_${i}`);
-    const formulas = masterDB.formulas || [];
     const rw = +calcRailWidth(w) || +w.width || 0;
     const rh = +calcRailHeight(w) || +w.height || 0;
     if (rw) {
@@ -983,18 +1094,17 @@ const actions = {
       w.rail.n = String(tracks);
       w.rail.t = String(Math.round((rw / 100) * tracks * 100) / 100);
     }
-    const pickIdx = sel && sel.value !== '' ? +sel.value : -1;
-    const findFormulaForStyle = (styleName) => {
-      if (pickIdx >= 0 && formulas[pickIdx]) return formulas[pickIdx];
-      if (styleName) {
-        const match = formulas.find(f => f.curtainStyle && (f.curtainStyle === styleName || styleName.includes(f.curtainStyle) || f.curtainStyle.includes(styleName)));
-        if (match) return match;
-      }
-      return formulas[0] || null;
-    };
-    const f1 = findFormulaForStyle(w.curtainStyle1);
-    if (f1) {
-      const r1 = computeWindowByFormula(w, f1);
+
+    const wfAll = masterDB.widthFormulas || [];
+    const hfAll = masterDB.heightFormulas || [];
+
+    const wf1 = (w.widthFormulaId1 && wfAll.find(f => f.id === w.widthFormulaId1))
+      || getWidthFormulasForStyle(w.curtainStyle1)[0] || null;
+    const hf1 = (w.heightFormulaId1 && hfAll.find(f => f.id === w.heightFormulaId1))
+      || getHeightFormulasForWindow(w.curtainStyle1, w.rodType, w.hookSize)[0] || null;
+
+    if (wf1 || hf1) {
+      const r1 = computeCurtainLayerByWidthHeight(w, wf1, hf1);
       if (r1.a) w.blackout.a = r1.a;
       if (r1.b) w.blackout.b = r1.b;
       if (r1.n) w.blackout.n = r1.n;
@@ -1003,10 +1113,15 @@ const actions = {
       if (rw) w.blackout.a = String(rw);
       if (rh) w.blackout.b = String(rh);
     }
-    if (w.curtainStyle2 || (pickIdx >= 0 && formulas[pickIdx])) {
-      const f2 = findFormulaForStyle(w.curtainStyle2 || w.curtainStyle1);
-      if (f2) {
-        const r2 = computeWindowByFormula(w, f2);
+
+    if (w.curtainStyle2 || w.widthFormulaId2 || w.heightFormulaId2) {
+      const style2 = w.curtainStyle2 || w.curtainStyle1;
+      const wf2 = (w.widthFormulaId2 && wfAll.find(f => f.id === w.widthFormulaId2))
+        || getWidthFormulasForStyle(style2)[0] || null;
+      const hf2 = (w.heightFormulaId2 && hfAll.find(f => f.id === w.heightFormulaId2))
+        || getHeightFormulasForWindow(style2, w.rodType, w.hookSize)[0] || null;
+      if (wf2 || hf2) {
+        const r2 = computeCurtainLayerByWidthHeight(w, wf2, hf2);
         if (r2.a) w.sheer.a = r2.a;
         if (r2.b) w.sheer.b = r2.b;
         if (r2.n) w.sheer.n = r2.n;
@@ -1071,11 +1186,12 @@ const actions = {
     const ord = currentOrder(); if (!ord) return;
     ord.company.logo = ''; document.getElementById('logoFile').value = ''; changed();
   },
-  openDbStaff() { MasterDBModal.open('staff'); },
+  openDbStaff() { MasterDBModal.open(isAdminUser() ? 'staff' : 'curtains'); },
   openDbCurtains() { MasterDBModal.open('curtains'); },
   openDbHooks() { MasterDBModal.open('hooks'); },
   openDbRemarks() { MasterDBModal.open('remarks'); },
-  openDbFormulas() { MasterDBModal.open('formulas'); },
+  openDbWidthFormulas() { MasterDBModal.open('widthFormulas'); },
+  openDbHeightFormulas() { MasterDBModal.open('heightFormulas'); },
 };
 
 document.addEventListener('click', e => {
@@ -1118,10 +1234,11 @@ document.addEventListener('click', e => {
   const dDup = e.target.closest('[data-dash-dup]');
   if (dDup) {
     const orig = orders.find(o => o.id === dDup.dataset.dashDup);
-    if (orig) {
+    if (orig && canAccessOrder(orig)) {
       const copy = JSON.parse(JSON.stringify(orig));
       copy.id = 'ord_' + Date.now();
-      copy.staff.orderNo = (copy.staff.orderNo || 'MTO') + '-COPY';
+      const u = getCurrentUser();
+      if (u && u.username) copy.ownerUsername = u.username;
       copy.updatedAt = new Date().toISOString();
       orders.unshift(copy);
       saveOrders(); renderDashboard();
@@ -1131,7 +1248,7 @@ document.addEventListener('click', e => {
   const dDel = e.target.closest('[data-dash-del]');
   if (dDel) {
     const idx = orders.findIndex(o => o.id === dDel.dataset.dashDel);
-    if (idx >= 0 && confirm(`ต้องการลบออเดอร์ "${orders[idx].staff.orderNo || ''}" หรือไม่?`)) {
+    if (idx >= 0 && canAccessOrder(orders[idx]) && confirm(`ต้องการลบออเดอร์ของลูกค้า "${orders[idx].customer.name || '(ยังไม่ระบุ)'}" หรือไม่?`)) {
       orders.splice(idx, 1);
       saveOrders(); renderDashboard();
     }
@@ -1225,12 +1342,19 @@ document.getElementById('logoFile').addEventListener('change', e => {
 
 /* ---------------- Topbar & Dashboard controls ---------------- */
 document.getElementById('btnHome').addEventListener('click', showDashboard);
-document.getElementById('btnMasterDb').addEventListener('click', () => MasterDBModal.open('staff'));
+document.getElementById('btnMasterDb').addEventListener('click', () => MasterDBModal.open(isAdminUser() ? 'staff' : 'curtains'));
 document.getElementById('orderSearch').addEventListener('input', renderDashboard);
 
 document.getElementById('btnNewOrder').addEventListener('click', () => {
   const ord = defaultOrder(orders.length + 1);
   if (orders[0] && orders[0].company) ord.company = JSON.parse(JSON.stringify(orders[0].company));
+  const u = getCurrentUser();
+  if (u) {
+    ord.ownerUsername = u.username || '';
+    ord.staff.name = u.name || '';
+    ord.staff.dept = u.dept || '';
+    ord.staff.branch = u.branch || '';
+  }
   orders.unshift(ord);
   saveOrders();
   openOrder(ord.id, 'customer', 0);
@@ -1239,7 +1363,7 @@ document.getElementById('btnNewOrder').addEventListener('click', () => {
 function fileBase() {
   const ord = currentOrder();
   if (!ord) return 'MTO_Order';
-  const n = [ord.staff.orderNo, ord.customer.name].filter(Boolean).join('_') || 'MTO_Order';
+  const n = [ord.customer.name, ord.staff.name].filter(Boolean).join('_') || 'MTO_Order';
   return 'MTO_' + n.replace(/[\\/:*?"<>|\s]+/g, '_');
 }
 
@@ -1408,16 +1532,68 @@ document.getElementById('editor').addEventListener('scroll', () => {
   }
 }, { passive: true });
 
-/* ---------------- Init ---------------- */
+/* ---------------- Login / Logout Listeners & Init ---------------- */
+document.getElementById('loginForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const uInput = document.getElementById('loginUsername').value.trim();
+  const pInput = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+
+  const staffList = (typeof masterDB !== 'undefined' && Array.isArray(masterDB.staff)) ? masterDB.staff : [];
+  let matched = staffList.find(s =>
+    String(s.username || '').trim().toLowerCase() === uInput.toLowerCase() &&
+    String(s.password || '') === pInput
+  );
+  if (!matched && uInput.toLowerCase() === 't58121' && pInput === 'Admin') {
+    matched = { username: 'T58121', password: 'Admin', role: 'admin', name: 'แอดมิน (T58121)', dept: 'Admin', branch: 'สำนักงานใหญ่' };
+  }
+
+  if (!matched) {
+    errEl.hidden = false;
+    return;
+  }
+
+  errEl.hidden = true;
+  try {
+    localStorage.setItem(LOCAL_AUTH_KEY, JSON.stringify({
+      username: matched.username,
+      loginAt: new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn('localStorage auth save failed', err);
+  }
+  document.getElementById('loginPassword').value = '';
+  applyUserRoleUI();
+  showDashboard();
+});
+
+document.getElementById('btnLogout').addEventListener('click', () => {
+  try { localStorage.removeItem(LOCAL_AUTH_KEY); } catch (e) {}
+  showLoginView();
+});
+
 PlanEditor.init();
 MasterDBModal.init(() => {
-  if (activeOrderId) renderAllWorkspace();
+  if (isUserLoggedIn()) {
+    applyUserRoleUI();
+    if (activeOrderId) renderAllWorkspace();
+    else renderDashboard();
+  }
 });
-showDashboard();
-if (location.hash === '#open' && orders[0]) openOrder(orders[0].id, 'sheet', 0);
+
+if (isUserLoggedIn()) {
+  applyUserRoleUI();
+  showDashboard();
+  if (location.hash === '#open' && orders[0] && canAccessOrder(orders[0])) {
+    openOrder(orders[0].id, 'sheet', 0);
+  }
+} else {
+  showLoginView();
+}
+
 if (typeof RealtimeSync !== 'undefined') RealtimeSync.init();
 if (document.fonts && document.fonts.ready) {
   document.fonts.ready.then(() => {
-    if (activeOrderId) renderPreview();
+    if (activeOrderId && isUserLoggedIn()) renderPreview();
   });
 }

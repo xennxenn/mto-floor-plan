@@ -114,16 +114,13 @@ const RealtimeSync = (() => {
         try { localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders)); } catch (e) {}
       }
       if (data.masterDB && typeof data.masterDB === 'object') {
-        const def = defaultMasterDB();
-        masterDB = {
-          staff: Array.isArray(data.masterDB.staff) ? data.masterDB.staff : def.staff,
-          curtains: Array.isArray(data.masterDB.curtains) && data.masterDB.curtains.length ? data.masterDB.curtains : def.curtains,
-          hooks: Array.isArray(data.masterDB.hooks) && data.masterDB.hooks.length ? data.masterDB.hooks : def.hooks,
-          remarks: Array.isArray(data.masterDB.remarks) && data.masterDB.remarks.length ? data.masterDB.remarks : def.remarks,
-          formulas: Array.isArray(data.masterDB.formulas) && data.masterDB.formulas.length ? data.masterDB.formulas : def.formulas,
-        };
+        masterDB = normalizeMasterDBObject(data.masterDB);
         try { localStorage.setItem(DB_KEY, JSON.stringify(masterDB)); } catch (e) {}
         refreshRemarksDatalist();
+      }
+
+      if (typeof isUserLoggedIn === 'function' && !isUserLoggedIn()) {
+        return;
       }
 
       // อัปเดต UI ตามหน้าปัจจุบัน

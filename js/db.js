@@ -1,13 +1,30 @@
 /* =========================================================
-   Master Database – Staff, Curtain Styles, Hook Sizes,
-                     Dimension Remarks, and Calculation Formulas
+   Master Database – Staff (with Username/Password/Role),
+   Curtain Styles, Hook Sizes, Dimension Remarks,
+   Width Calculation Formulas (by Curtain Style, multi-value),
+   and Height Calculation Formulas (by Curtain Style + Rod Type + Hook Size, multi-value)
    ========================================================= */
-const DB_KEY = 'mto-master-db-v4';
+const DB_KEY = 'mto-master-db-v5';
+
+const ROD_TYPES_LIST = [
+  'รางม่านจีบ',
+  'รางโชว์',
+  'รางม่านลอน',
+  'รางม่านพับ',
+];
 
 function defaultMasterDB() {
   return {
     staff: [
-      { id: 's1', name: 'นฤชา', dept: 'ขาย', branch: 'สาขาเซ็นทรัลลาดพร้าว' },
+      {
+        id: 'admin_t58121',
+        username: 'T58121',
+        password: 'Admin',
+        role: 'admin',
+        name: 'นฤชา',
+        dept: 'ขาย',
+        branch: 'สาขาเซ็นทรัลลาดพร้าว',
+      },
     ],
     curtains: [
       { id: 'c1', name: 'ม่านจีบ', useHook: true },
@@ -34,53 +51,242 @@ function defaultMasterDB() {
       { id: 'r6', name: 'ติดเสา' },
       { id: 'r7', name: 'ชนฝ้าหลุม' },
     ],
-    formulas: [
+    // ฐานข้อมูลการคำนวณขนาดความกว้างผ้าม่านตามรูปแบบผ้าม่าน (กำหนดได้หลายค่าต่อรูปแบบผ้าม่าน)
+    widthFormulas: [
       {
-        id: 'f1',
-        name: 'ม่านจีบ (ผ้าหน้าแคบ 140 cm • ลอน 2.5 เท่า)',
-        curtainMatch: 'ม่านจีบ',
+        id: 'wf1',
+        curtainStyle: 'ม่านจีบ',
+        label: 'ม่านจีบ มาตรฐาน (กว้างเท่ากับราง RW • ลอน 2.5 เท่า)',
         widthExp: 'RW',
-        heightExp: 'RH',
         piecesExp: 'ceil((RW * 2.5) / 130)',
-        qtyExp: 'round(((ceil((RW * 2.5) / 130) * (RH + 35)) / 90) * 10) / 10',
+        qtyExp: 'round(((P * (HC + 35)) / 90) * 10) / 10',
       },
       {
-        id: 'f2',
-        name: 'ม่านลอน (ผ้าหน้ากว้าง 280 cm • ลอน 2.2 เท่า)',
-        curtainMatch: 'ม่านลอน',
+        id: 'wf2',
+        curtainStyle: 'ม่านจีบ',
+        label: 'ม่านจีบ เผื่อซ้อนกลาง +10 ซม. (RW + 10 • ลอน 2.5 เท่า)',
+        widthExp: 'RW + 10',
+        piecesExp: 'ceil(((RW + 10) * 2.5) / 130)',
+        qtyExp: 'round(((P * (HC + 35)) / 90) * 10) / 10',
+      },
+      {
+        id: 'wf3',
+        curtainStyle: 'ม่านจีบ',
+        label: 'ม่านจีบ ลอน 2.2 เท่า (ประหยัดผ้า)',
         widthExp: 'RW',
-        heightExp: 'RH',
+        piecesExp: 'ceil((RW * 2.2) / 130)',
+        qtyExp: 'round(((P * (HC + 35)) / 90) * 10) / 10',
+      },
+      {
+        id: 'wf4',
+        curtainStyle: 'ม่านลอน',
+        label: 'ม่านลอน มาตรฐาน (กว้างเท่ากับราง RW • ลอน 2.2 เท่า)',
+        widthExp: 'RW',
         piecesExp: '2',
         qtyExp: 'round((((RW * 2.2) + 30) / 90) * 10) / 10',
       },
       {
-        id: 'f3',
-        name: 'ม่านตาไก่ (ลอน 2.2 เท่า)',
-        curtainMatch: 'ม่านตาไก่',
+        id: 'wf5',
+        curtainStyle: 'ม่านลอน',
+        label: 'ม่านลอน ลอนลึก 2.5 เท่า (กว้างเท่ากับราง RW)',
         widthExp: 'RW',
-        heightExp: 'RH',
+        piecesExp: '2',
+        qtyExp: 'round((((RW * 2.5) + 30) / 90) * 10) / 10',
+      },
+      {
+        id: 'wf6',
+        curtainStyle: 'ม่านตาไก่',
+        label: 'ม่านตาไก่ มาตรฐาน (กว้างเท่ากับราง RW • ลอน 2.2 เท่า)',
+        widthExp: 'RW',
         piecesExp: 'ceil((RW * 2.2) / 130)',
-        qtyExp: 'round(((ceil((RW * 2.2) / 130) * (RH + 35)) / 90) * 10) / 10',
+        qtyExp: 'round(((P * (HC + 35)) / 90) * 10) / 10',
       },
       {
-        id: 'f4',
-        name: 'ม่านพับ (คิดตามความกว้างหน้าผ้า)',
-        curtainMatch: 'ม่านพับ',
+        id: 'wf7',
+        curtainStyle: 'ม่านตาไก่',
+        label: 'ม่านตาไก่ ลอน 2.5 เท่า (กว้างเท่ากับราง RW)',
         widthExp: 'RW',
-        heightExp: 'RH',
-        piecesExp: '1',
-        qtyExp: 'round(((ceil(RW / 120) * (RH + 40)) / 90) * 10) / 10',
+        piecesExp: 'ceil((RW * 2.5) / 130)',
+        qtyExp: 'round(((P * (HC + 35)) / 90) * 10) / 10',
       },
       {
-        id: 'f5',
-        name: 'ม่านม้วน / มู่ลี่ (คิดตารางหลา กว้าง×สูง÷10000×1.2)',
-        curtainMatch: 'ม่านม้วน',
+        id: 'wf8',
+        curtainStyle: 'ม่านพับ',
+        label: 'ม่านพับ มาตรฐาน (กว้างเท่ากับราง RW)',
         widthExp: 'RW',
-        heightExp: 'RH',
         piecesExp: '1',
-        qtyExp: 'round(((RW / 100) * (RH / 100) * 1.2) * 10) / 10',
+        qtyExp: 'round(((ceil(RW / 120) * (HC + 40)) / 90) * 10) / 10',
+      },
+      {
+        id: 'wf9',
+        curtainStyle: 'ม่านม้วน',
+        label: 'ม่านม้วน มาตรฐาน (กว้างเท่ากับราง RW)',
+        widthExp: 'RW',
+        piecesExp: '1',
+        qtyExp: 'round(((WC / 100) * (HC / 100) * 1.2) * 10) / 10',
+      },
+      {
+        id: 'wf10',
+        curtainStyle: '*',
+        label: 'ทั่วไป: กว้างเท่ากับความกว้างราง (RW)',
+        widthExp: 'RW',
+        piecesExp: '2',
+        qtyExp: 'round(((2 * (HC + 30)) / 90) * 10) / 10',
       },
     ],
+    // ฐานข้อมูลการคำนวณขนาดความสูงผ้าม่านตามรูปแบบผ้าม่าน + ประเภทรางม่าน + ขนาดตะขอ (กำหนดได้หลายค่า)
+    heightFormulas: [
+      {
+        id: 'hf1',
+        curtainStyle: 'ม่านจีบ',
+        rodType: 'รางม่านจีบ',
+        hookSize: 'No.5',
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.5 (หัก 1.5 ซม.)',
+        heightExp: 'RH - 1.5',
+      },
+      {
+        id: 'hf2',
+        curtainStyle: 'ม่านจีบ',
+        rodType: 'รางม่านจีบ',
+        hookSize: 'No.6',
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.6 (หัก 2 ซม.)',
+        heightExp: 'RH - 2',
+      },
+      {
+        id: 'hf3',
+        curtainStyle: 'ม่านจีบ',
+        rodType: 'รางม่านจีบ',
+        hookSize: 'No.8',
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.8 (หัก 1 ซม.)',
+        heightExp: 'RH - 1',
+      },
+      {
+        id: 'hf4',
+        curtainStyle: 'ม่านจีบ',
+        rodType: 'รางม่านจีบ',
+        hookSize: 'No.9',
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.9 (เท่าความสูงราง RH)',
+        heightExp: 'RH',
+      },
+      {
+        id: 'hf5',
+        curtainStyle: 'ม่านจีบ',
+        rodType: 'รางโชว์',
+        hookSize: '*',
+        label: 'ม่านจีบ + รางโชว์ (หักหัวรางโชว์ 4 ซม.)',
+        heightExp: 'RH - 4',
+      },
+      {
+        id: 'hf6',
+        curtainStyle: 'ม่านลอน',
+        rodType: 'รางม่านลอน',
+        hookSize: '*',
+        label: 'ม่านลอน + รางม่านลอน (หักราง 2.5 ซม.)',
+        heightExp: 'RH - 2.5',
+      },
+      {
+        id: 'hf7',
+        curtainStyle: 'ม่านลอน',
+        rodType: 'รางม่านลอน',
+        hookSize: '*',
+        label: 'ม่านลอน + รางม่านลอน ลอยพื้นเพิ่ม (หัก 3.5 ซม.)',
+        heightExp: 'RH - 3.5',
+      },
+      {
+        id: 'hf8',
+        curtainStyle: 'ม่านตาไก่',
+        rodType: 'รางโชว์',
+        hookSize: '*',
+        label: 'ม่านตาไก่ + รางโชว์ (บวกหัวม่านเหนือราง +3 ซม.)',
+        heightExp: 'RH + 3',
+      },
+      {
+        id: 'hf9',
+        curtainStyle: 'ม่านตาไก่',
+        rodType: 'รางโชว์',
+        hookSize: '*',
+        label: 'ม่านตาไก่ + รางโชว์ (เท่าความสูงราง RH)',
+        heightExp: 'RH',
+      },
+      {
+        id: 'hf10',
+        curtainStyle: 'ม่านพับ',
+        rodType: 'รางม่านพับ',
+        hookSize: '*',
+        label: 'ม่านพับ + รางม่านพับ (เท่าความสูงราง RH)',
+        heightExp: 'RH',
+      },
+      {
+        id: 'hf11',
+        curtainStyle: 'ม่านม้วน',
+        rodType: '*',
+        hookSize: '*',
+        label: 'ม่านม้วน (เท่าความสูงราง RH)',
+        heightExp: 'RH',
+      },
+      {
+        id: 'hf12',
+        curtainStyle: '*',
+        rodType: '*',
+        hookSize: '*',
+        label: 'ทั่วไป: เท่ากับความสูงราง (RH)',
+        heightExp: 'RH',
+      },
+    ],
+  };
+}
+
+/**
+ * รับประกันว่ามีบัญชีแอดมินตั้งต้น username = T58121, password = Admin, role = admin เสมอ
+ */
+function ensureDefaultAdmin(staffList) {
+  const list = Array.isArray(staffList) ? staffList.map(s => Object.assign({
+    id: s.id || ('st_' + Math.random().toString(36).slice(2, 7)),
+    username: s.username || '',
+    password: s.password || '',
+    role: s.role === 'admin' ? 'admin' : 'staff',
+    name: s.name || '',
+    dept: s.dept || '',
+    branch: s.branch || '',
+  }, s)) : [];
+
+  const adminIdx = list.findIndex(s => String(s.username || '').trim().toUpperCase() === 'T58121');
+  if (adminIdx >= 0) {
+    list[adminIdx].username = 'T58121';
+    if (!list[adminIdx].password) list[adminIdx].password = 'Admin';
+    list[adminIdx].role = 'admin';
+    if (!list[adminIdx].name) list[adminIdx].name = 'Admin (T58121)';
+  } else {
+    // หากรายการแรกเป็นพนักงานเดิมที่ยังไม่มี username ให้ผูกหรือแทรกแอดมินตั้งต้นเข้าไป
+    if (list.length === 1 && !list[0].username && list[0].name === 'นฤชา') {
+      list[0].username = 'T58121';
+      list[0].password = 'Admin';
+      list[0].role = 'admin';
+    } else {
+      list.unshift({
+        id: 'admin_t58121',
+        username: 'T58121',
+        password: 'Admin',
+        role: 'admin',
+        name: 'นฤชา',
+        dept: 'ขาย',
+        branch: 'สาขาเซ็นทรัลลาดพร้าว',
+      });
+    }
+  }
+  return list;
+}
+
+function normalizeMasterDBObject(raw) {
+  const def = defaultMasterDB();
+  if (!raw || typeof raw !== 'object') return def;
+  return {
+    staff: ensureDefaultAdmin(Array.isArray(raw.staff) ? raw.staff : def.staff),
+    curtains: Array.isArray(raw.curtains) && raw.curtains.length ? raw.curtains : def.curtains,
+    hooks: Array.isArray(raw.hooks) && raw.hooks.length ? raw.hooks : def.hooks,
+    remarks: Array.isArray(raw.remarks) && raw.remarks.length ? raw.remarks : def.remarks,
+    widthFormulas: Array.isArray(raw.widthFormulas) && raw.widthFormulas.length ? raw.widthFormulas : def.widthFormulas,
+    heightFormulas: Array.isArray(raw.heightFormulas) && raw.heightFormulas.length ? raw.heightFormulas : def.heightFormulas,
   };
 }
 
@@ -88,24 +294,18 @@ let masterDB = (() => {
   try {
     const raw = JSON.parse(
       localStorage.getItem(DB_KEY) ||
+      localStorage.getItem('mto-master-db-v4') ||
       localStorage.getItem('mto-master-db-v3') ||
       localStorage.getItem('mto-master-db-v2')
     );
-    const def = defaultMasterDB();
-    if (!raw || typeof raw !== 'object') return def;
-    return {
-      staff: Array.isArray(raw.staff) ? raw.staff : def.staff,
-      curtains: Array.isArray(raw.curtains) && raw.curtains.length ? raw.curtains : def.curtains,
-      hooks: Array.isArray(raw.hooks) && raw.hooks.length ? raw.hooks : def.hooks,
-      remarks: Array.isArray(raw.remarks) && raw.remarks.length ? raw.remarks : def.remarks,
-      formulas: Array.isArray(raw.formulas) && raw.formulas.length ? raw.formulas : def.formulas,
-    };
+    return normalizeMasterDBObject(raw);
   } catch {
     return defaultMasterDB();
   }
 })();
 
 function saveMasterDB() {
+  masterDB.staff = ensureDefaultAdmin(masterDB.staff);
   try { localStorage.setItem(DB_KEY, JSON.stringify(masterDB)); } catch (e) { console.warn(e); }
   refreshRemarksDatalist();
   if (typeof RealtimeSync !== 'undefined') RealtimeSync.schedulePush();
@@ -119,7 +319,7 @@ function refreshRemarksDatalist() {
 }
 
 /**
- * Safe formula evaluator for curtain size & fabric quantity
+ * Safe formula evaluator for curtain width, height, pieces & fabric quantity
  * Supported variables:
  *   W  = ความกว้างเฟรม (cm)
  *   H  = ความสูงเฟรม (cm)
@@ -127,20 +327,22 @@ function refreshRemarksDatalist() {
  *   RW = ความกว้างราง = W + EL + ER (cm)
  *   RH = ความสูงราง = H + ET + EB (cm)
  *   FW = ความกว้างเต็ม, FH = ความสูงเต็ม (cm)
- *   P  = จำนวนผืน (สำหรับใช้ต่อในสูตรปริมาณผ้า)
+ *   WC = ความกว้างผ้าม่านที่คำนวณได้ (cm)
+ *   HC = ความสูงผ้าม่านที่คำนวณได้ (cm)
+ *   P  = จำนวนผืน
  * Supported functions: ceil(), floor(), round(), max(), min()
  */
 function evalFormulaExpr(expr, vars) {
   if (!expr || !String(expr).trim()) return '';
   try {
     const fn = new Function(
-      'W', 'H', 'EL', 'ER', 'ET', 'EB', 'RW', 'RH', 'FW', 'FH', 'P',
+      'W', 'H', 'EL', 'ER', 'ET', 'EB', 'RW', 'RH', 'FW', 'FH', 'WC', 'HC', 'P',
       'ceil', 'floor', 'round', 'max', 'min',
       `"use strict"; return (${expr});`
     );
     const res = fn(
       vars.W, vars.H, vars.EL, vars.ER, vars.ET, vars.EB,
-      vars.RW, vars.RH, vars.FW, vars.FH, vars.P,
+      vars.RW, vars.RH, vars.FW, vars.FH, vars.WC, vars.HC, vars.P,
       Math.ceil, Math.floor, Math.round, Math.max, Math.min
     );
     if (res === undefined || res === null || Number.isNaN(res) || !Number.isFinite(res)) return '';
@@ -151,21 +353,46 @@ function evalFormulaExpr(expr, vars) {
   }
 }
 
-function computeWindowByFormula(w, formula) {
-  if (!w || !formula) return null;
+function getWidthFormulasForStyle(curtainStyle) {
+  const all = masterDB.widthFormulas || [];
+  if (!curtainStyle) return all;
+  const matched = all.filter(f => !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle));
+  return matched.length ? matched : all;
+}
+
+function getHeightFormulasForWindow(curtainStyle, rodType, hookSize) {
+  const all = masterDB.heightFormulas || [];
+  const matched = all.filter(f => {
+    const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
+    const matchRod = !rodType || !f.rodType || f.rodType === '*' || f.rodType === rodType;
+    const matchHook = !hookSize || !f.hookSize || f.hookSize === '*' || f.hookSize === hookSize;
+    return matchStyle && matchRod && matchHook;
+  });
+  return matched.length ? matched : all;
+}
+
+/**
+ * คำนวณขนาดความกว้างและความสูงผ้าม่านจากสูตรความกว้าง (wf) และสูตรความสูง (hf)
+ */
+function computeCurtainLayerByWidthHeight(w, wf, hf) {
   const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
   const W = num(w.width), H = num(w.height);
   const EL = num(w.extL), ER = num(w.extR), ET = num(w.extT), EB = num(w.extB);
   const RW = W + EL + ER;
   const RH = H + ET + EB;
   const FW = num(w.fullW), FH = num(w.fullH);
-  const vars = { W, H, EL, ER, ET, EB, RW, RH, FW, FH, P: 2 };
+  const vars = { W, H, EL, ER, ET, EB, RW, RH, FW, FH, WC: RW, HC: RH, P: 2 };
 
-  const a = evalFormulaExpr(formula.widthExp, vars);
-  const b = evalFormulaExpr(formula.heightExp, vars);
-  const n = evalFormulaExpr(formula.piecesExp, vars);
+  const a = wf && wf.widthExp ? evalFormulaExpr(wf.widthExp, vars) : (RW ? String(RW) : '');
+  vars.WC = num(a) || RW;
+
+  const b = hf && hf.heightExp ? evalFormulaExpr(hf.heightExp, vars) : (RH ? String(RH) : '');
+  vars.HC = num(b) || RH;
+
+  const n = wf && wf.piecesExp ? evalFormulaExpr(wf.piecesExp, vars) : (RW ? '2' : '');
   vars.P = num(n) || 1;
-  const t = evalFormulaExpr(formula.qtyExp, vars);
+
+  const t = wf && wf.qtyExp ? evalFormulaExpr(wf.qtyExp, vars) : '';
   return { a, b, n, t, RW, RH };
 }
 
@@ -199,18 +426,51 @@ const MasterDBModal = (() => {
 
   const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  function curtainSelectOpts(selected) {
+    const opts = [['*', 'ทั้งหมด (*)'], ...(masterDB.curtains || []).map(c => [c.name, c.name])];
+    return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
+  }
+
+  function rodSelectOpts(selected) {
+    const opts = [['*', 'ทั้งหมด (*)'], ...ROD_TYPES_LIST.map(r => [r, r])];
+    return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
+  }
+
+  function hookSelectOpts(selected) {
+    const opts = [['*', 'ทั้งหมด / ไม่ใช้ (*)'], ...(masterDB.hooks || []).map(h => [h.name, h.name])];
+    return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
+  }
+
   function render() {
     const body = document.getElementById('dbBody');
     document.querySelectorAll('[data-dbtab]').forEach(b => b.classList.toggle('active', b.dataset.dbtab === activeTab));
 
     if (activeTab === 'staff') {
       body.innerHTML = `
-        <p class="hint" style="margin-bottom:8px">เพิ่ม/แก้ไขรายชื่อพนักงาน เพื่อเลือกกรอกอัตโนมัติในใบงาน</p>
+        <p class="hint" style="margin-bottom:8px">จัดการบัญชีผู้ใช้งานและรายชื่อพนักงาน (แอดมินเห็นและแก้ไขได้ทุกคน • พนักงานทั่วไปเห็นและแก้ไขได้เฉพาะของตัวเอง)</p>
         <table class="ed-tbl">
-          <thead><tr><th>ชื่อพนักงาน (S.R.)</th><th>แผนก (DEPT.)</th><th>สาขา (Branch)</th><th style="width:60px">ลบ</th></tr></thead>
+          <thead>
+            <tr>
+              <th style="width:110px">Username</th>
+              <th style="width:110px">Password</th>
+              <th style="width:125px">สิทธิ์ (Role)</th>
+              <th>ชื่อพนักงาน (S.R.)</th>
+              <th>แผนก (DEPT.)</th>
+              <th>สาขา (Branch)</th>
+              <th style="width:50px">ลบ</th>
+            </tr>
+          </thead>
           <tbody>
             ${masterDB.staff.map((st, i) => `
               <tr>
+                <td><input data-db-edit="staff.${i}.username" value="${escH(st.username || '')}" placeholder="Username"></td>
+                <td><input data-db-edit="staff.${i}.password" value="${escH(st.password || '')}" placeholder="Password"></td>
+                <td>
+                  <select data-db-edit="staff.${i}.role">
+                    <option value="staff" ${st.role !== 'admin' ? 'selected' : ''}>พนักงาน (Staff)</option>
+                    <option value="admin" ${st.role === 'admin' ? 'selected' : ''}>แอดมิน (Admin)</option>
+                  </select>
+                </td>
                 <td><input data-db-edit="staff.${i}.name" value="${escH(st.name)}" placeholder="ชื่อพนักงาน"></td>
                 <td><input data-db-edit="staff.${i}.dept" value="${escH(st.dept)}" placeholder="แผนก"></td>
                 <td><input data-db-edit="staff.${i}.branch" value="${escH(st.branch)}" placeholder="สาขา"></td>
@@ -218,7 +478,7 @@ const MasterDBModal = (() => {
               </tr>`).join('')}
           </tbody>
         </table>
-        <button type="button" class="primary" style="margin-top:8px" data-db-add="staff">➕ เพิ่มพนักงาน</button>
+        <button type="button" class="primary" style="margin-top:8px" data-db-add="staff">➕ เพิ่มพนักงาน / ผู้ใช้งาน</button>
       `;
     } else if (activeTab === 'curtains') {
       body.innerHTML = `
@@ -266,42 +526,96 @@ const MasterDBModal = (() => {
         </table>
         <button type="button" class="primary" style="margin-top:8px" data-db-add="remarks">➕ เพิ่มข้อความหมายเหตุ</button>
       `;
-    } else if (activeTab === 'formulas') {
+    } else if (activeTab === 'widthFormulas') {
       body.innerHTML = `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>📐 ตัวแปรที่ใช้ในสูตรคำนวณได้:</b>
-          <code>W</code> = ความกว้างเฟรม, <code>H</code> = ความสูงเฟรม,
-          <code>EL</code> = เผื่อซ้าย, <code>ER</code> = เผื่อขวา, <code>ET</code> = เผื่อบน, <code>EB</code> = เผื่อล่าง,
-          <code>RW</code> = ความกว้างราง (W+EL+ER), <code>RH</code> = ความสูงราง (H+ET+EB),
-          <code>P</code> = จำนวนผืน • ฟังก์ชัน: <code>ceil()</code>, <code>floor()</code>, <code>round()</code>
+          <b>📐 ฐานข้อมูลการคำนวณขนาดความกว้างผ้าม่านตามรูปแบบผ้าม่าน (กำหนดได้หลายค่าต่อรูปแบบผ้าม่าน):</b><br>
+          ตัวแปรที่ใช้ได้: <code>RW</code> = ความกว้างราง (W+EL+ER), <code>W</code> = กว้างเฟรม, <code>EL</code> = เผื่อซ้าย, <code>ER</code> = เผื่อขวา,
+          <code>WC</code> = ความกว้างผ้าที่คำนวณได้, <code>HC</code> = ความสูงผ้าที่คำนวณได้, <code>P</code> = จำนวนผืน • ฟังก์ชัน: <code>ceil()</code>, <code>floor()</code>, <code>round()</code>
         </div>
         <table class="ed-tbl">
           <thead>
             <tr>
-              <th>ชื่อสูตรคำนวณ</th>
-              <th style="width:95px">คู่กับประเภทม่าน</th>
-              <th style="width:85px">สูตรขนาดกว้าง</th>
-              <th style="width:85px">สูตรขนาดสูง</th>
-              <th style="width:120px">สูตรจำนวน (ผืน)</th>
-              <th style="width:180px">สูตรปริมาณผ้า (หลา)</th>
+              <th style="width:130px">รูปแบบผ้าม่าน</th>
+              <th>ชื่อเงื่อนไข / รายละเอียด</th>
+              <th style="width:110px">สูตรความกว้างผ้า</th>
+              <th style="width:130px">สูตรจำนวน (ผืน)</th>
+              <th style="width:170px">สูตรปริมาณผ้า (หลา)</th>
               <th style="width:45px">ลบ</th>
             </tr>
           </thead>
           <tbody>
-            ${masterDB.formulas.map((f, i) => `
+            ${(masterDB.widthFormulas || []).map((wf, i) => `
               <tr>
-                <td><input data-db-edit="formulas.${i}.name" value="${escH(f.name)}" placeholder="ชื่อสูตร"></td>
-                <td><input data-db-edit="formulas.${i}.curtainMatch" value="${escH(f.curtainMatch || '')}" placeholder="เช่น ม่านจีบ"></td>
-                <td><input data-db-edit="formulas.${i}.widthExp" value="${escH(f.widthExp)}" placeholder="RW"></td>
-                <td><input data-db-edit="formulas.${i}.heightExp" value="${escH(f.heightExp)}" placeholder="RH"></td>
-                <td><input data-db-edit="formulas.${i}.piecesExp" value="${escH(f.piecesExp)}" placeholder="ceil((RW*2.5)/130)"></td>
-                <td><input data-db-edit="formulas.${i}.qtyExp" value="${escH(f.qtyExp)}" placeholder="round((P*(RH+35)/90)*10)/10"></td>
-                <td class="c"><button type="button" class="danger" data-db-del="formulas.${i}">✕</button></td>
+                <td>
+                  <select data-db-edit="widthFormulas.${i}.curtainStyle">
+                    ${curtainSelectOpts(wf.curtainStyle)}
+                  </select>
+                </td>
+                <td><input data-db-edit="widthFormulas.${i}.label" value="${escH(wf.label || '')}" placeholder="เช่น มาตรฐาน (ลอน 2.5 เท่า)"></td>
+                <td><input data-db-edit="widthFormulas.${i}.widthExp" value="${escH(wf.widthExp || '')}" placeholder="RW"></td>
+                <td><input data-db-edit="widthFormulas.${i}.piecesExp" value="${escH(wf.piecesExp || '')}" placeholder="ceil((RW*2.5)/130)"></td>
+                <td><input data-db-edit="widthFormulas.${i}.qtyExp" value="${escH(wf.qtyExp || '')}" placeholder="round(((P*(HC+35))/90)*10)/10"></td>
+                <td class="c"><button type="button" class="danger" data-db-del="widthFormulas.${i}">✕</button></td>
               </tr>`).join('')}
           </tbody>
         </table>
-        <button type="button" class="primary" style="margin-top:8px" data-db-add="formulas">➕ เพิ่มสูตรคำนวณ</button>
+        <button type="button" class="primary" style="margin-top:8px" data-db-add="widthFormulas">➕ เพิ่มค่าการคำนวณความกว้างผ้าม่าน</button>
       `;
+    } else if (activeTab === 'heightFormulas') {
+      body.innerHTML = `
+        <div class="subcard" style="margin-bottom:8px;font-size:12px">
+          <b>📏 ฐานข้อมูลการคำนวณขนาดความสูงผ้าม่าน ตามรูปแบบผ้าม่าน + ประเภทรางม่าน + ขนาดตะขอ (กำหนดได้หลายค่า):</b><br>
+          ตัวแปรที่ใช้ได้: <code>RH</code> = ความสูงราง (H+ET+EB), <code>H</code> = สูงเฟรม, <code>ET</code> = เผื่อบน, <code>EB</code> = เผื่อล่าง, <code>FH</code> = สูงเต็ม
+          (เช่น <code>RH - 2</code>, <code>RH - 4</code>, <code>RH</code>)
+        </div>
+        <table class="ed-tbl">
+          <thead>
+            <tr>
+              <th style="width:130px">รูปแบบผ้าม่าน</th>
+              <th style="width:130px">ประเภทรางม่าน</th>
+              <th style="width:120px">ขนาดตะขอ</th>
+              <th>ชื่อเงื่อนไขความสูง</th>
+              <th style="width:120px">สูตรความสูงผ้า</th>
+              <th style="width:45px">ลบ</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(masterDB.heightFormulas || []).map((hf, i) => `
+              <tr>
+                <td>
+                  <select data-db-edit="heightFormulas.${i}.curtainStyle">
+                    ${curtainSelectOpts(hf.curtainStyle)}
+                  </select>
+                </td>
+                <td>
+                  <select data-db-edit="heightFormulas.${i}.rodType">
+                    ${rodSelectOpts(hf.rodType)}
+                  </select>
+                </td>
+                <td>
+                  <select data-db-edit="heightFormulas.${i}.hookSize">
+                    ${hookSelectOpts(hf.hookSize)}
+                  </select>
+                </td>
+                <td><input data-db-edit="heightFormulas.${i}.label" value="${escH(hf.label || '')}" placeholder="เช่น หักหัวราง 2 ซม."></td>
+                <td><input data-db-edit="heightFormulas.${i}.heightExp" value="${escH(hf.heightExp || '')}" placeholder="RH - 2"></td>
+                <td class="c"><button type="button" class="danger" data-db-del="heightFormulas.${i}">✕</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <button type="button" class="primary" style="margin-top:8px" data-db-add="heightFormulas">➕ เพิ่มค่าการคำนวณความสูงผ้าม่าน</button>
+      `;
+    }
+  }
+
+  function onEditChange(e) {
+    const k = e.target.dataset.dbEdit;
+    if (!k) return;
+    const [list, idx, field] = k.split('.');
+    if (masterDB[list] && masterDB[list][+idx]) {
+      masterDB[list][+idx][field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+      saveMasterDB();
     }
   }
 
@@ -316,32 +630,39 @@ const MasterDBModal = (() => {
       modal.hidden = true;
       if (onUpdate) onUpdate();
     });
-    modal.addEventListener('input', e => {
-      const k = e.target.dataset.dbEdit;
-      if (!k) return;
-      const [list, idx, field] = k.split('.');
-      if (masterDB[list] && masterDB[list][+idx]) {
-        masterDB[list][+idx][field] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-        saveMasterDB();
-      }
-    });
+    modal.addEventListener('input', onEditChange);
+    modal.addEventListener('change', onEditChange);
     modal.addEventListener('click', e => {
       const add = e.target.closest('[data-db-add]');
       if (add) {
         const t = add.dataset.dbAdd;
-        const id = 'id' + Date.now();
-        if (t === 'staff') masterDB.staff.push({ id, name: '', dept: '', branch: '' });
-        else if (t === 'curtains') masterDB.curtains.push({ id, name: '', useHook: false });
-        else if (t === 'hooks') masterDB.hooks.push({ id, name: '' });
-        else if (t === 'remarks') masterDB.remarks.push({ id, name: '' });
-        else if (t === 'formulas') masterDB.formulas.push({
-          id, name: 'สูตรใหม่', curtainMatch: '', widthExp: 'RW', heightExp: 'RH', piecesExp: '2', qtyExp: 'round((P*(RH+30)/90)*10)/10',
-        });
+        const id = 'id_' + Date.now();
+        if (t === 'staff') {
+          masterDB.staff.push({ id, username: '', password: '', role: 'staff', name: '', dept: '', branch: '' });
+        } else if (t === 'curtains') {
+          masterDB.curtains.push({ id, name: '', useHook: false });
+        } else if (t === 'hooks') {
+          masterDB.hooks.push({ id, name: '' });
+        } else if (t === 'remarks') {
+          masterDB.remarks.push({ id, name: '' });
+        } else if (t === 'widthFormulas') {
+          masterDB.widthFormulas.push({
+            id, curtainStyle: 'ม่านจีบ', label: 'เงื่อนไขความกว้างใหม่', widthExp: 'RW', piecesExp: '2', qtyExp: 'round(((P*(HC+35))/90)*10)/10',
+          });
+        } else if (t === 'heightFormulas') {
+          masterDB.heightFormulas.push({
+            id, curtainStyle: 'ม่านจีบ', rodType: 'รางม่านจีบ', hookSize: '*', label: 'เงื่อนไขความสูงใหม่', heightExp: 'RH - 2',
+          });
+        }
         saveMasterDB(); render(); return;
       }
       const del = e.target.closest('[data-db-del]');
       if (del) {
         const [list, idx] = del.dataset.dbDel.split('.');
+        if (list === 'staff' && masterDB.staff[+idx] && String(masterDB.staff[+idx].username).toUpperCase() === 'T58121') {
+          alert('ไม่สามารถลบบัญชีแอดมินตั้งต้น (T58121) ได้');
+          return;
+        }
         masterDB[list].splice(+idx, 1);
         saveMasterDB(); render();
       }
