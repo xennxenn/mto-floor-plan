@@ -895,11 +895,84 @@ function rWinGrid(list, startNo, sheet, sIdx, cIdx) {
   return `<div class="s-wins" data-sidx="${sIdx}" data-cidx="${cIdx}">${h}${rNoteBoxes(sheet, sIdx, cIdx)}</div>`;
 }
 
-function rFabric(sheet) {
+function computePageFabricQtySums(sheet, pageWins) {
+  const sums = { blackout: 0, sheer: 0, roller: 0, blinds: 0, other: 0 };
+  const f = (sheet && sheet.fabrics) || {};
+  const wins = Array.isArray(pageWins) ? pageWins : (sheet && sheet.windows) || [];
+  const parseYds = val => (typeof extractYardsFromCalcText === 'function')
+    ? extractYardsFromCalcText(val)
+    : (() => {
+        const s = String(val ?? '').trim();
+        if (!s) return 0;
+        const part = s.includes('/') ? s.split('/').pop() : s;
+        const n = parseFloat(part.replace(/[^\d.-]/g, ''));
+        return (!isNaN(n) && Number.isFinite(n)) ? n : 0;
+      })();
+
+  const matchColForLayer = (w, layerNo) => {
+    const explicitCol = layerNo === 1 ? w.fabricCol1 : w.fabricCol2;
+    if (explicitCol && sums[explicitCol] !== undefined) return explicitCol;
+    const style = String(layerNo === 1 ? (w.curtainStyle1 || '') : (w.curtainStyle2 || w.curtainStyle1 || ''));
+    if (/ม่านม้วน/.test(style)) return 'roller';
+    if (/มู่ลี่|ม่านปรับแสง/.test(style)) return 'blinds';
+    const fabId = layerNo === 1 ? w.fabricId1 : w.fabricId2;
+    if (fabId && typeof masterDB !== 'undefined' && Array.isArray(masterDB.fabrics)) {
+      const fabObj = masterDB.fabrics.find(x => x.id === fabId);
+      if (fabObj && fabObj.name) {
+        for (const ck of ['blackout', 'sheer', 'other', 'roller', 'blinds']) {
+          if (f[ck] && String(f[ck].name || '').trim() === String(fabObj.name).trim()) {
+            if (!f[ck].design || !fabObj.design || String(f[ck].design).trim() === String(fabObj.design).trim()) {
+              return ck;
+            }
+          }
+        }
+      }
+    }
+    return layerNo === 1 ? 'blackout' : 'sheer';
+  };
+
+  wins.forEach(w => {
+    if (!w) return;
+    const y1 = parseYds(w.blackout && w.blackout.t);
+    if (y1 > 0) {
+      const col1 = matchColForLayer(w, 1);
+      if (col1 && sums[col1] !== undefined) {
+        if ((f[col1] && String(f[col1].name || '').trim()) || w.fabricCol1 === col1 || col1 === 'roller' || col1 === 'blinds' || col1 === 'blackout') {
+          sums[col1] = Math.round((sums[col1] + y1) * 100) / 100;
+        }
+      }
+    }
+    const y2 = parseYds(w.sheer && w.sheer.t);
+    if (y2 > 0) {
+      const col2 = matchColForLayer(w, 2);
+      if (col2 && sums[col2] !== undefined) {
+        if ((f[col2] && String(f[col2].name || '').trim()) || w.fabricCol2 === col2 || col2 === 'sheer') {
+          sums[col2] = Math.round((sums[col2] + y2) * 100) / 100;
+        }
+      }
+    }
+  });
+  return sums;
+}
+
+function rFabric(sheet, pageWins) {
   const f = sheet.fabrics;
   const colKeys = ['blackout', 'sheer', 'roller', 'blinds', 'other'];
   const cols = [f.blackout, f.sheer, f.roller, f.blinds, f.other];
-  const row = (label, key) => `<tr><th>${label}</th>${cols.map((c, ci) => `<td data-fab-col="${colKeys[ci]}" data-fab-field="${key}">${esc(c[key])}</td>`).join('')}</tr>`;
+  const sums = computePageFabricQtySums(sheet, pageWins);
+  const row = (label, key) => `<tr><th>${label}</th>${cols.map((c, ci) => {
+    const ck = colKeys[ci];
+    let val = c[key];
+    if (key === 'qty') {
+      const autoSum = sums[ck];
+      if (autoSum > 0 && (!c.manualQty || !String(c.qty || '').trim())) {
+        val = String(autoSum);
+      } else if (String(val || '').includes('/')) {
+        val = String(extractYardsFromCalcText(val) || '');
+      }
+    }
+    return `<td data-fab-col="${ck}" data-fab-field="${key}">${esc(val)}</td>`;
+  }).join('')}</tr>`;
   const chkMini = on => `<span class="cb-mini">${on ? '✓' : ''}</span>`;
   return `<table class="s-tb">
     <colgroup>
@@ -1036,6 +1109,298 @@ function rSign(order) {
 }
 
 /* =========================================================
+   Special Pages: แปลนงานม่านจั่ว (5 รูปแบบตามไฟล์แนบ) & แปลนงานผ้าม่านเย็บต่อด้านข้าง
+   ========================================================= */
+function gableDiagramSVG(w) {
+  const g = (w && w.gable) || {};
+  const gType = String(g.type || '1');
+  const deduct = parseFloat(g.heightDeduct) || 0;
+  const calcReducedH = (fullVal, customReducedVal) => {
+    if (customReducedVal !== undefined && String(customReducedVal).trim() !== '') return String(customReducedVal).trim();
+    const fv = parseFloat(fullVal);
+    if (isNaN(fv) || fv <= 0) return '';
+    return String(Math.max(0, Math.round((fv - deduct) * 100) / 100));
+  };
+
+  const hA = calcReducedH(g.fullA, g.redA);
+  const hB = calcReducedH(g.fullB, g.redB);
+  const hC = calcReducedH(g.fullC, g.redC);
+  const wL = String(g.widthLeft || w.splitLeft || '').trim();
+  const wR = String(g.widthRight || w.splitRight || '').trim();
+  const wTotal = String(g.widthTotal || w.width || '').trim();
+
+  const drawVertDim = (x, yTop, yBot, letter, valText, fieldKey) => {
+    const midY = Math.round((yTop + yBot) / 2);
+    const boxW = 68, boxH = 30;
+    return `
+      <g class="svg-hit" data-gable-field="${esc(fieldKey)}" style="cursor:pointer">
+        <text x="${x}" y="${yTop - 8}" text-anchor="middle" font-size="14" font-weight="700" fill="#000">${esc(letter)}</text>
+        <line x1="${x - 16}" y1="${yTop}" x2="${x + 16}" y2="${yTop}" stroke="#000" stroke-width="1.4"/>
+        <line x1="${x}" y1="${yTop}" x2="${x}" y2="${midY - boxH / 2}" stroke="#000" stroke-width="1.3"/>
+        <line x1="${x}" y1="${midY + boxH / 2}" x2="${x}" y2="${yBot}" stroke="#000" stroke-width="1.3"/>
+        <line x1="${x - 16}" y1="${yBot}" x2="${x + 16}" y2="${yBot}" stroke="#000" stroke-width="1.4"/>
+        <rect x="${Math.round(x - boxW / 2)}" y="${Math.round(midY - boxH / 2)}" width="${boxW}" height="${boxH}" fill="#fff" stroke="#bbb" stroke-width="0.9"/>
+        <line x1="${Math.round(x - boxW / 2)}" y1="${Math.round(midY + boxH / 2)}" x2="${Math.round(x + boxW / 2)}" y2="${Math.round(midY + boxH / 2)}" stroke="#000" stroke-width="1.3"/>
+        <text x="${x}" y="${midY + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="#000">${esc(valText)}</text>
+      </g>
+    `;
+  };
+
+  const drawHorizDimBox = (x0, x1, y, valText, fieldKey) => {
+    const midX = Math.round((x0 + x1) / 2);
+    const boxW = 68, boxH = 30;
+    return `
+      <g class="svg-hit" data-gable-field="${esc(fieldKey)}" style="cursor:pointer">
+        <line x1="${x0}" y1="${y}" x2="${midX - boxW / 2}" y2="${y}" stroke="#000" stroke-width="1.3"/>
+        <line x1="${midX + boxW / 2}" y1="${y}" x2="${x1}" y2="${y}" stroke="#000" stroke-width="1.3"/>
+        <rect x="${Math.round(midX - boxW / 2)}" y="${Math.round(y - boxH / 2)}" width="${boxW}" height="${boxH}" fill="#fff" stroke="#bbb" stroke-width="0.9"/>
+        <line x1="${Math.round(midX - boxW / 2)}" y1="${Math.round(y + boxH / 2)}" x2="${Math.round(midX + boxW / 2)}" y2="${Math.round(y + boxH / 2)}" stroke="#000" stroke-width="1.3"/>
+        <text x="${midX}" y="${y + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="#000">${esc(valText)}</text>
+      </g>
+    `;
+  };
+
+  let svgBody = '';
+  const xL = 160, xM = 350, xR = 540;
+  const yPeak = 38, yEave = 148, yBot = 285, yDimW = 324;
+  const yMidSlope = Math.round((yPeak + yEave) / 2); // 93
+
+  if (gType === '1') {
+    // แบบที่ 1: จั่วสามเหลี่ยมสมมาตร แบ่งซ้าย-ขวา (A, B, C)
+    svgBody = `
+      <polygon points="${xL},${yEave} ${xM},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
+      <line x1="${xM}" y1="${yPeak}" x2="${xM}" y2="${yBot}" stroke="#000" stroke-width="1.3"/>
+      ${drawVertDim(106, yEave, yBot, 'A', hA, 'fullA')}
+      ${drawVertDim(398, yPeak, yBot, 'B', hB, 'fullB')}
+      ${drawVertDim(594, yEave, yBot, 'C', hC, 'fullC')}
+      <line x1="${xL}" y1="${yDimW - 15}" x2="${xL}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xM}" y1="${yDimW - 15}" x2="${xM}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xR}" y1="${yDimW - 15}" x2="${xR}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      ${drawHorizDimBox(xL, xM, yDimW, wL, 'widthLeft')}
+      ${drawHorizDimBox(xM, xR, yDimW, wR, 'widthRight')}
+    `;
+  } else if (gType === '2') {
+    // แบบที่ 2: จั่วเฉียงลาดลงขวา แบ่งซ้าย-ขวา (สูงซ้าย A → กลาง B → ขวา C)
+    svgBody = `
+      <polygon points="${xL},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
+      <line x1="${xM}" y1="${yMidSlope}" x2="${xM}" y2="${yBot}" stroke="#000" stroke-width="1.3"/>
+      ${drawVertDim(106, yPeak, yBot, 'A', hA, 'fullA')}
+      ${drawVertDim(398, yMidSlope, yBot, 'B', hB, 'fullB')}
+      ${drawVertDim(594, yEave, yBot, 'C', hC, 'fullC')}
+      <line x1="${xL}" y1="${yDimW - 15}" x2="${xL}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xM}" y1="${yDimW - 15}" x2="${xM}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xR}" y1="${yDimW - 15}" x2="${xR}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      ${drawHorizDimBox(xL, xM, yDimW, wL, 'widthLeft')}
+      ${drawHorizDimBox(xM, xR, yDimW, wR, 'widthRight')}
+    `;
+  } else if (gType === '3') {
+    // แบบที่ 3: จั่วเฉียงลาดลงขวา ช่วงเดียว (สูงซ้าย A → ขวา B, กว้างรวม)
+    svgBody = `
+      <polygon points="${xL},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
+      ${drawVertDim(106, yPeak, yBot, 'A', hA, 'fullA')}
+      ${drawVertDim(594, yEave, yBot, 'B', hB, 'fullB')}
+      <line x1="${xL}" y1="${yDimW - 15}" x2="${xL}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xR}" y1="${yDimW - 15}" x2="${xR}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      ${drawHorizDimBox(xL, xR, yDimW, wTotal, 'widthTotal')}
+    `;
+  } else if (gType === '4') {
+    // แบบที่ 4: จั่วเฉียงลาดขึ้นขวา แบ่งซ้าย-ขวา (ซ้าย A → กลาง B → สูงขวา C)
+    svgBody = `
+      <polygon points="${xL},${yEave} ${xR},${yPeak} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
+      <line x1="${xM}" y1="${yMidSlope}" x2="${xM}" y2="${yBot}" stroke="#000" stroke-width="1.3"/>
+      ${drawVertDim(106, yEave, yBot, 'A', hA, 'fullA')}
+      ${drawVertDim(398, yMidSlope, yBot, 'B', hB, 'fullB')}
+      ${drawVertDim(594, yPeak, yBot, 'C', hC, 'fullC')}
+      <line x1="${xL}" y1="${yDimW - 15}" x2="${xL}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xM}" y1="${yDimW - 15}" x2="${xM}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xR}" y1="${yDimW - 15}" x2="${xR}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      ${drawHorizDimBox(xL, xM, yDimW, wL, 'widthLeft')}
+      ${drawHorizDimBox(xM, xR, yDimW, wR, 'widthRight')}
+    `;
+  } else {
+    // แบบที่ 5: จั่วเฉียงลาดขึ้นขวา ช่วงเดียว (ซ้าย A → สูงขวา B, กว้างรวม)
+    svgBody = `
+      <polygon points="${xL},${yEave} ${xR},${yPeak} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
+      ${drawVertDim(106, yEave, yBot, 'A', hA, 'fullA')}
+      ${drawVertDim(594, yPeak, yBot, 'B', hB, 'fullB')}
+      <line x1="${xL}" y1="${yDimW - 15}" x2="${xL}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      <line x1="${xR}" y1="${yDimW - 15}" x2="${xR}" y2="${yDimW + 15}" stroke="#000" stroke-width="1.4"/>
+      ${drawHorizDimBox(xL, xR, yDimW, wTotal, 'widthTotal')}
+    `;
+  }
+
+  return `<svg viewBox="0 0 700 355" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:365px;display:block;margin:0 auto">${svgBody}</svg>`;
+}
+
+function rGableSpecialPage(order, sheet, w, sIdx, wIdx, pageNo, totalPages) {
+  const g = (w && w.gable) || {};
+  const gType = String(g.type || '1');
+  const isSingleSpan = gType === '3' || gType === '5';
+  const titleLabel = g.title || `${w.label || ('จุดที่ ' + (w.planNo || (wIdx + 1)))}${sheet.room && sheet.room.name ? ' (' + sheet.room.name + ')' : ''}`;
+
+  const rowLine = (lbl, rowObj, unitTxt) => {
+    const r = rowObj || {};
+    return `
+      <div class="gable-calc-row">
+        <span class="gc-lbl">${lbl}</span>
+        <span class="gc-val">${esc(r.a || '')}</span>
+        <span class="gc-op">x</span>
+        <span class="gc-val">${esc(r.b || '')}</span>
+        <span class="gc-op">=</span>
+        <span class="gc-val">${esc(r.n || '')}</span>
+        <span class="gc-unit">${unitTxt}</span>
+      </div>
+    `;
+  };
+
+  const fBo = sheet && sheet.fabrics && sheet.fabrics.blackout ? sheet.fabrics.blackout : {};
+  const fSh = sheet && sheet.fabrics && sheet.fabrics.sheer ? sheet.fabrics.sheer : {};
+  const boName = g.boName || fBo.name || '';
+  const boDesign = g.boDesign || fBo.design || '';
+  const boColor = g.boColor || fBo.color || '';
+  const boQty = g.boQty || (w.blackout && w.blackout.t ? String(extractYardsFromCalcText(w.blackout.t) || w.blackout.t) : '');
+
+  const shName = g.shName || fSh.name || '';
+  const shDesign = g.shDesign || fSh.design || '';
+  const shColor = g.shColor || fSh.color || '';
+  const shQty = g.shQty || (w.sheer && w.sheer.t ? String(extractYardsFromCalcText(w.sheer.t) || w.sheer.t) : '');
+
+  return `
+    <div class="gable-page-wrap" data-special-win="${wIdx}" title="คลิกเพื่อแก้ไขข้อมูลแปลนงานม่านจั่ว">
+      <div class="gable-top-meta">แผ่นที่ ${pageNo}/${totalPages} • อ้างอิงจุดที่ ${esc(w.planNo || (wIdx + 1))} (${esc(w.label || '-')})</div>
+      <div class="gable-title">แปลนงานม่านจั่ว <span class="gable-title-line">${esc(titleLabel)}</span></div>
+      <div class="gable-svg-box">${gableDiagramSVG(w)}</div>
+
+      <div class="gable-calc-section">
+        <div class="gable-calc-group">
+          ${rowLine('รางม่าน (ซ้าย)', g.railLeft, 'ชั้น')}
+          ${rowLine('ผ้าม่านทึบ (ซ้าย)', g.boLeft, 'ผืน')}
+          ${rowLine('ผ้าม่านโปร่ง (ซ้าย)', g.shLeft, 'ผืน')}
+        </div>
+        <div class="gable-calc-group" style="margin-top:16px">
+          ${rowLine('รางม่าน (ขวา)', g.railRight, 'ชั้น')}
+          ${rowLine('ผ้าม่านทึบ (ขวา)', g.boRight, 'ผืน')}
+          ${rowLine('ผ้าม่านโปร่ง (ขวา)', g.shRight, 'ผืน')}
+        </div>
+      </div>
+
+      <table class="gable-prod-tbl">
+        <colgroup>
+          <col style="width:26%">
+          <col style="width:37%">
+          <col style="width:37%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>สินค้า</th>
+            <th>ผ้าม่านทึบ</th>
+            <th>ผ้าม่านโปร่ง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th>ผ้า</th><td>${esc(boName)}</td><td>${esc(shName)}</td></tr>
+          <tr><th>ดีไซน์</th><td>${esc(boDesign)}</td><td>${esc(shDesign)}</td></tr>
+          <tr><th>สี</th><td>${esc(boColor)}</td><td>${esc(shColor)}</td></tr>
+          <tr><th>จำนวน</th><td>${esc(boQty)}</td><td>${esc(shQty)}</td></tr>
+        </tbody>
+      </table>
+
+      <div class="gable-note-line">
+        <span>หมายเหตุ (สูงเต็ม) :</span>
+        <span>[A] <span class="gn-fill">${esc(g.fullA || '')}</span></span>
+        <span>[B] <span class="gn-fill">${esc(g.fullB || '')}</span></span>
+        ${!isSingleSpan ? `<span>[C] <span class="gn-fill">${esc(g.fullC || '')}</span></span>` : ''}
+        <span style="margin-left:18px"><span class="gn-fill gn-wide">${esc(g.noteDeduct || (g.heightDeduct ? 'ลดความสูง ' + g.heightDeduct : ''))}</span> ซม.</span>
+      </div>
+    </div>
+  `;
+}
+
+function rSideJoinSpecialPage(order, sheet, w, sIdx, wIdx, pageNo, totalPages) {
+  const sj = (w && w.sideJoin) || {};
+  const sjType = sj.type || 'both_sides';
+  const titleLabel = sj.title || `${w.label || ('จุดที่ ' + (w.planNo || (wIdx + 1)))}${sheet.room && sheet.room.name ? ' (' + sheet.room.name + ')' : ''}`;
+  const mainW = sj.mainWidth || (w.blackout && w.blackout.a) || w.width || '';
+  const borderW = sj.borderWidth || '30';
+  const curtainH = sj.height || (w.blackout && w.blackout.b) || w.height || '';
+
+  return `
+    <div class="gable-page-wrap" data-special-win="${wIdx}" title="คลิกเพื่อแก้ไขข้อมูลผ้าม่านเย็บต่อด้านข้าง / รายการพิเศษ">
+      <div class="gable-top-meta">แผ่นที่ ${pageNo}/${totalPages} • อ้างอิงจุดที่ ${esc(w.planNo || (wIdx + 1))} (${esc(w.label || '-')})</div>
+      <div class="gable-title">แปลนงานผ้าม่านเย็บต่อด้านข้าง <span class="gable-title-line">${esc(titleLabel)}</span></div>
+
+      <div class="gable-svg-box">
+        <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:320px;display:block;margin:0 auto">
+          <!-- กรอบผืนซ้าย และ ผืนขวา พร้อมแถบเย็บต่อด้านข้าง -->
+          <rect x="130" y="36" width="205" height="220" fill="#fff" stroke="#000" stroke-width="1.5"/>
+          <rect x="365" y="36" width="205" height="220" fill="#fff" stroke="#000" stroke-width="1.5"/>
+          ${(sjType === 'both_sides' || sjType === 'outer_side') ? `
+            <rect x="130" y="36" width="44" height="220" fill="#e6ecf5" stroke="#000" stroke-width="1.2"/>
+            <rect x="526" y="36" width="44" height="220" fill="#e6ecf5" stroke="#000" stroke-width="1.2"/>
+          ` : ''}
+          ${(sjType === 'both_sides' || sjType === 'inner_side') ? `
+            <rect x="291" y="36" width="44" height="220" fill="#e6ecf5" stroke="#000" stroke-width="1.2"/>
+            <rect x="365" y="36" width="44" height="220" fill="#e6ecf5" stroke="#000" stroke-width="1.2"/>
+          ` : ''}
+          ${sjType === 'bottom_border' ? `
+            <rect x="130" y="212" width="205" height="44" fill="#e6ecf5" stroke="#000" stroke-width="1.2"/>
+            <rect x="365" y="212" width="205" height="44" fill="#e6ecf5" stroke="#000" stroke-width="1.2"/>
+          ` : ''}
+          <text x="232" y="142" text-anchor="middle" font-size="13" font-weight="700" fill="#000">ผ้าหลัก (ซ้าย)</text>
+          <text x="467" y="142" text-anchor="middle" font-size="13" font-weight="700" fill="#000">ผ้าหลัก (ขวา)</text>
+          <text x="232" y="164" text-anchor="middle" font-size="12" fill="#333">กว้าง ${esc(mainW)} ซม.</text>
+          <text x="467" y="164" text-anchor="middle" font-size="12" fill="#333">แถบต่อ ${esc(borderW)} ซม.</text>
+          <!-- เส้นบอกความสูงด้านขวา -->
+          <line x1="605" y1="36" x2="605" y2="256" stroke="#000" stroke-width="1.3"/>
+          <line x1="590" y1="36" x2="620" y2="36" stroke="#000" stroke-width="1.3"/>
+          <line x1="590" y1="256" x2="620" y2="256" stroke="#000" stroke-width="1.3"/>
+          <rect x="572" y="131" width="66" height="28" fill="#fff" stroke="#000" stroke-width="1"/>
+          <text x="605" y="150" text-anchor="middle" font-size="13" font-weight="700">${esc(curtainH)}</text>
+          <!-- เส้นบอกความกว้างด้านล่าง -->
+          <line x1="130" y1="286" x2="570" y2="286" stroke="#000" stroke-width="1.3"/>
+          <line x1="130" y1="274" x2="130" y2="298" stroke="#000" stroke-width="1.3"/>
+          <line x1="570" y1="274" x2="570" y2="298" stroke="#000" stroke-width="1.3"/>
+          <rect x="290" y="272" width="120" height="28" fill="#fff" stroke="#000" stroke-width="1"/>
+          <text x="350" y="291" text-anchor="middle" font-size="13" font-weight="700">${esc(w.rail && w.rail.a ? w.rail.a : mainW)}</text>
+        </svg>
+      </div>
+
+      <table class="gable-prod-tbl" style="margin-top:18px">
+        <colgroup>
+          <col style="width:26%">
+          <col style="width:37%">
+          <col style="width:37%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>รายการ</th>
+            <th>ผ้าหลัก</th>
+            <th>ผ้าที่เย็บต่อด้านข้าง / ขอบ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th>ชื่อผ้า</th><td>${esc(sj.mainFabName || (sheet.fabrics && sheet.fabrics.blackout && sheet.fabrics.blackout.name) || '')}</td><td>${esc(sj.joinFabName || (sheet.fabrics && sheet.fabrics.other && sheet.fabrics.other.name) || '')}</td></tr>
+          <tr><th>ดีไซน์</th><td>${esc(sj.mainDesign || (sheet.fabrics && sheet.fabrics.blackout && sheet.fabrics.blackout.design) || '')}</td><td>${esc(sj.joinDesign || (sheet.fabrics && sheet.fabrics.other && sheet.fabrics.other.design) || '')}</td></tr>
+          <tr><th>สี</th><td>${esc(sj.mainColor || (sheet.fabrics && sheet.fabrics.blackout && sheet.fabrics.blackout.color) || '')}</td><td>${esc(sj.joinColor || (sheet.fabrics && sheet.fabrics.other && sheet.fabrics.other.color) || '')}</td></tr>
+          <tr><th>ขนาด / ความกว้างที่ต่อ</th><td>${esc(mainW)} ซม. × สูง ${esc(curtainH)} ซม.</td><td>กว้างแถบต่อ ${esc(borderW)} ซม. × สูง ${esc(curtainH)} ซม.</td></tr>
+          <tr><th>จำนวนหลาที่ใช้</th><td>${esc(sj.mainQty || (w.blackout && w.blackout.t ? String(extractYardsFromCalcText(w.blackout.t)) : ''))}</td><td>${esc(sj.joinQty || '')}</td></tr>
+        </tbody>
+      </table>
+
+      <div class="gable-note-line" style="margin-top:20px">
+        <span>รายละเอียดการเย็บต่อพิเศษ :</span>
+        <span class="gn-fill" style="min-width:420px;text-align:left;padding:0 8px">${esc(sj.note || '')}</span>
+      </div>
+    </div>
+  `;
+}
+
+/* =========================================================
    Build all A4 pages for an Order
    ========================================================= */
 function expandOrderPages(order) {
@@ -1047,7 +1412,20 @@ function expandOrderPages(order) {
       chunks.push({ wins: wins.slice(i, i + 4), startNo: i });
     }
     chunks.forEach((ch, cIdx) => {
-      pages.push({ sheet, sIdx, cIdx, wins: ch.wins, startNo: ch.startNo });
+      pages.push({ pageType: 'standard', sheet, sIdx, cIdx, wins: ch.wins, startNo: ch.startNo });
+      // หากมีรายการพิเศษ (เช่น ม่านจั่ว หรือ ผ้าม่านเย็บต่อด้านข้าง) ให้สร้างหน้าถัดไปแยกต่างหากสำหรับรายการพิเศษนั้นๆ ทันที
+      ch.wins.forEach((w, localIdx) => {
+        if (w && (w.specialType === 'gable' || w.specialType === 'side_join')) {
+          pages.push({
+            pageType: w.specialType,
+            sheet,
+            sIdx,
+            cIdx,
+            wIdx: ch.startNo + localIdx,
+            win: w,
+          });
+        }
+      });
     });
   });
   return pages;
@@ -1058,12 +1436,20 @@ function renderOrderPages(order) {
   const total = pages.length;
   return pages.map((p, idx) => {
     const pageNo = idx + 1;
+    if (p.pageType === 'gable') {
+      const body = rGableSpecialPage(order, p.sheet, p.win, p.sIdx, p.wIdx, pageNo, total);
+      return `<div class="page page-special" data-page-idx="${idx}" data-sheet-idx="${p.sIdx}" data-chunk-idx="${p.cIdx}" data-special-widx="${p.wIdx}">${body}</div>`;
+    }
+    if (p.pageType === 'side_join') {
+      const body = rSideJoinSpecialPage(order, p.sheet, p.win, p.sIdx, p.wIdx, pageNo, total);
+      return `<div class="page page-special" data-page-idx="${idx}" data-sheet-idx="${p.sIdx}" data-chunk-idx="${p.cIdx}" data-special-widx="${p.wIdx}">${body}</div>`;
+    }
     const body =
       rHeader(order) +
       rCustomer(order, pageNo, total) +
       rMap(p.sheet) +
       rWinGrid(p.wins, p.startNo, p.sheet, p.sIdx, p.cIdx) +
-      rFabric(p.sheet) +
+      rFabric(p.sheet, p.wins) +
       rRods(p.sheet) +
       rSign(order);
     return `<div class="page" data-page-idx="${idx}" data-sheet-idx="${p.sIdx}" data-chunk-idx="${p.cIdx}">${body}</div>`;

@@ -63,6 +63,33 @@ const WIDTH_LAYER_TYPES = [
   ['sheer', 'ม่านโปร่ง'],
 ];
 
+const BACK_LAYER_DEDUCT_OPTIONS = [
+  ['0', 'ไม่ลดความสูงเพิ่ม (0 ซม.)'],
+  ['0.5', 'ลดความสูงม่านชั้นด้านหลังเพิ่ม 0.5 ซม.'],
+  ['1', 'ลดความสูงม่านชั้นด้านหลังเพิ่ม 1 ซม.'],
+];
+
+const SPECIAL_WIN_TYPES = [
+  ['', 'บานปกติ (ไม่มีหน้าขยายแยก)'],
+  ['gable', 'แปลนงานม่านจั่ว (แสดงแยกในหน้าถัดไป • เลือกได้ 5 รูปแบบ)'],
+  ['side_join', 'ผ้าม่านเย็บต่อด้านข้าง / รายการพิเศษ (แสดงแยกในหน้าถัดไป)'],
+];
+
+const GABLE_TYPES = [
+  ['1', 'แบบที่ 1: จั่วสามเหลี่ยมสมมาตร แบ่งซ้าย-ขวา (มีความสูง A, B, C และความกว้างซ้าย-ขวา)'],
+  ['2', 'แบบที่ 2: จั่วเฉียงลาดลงขวา แบ่งซ้าย-ขวา (สูงซ้าย A → กลาง B → ขวา C และความกว้างซ้าย-ขวา)'],
+  ['3', 'แบบที่ 3: จั่วเฉียงลาดลงขวา ช่วงเดียว (สูงซ้าย A → ขวา B และความกว้างรวม)'],
+  ['4', 'แบบที่ 4: จั่วเฉียงลาดขึ้นขวา แบ่งซ้าย-ขวา (ซ้าย A → กลาง B → สูงขวา C และความกว้างซ้าย-ขวา)'],
+  ['5', 'แบบที่ 5: จั่วเฉียงลาดขึ้นขวา ช่วงเดียว (ซ้าย A → สูงขวา B และความกว้างรวม)'],
+];
+
+const SIDE_JOIN_TYPES = [
+  ['both_sides', 'เย็บต่อผ้าด้านข้าง ทั้งฝั่งซ้ายและขวา (2 ข้าง)'],
+  ['inner_side', 'เย็บต่อผ้าขอบด้านใน (ฝั่งชนกลาง)'],
+  ['outer_side', 'เย็บต่อผ้าขอบด้านนอก'],
+  ['bottom_border', 'เย็บต่อชายด้านล่าง / ขอบบน'],
+];
+
 /**
  * ฟังก์ชันปัดเศษตามที่กำหนด:
  * - floor_int: ปัดเศษลงเป็นจำนวนเต็ม
@@ -928,12 +955,13 @@ function getWidthFormulasForStyle(curtainStyle, pieces = '', railTracks = '', ro
 }
 
 /**
- * ค้นหาสูตรความสูงผ้าม่านตามเงื่อนไข: รูปแบบผ้าม่าน, ประเภทรางม่าน, ขนาดตะขอ, จำนวนชั้นรางม่าน, จำนวนผืน
+ * ค้นหาสูตรความสูงผ้าม่านสำหรับแสดงในรายการเลือก (Dropdown) ตามรูปแบบผ้าม่านของบานนั้นๆ
  */
 function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks = '', pieces = '') {
   const all = masterDB.heightFormulas || [];
+  if (!curtainStyle) return all;
   const matched = all.filter(f => {
-    const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
+    const matchStyle = !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
     const matchRod = !rodType || !f.rodType || f.rodType === '*' || f.rodType === rodType;
     const matchHook = !hookSize || !f.hookSize || f.hookSize === '*' || f.hookSize === hookSize;
     const matchTracks = !railTracks || !f.railTracks || String(f.railTracks) === '*' || String(f.railTracks) === String(railTracks);
@@ -941,6 +969,60 @@ function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks 
     return matchStyle && matchRod && matchHook && matchTracks && matchPieces;
   });
   return matched.length ? matched : all;
+}
+
+/**
+ * ค้นหาสูตรลดความสูงผ้าม่านอัตโนมัติเฉพาะเมื่อเลือกข้อมูลของบานนั้นๆ ครบตามเงื่อนไขของสูตรแล้วเท่านั้น
+ * (เช่น ต้องเลือกรูปแบบผ้าม่าน + ประเภทรางม่าน + ขนาดตะขอ จึงจะดึงสูตรลดความสูงตามตะขอ/รางนั้นๆ)
+ */
+function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTracks = '', pieces = '') {
+  if (!curtainStyle) return null;
+  const all = masterDB.heightFormulas || [];
+  // 1) ค้นหาสูตรที่ระบุเงื่อนไขตรงกับข้อมูลที่ผู้ใช้เลือกไว้ในบานนั้นจริงๆ (ไม่ดึงสูตรที่ต้องใช้ตะขอ/รางหากผู้ใช้ยังไม่ได้เลือก)
+  const exactMatched = all.filter(f => {
+    const reqStyle = f.curtainStyle && f.curtainStyle !== '*';
+    const reqRod = f.rodType && f.rodType !== '*';
+    const reqHook = f.hookSize && f.hookSize !== '*';
+    const reqTracks = f.railTracks && String(f.railTracks) !== '*';
+    const reqPieces = f.pieces && String(f.pieces) !== '*';
+
+    if (reqStyle && f.curtainStyle !== curtainStyle && !curtainStyle.includes(f.curtainStyle)) return false;
+    if (reqRod && (!rodType || f.rodType !== rodType)) return false;
+    if (reqHook && (!hookSize || f.hookSize !== hookSize)) return false;
+    if (reqTracks && (!railTracks || String(f.railTracks) !== String(railTracks))) return false;
+    if (reqPieces && (!pieces || String(f.pieces) !== String(pieces))) return false;
+    return reqStyle || reqRod || reqHook;
+  });
+  if (exactMatched.length) {
+    // เรียงลำดับความจำเพาะเจาะจงสูงสุดก่อน (เช่น ระบุทั้งรูปแบบม่าน + ราง + ตะขอ)
+    exactMatched.sort((a, b) => {
+      const score = x =>
+        ((x.curtainStyle && x.curtainStyle !== '*') ? 4 : 0) +
+        ((x.rodType && x.rodType !== '*') ? 2 : 0) +
+        ((x.hookSize && x.hookSize !== '*') ? 2 : 0) +
+        ((x.railTracks && String(x.railTracks) !== '*') ? 1 : 0) +
+        ((x.pieces && String(x.pieces) !== '*') ? 1 : 0);
+      return score(b) - score(a);
+    });
+    return exactMatched[0];
+  }
+  // 2) หากยังไม่ได้เลือกราง/ตะขอ ให้ใช้สูตรทั่วไป (RH ไม่หักลด) จนกว่าจะเลือกเงื่อนไขการลดความสูง
+  return all.find(f => (!f.curtainStyle || f.curtainStyle === '*') && (!f.rodType || f.rodType === '*') && (!f.hookSize || f.hookSize === '*')) || null;
+}
+
+/**
+ * แยกเฉพาะตัวเลขจำนวนหลา (หลังเครื่องหมาย /) ออกจากข้อความช่องจำนวนหลา เช่น "5/8.9" -> 8.9 หรือ "8.9" -> 8.9
+ */
+function extractYardsFromCalcText(val) {
+  const s = String(val ?? '').trim();
+  if (!s) return 0;
+  if (s.includes('/')) {
+    const parts = s.split('/');
+    const afterSlash = parseFloat(parts[parts.length - 1].replace(/[^\d.-]/g, ''));
+    return (!isNaN(afterSlash) && Number.isFinite(afterSlash)) ? afterSlash : 0;
+  }
+  const n = parseFloat(s.replace(/[^\d.-]/g, ''));
+  return (!isNaN(n) && Number.isFinite(n)) ? n : 0;
 }
 
 function getFabricCalcRulesForWindow(curtainStyle, grainType) {
@@ -1035,7 +1117,7 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     vars.WC = RW;
   }
 
-  // 2) คำนวณขนาดความสูงผ้าม่าน (b) พร้อมหักลดความสูงกรณีไม่รับรางม่าน (w.noRail)
+  // 2) คำนวณขนาดความสูงผ้าม่าน (b) พร้อมหักลดความสูงกรณีไม่รับรางม่าน (w.noRail) และหักลดความสูงม่านชั้นด้านหลังเพิ่ม (0.5 หรือ 1 ซม.)
   let b = '';
   if (hf && hf.heightExp) {
     b = evalFormulaExpr(hf.heightExp, vars, hf.roundMode || 'none');
@@ -1043,9 +1125,11 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     b = String(RH);
   }
   const noRailDeduct = getNoRailHeightDeduction(w);
+  const extraHeightDeduct = num(opts.extraHeightDeduct);
+  const totalHeightDeduct = noRailDeduct + extraHeightDeduct;
   let hcNum = num(b) || RH;
-  if (noRailDeduct > 0 && hcNum > 0) {
-    hcNum = Math.max(0, Math.round((hcNum - noRailDeduct) * 100) / 100);
+  if (totalHeightDeduct > 0 && hcNum > 0) {
+    hcNum = Math.max(0, Math.round((hcNum - totalHeightDeduct) * 100) / 100);
     b = String(hcNum);
   }
   vars.HC = hcNum;
@@ -1154,10 +1238,10 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     ? applyYardDisplayMode(totalRawYards, yardMode, extraYards, (fRule && fRule.roundMode) || 'ceil_1dec')
     : '';
 
-  // แสดงทั้งจำนวนหน้า / จำนวนหลาในช่องหลา เช่น "7 หน้า / 25.2" (เมื่อต่อท้ายหน่วย "หลา" บนใบงานจะแสดงเป็น "7 หน้า / 25.2 หลา")
+  // แสดงจำนวนหน้าผ้า/จำนวนหลา ในช่องหลา เช่น "5/8.9"
   let t = '';
   if (yardsStr) {
-    t = totalPanels > 0 ? `${totalPanels} หน้า / ${yardsStr}` : yardsStr;
+    t = totalPanels > 0 ? `${totalPanels}/${yardsStr}` : yardsStr;
   }
 
   return {
@@ -1555,6 +1639,28 @@ const MasterDBModal = (() => {
 
   const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  function sortTabByName(tab, dir = 'asc') {
+    const arr = masterDB[tab];
+    if (!Array.isArray(arr) || arr.length <= 1) return;
+    const getSortKey = item => {
+      if (!item) return '';
+      if (tab === 'widthFormulas' || tab === 'heightFormulas' || tab === 'fabricCalcRules') {
+        return String(item.label || item.curtainStyle || '').trim();
+      }
+      return String(item.name || item.username || item.label || '').trim();
+    };
+    arr.sort((a, b) => {
+      const ka = getSortKey(a);
+      const kb = getSortKey(b);
+      const cmp = ka.localeCompare(kb, 'th', { numeric: true, sensitivity: 'base' });
+      return dir === 'desc' ? -cmp : cmp;
+    });
+    saveMasterDB();
+    importStatusMsg = `✔ เรียงลำดับข้อมูลตามชื่อ (${dir === 'desc' ? 'Z → A / ฮ → ก' : 'A → Z / ก → ฮ'}) เรียบร้อยแล้ว`;
+    render();
+    if (onUpdate) onUpdate();
+  }
+
   function renderImportBox(tab) {
     const schema = DB_IMPORT_SCHEMAS[tab];
     if (!schema) return '';
@@ -1562,13 +1668,15 @@ const MasterDBModal = (() => {
       <div class="subcard" style="margin-bottom:10px;background:#f4f8ff;border:1px solid #bfd6ff">
         <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div>
-            <b style="color:#0b3a8c;font-size:12.5px">📥 นำเข้าข้อมูล "${escH(schema.title)}" จากไฟล์ .txt หรือ .csv (แยกเฉพาะฐานข้อมูลหน้านี้)</b>
+            <b style="color:#0b3a8c;font-size:12.5px">📥 นำเข้าข้อมูลและจัดเรียง "${escH(schema.title)}"</b>
             <div style="font-size:11.5px;color:#333;margin-top:2px">
               <b>รูปแบบข้อมูลที่ต้องนำเข้า:</b> <code style="background:#fff;padding:2px 6px;border:1px solid #ccd8ee;border-radius:4px;color:#b42318;font-weight:700">${escH(schema.pattern)}</code>
             </div>
             <div style="font-size:11px;color:#555;margin-top:2px">${escH(schema.desc)}</div>
           </div>
           <div class="inline" style="flex-wrap:wrap">
+            <button type="button" data-db-sort="asc" title="เรียงลำดับตามชื่อ ก-ฮ / A-Z">🔤 เรียงชื่อ A → Z</button>
+            <button type="button" data-db-sort="desc" title="เรียงลำดับตามชื่อ ฮ-ก / Z-A">🔤 เรียงชื่อ Z → A</button>
             <select id="dbImportModeSel" style="width:auto;font-size:12px" title="เลือกรูปแบบการนำเข้า">
               <option value="append" ${importMode === 'append' ? 'selected' : ''}>➕ เพิ่มต่อท้ายข้อมูลเดิม</option>
               <option value="replace" ${importMode === 'replace' ? 'selected' : ''}>🔄 แทนที่ข้อมูลเดิมในหมวดนี้</option>
@@ -2174,6 +2282,11 @@ const MasterDBModal = (() => {
     modal.addEventListener('input', onEditChange);
     modal.addEventListener('change', onEditChange);
     modal.addEventListener('click', e => {
+      const sortBtn = e.target.closest('[data-db-sort]');
+      if (sortBtn) {
+        sortTabByName(activeTab, sortBtn.dataset.dbSort || 'asc');
+        return;
+      }
       const wLayerBtn = e.target.closest('[data-db-wlayer-filter]');
       if (wLayerBtn) {
         widthLayerFilter = wLayerBtn.dataset.dbWlayerFilter || 'all';
