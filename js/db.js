@@ -45,16 +45,22 @@ const YARD_DISPLAY_MODES = [
 const PANEL_ROUND_MODES = [
   ['ceil_plus1_if_frac_ge', 'ถ้าเศษทศนิยม ≥ ค่าที่กำหนด (เช่น 0.9) ปัดขึ้นเป็นจำนวนเต็มแล้ว +1 หน้า'],
   ['ceil_if_frac_ge_else_floor', 'ถ้าเศษทศนิยม ≥ ค่าที่กำหนดให้ปัดขึ้น ถ้าน้อยกว่าให้ปัดลง'],
-  ['ceil', 'ปัดเศษขึ้นเป็นจำนวนเต็มเสมอ (CEIL)'],
+  ['ceil', 'ปัดเศษขึ้นเป็นจำนวนเต็มเสมอ'],
   ['round', 'ปัดเศษตามเกณฑ์ปกติ (≥ 0.5 ปัดขึ้น)'],
-  ['floor', 'ปัดเศษลงเป็นจำนวนเต็ม (FLOOR)'],
+  ['floor', 'ปัดเศษลงเป็นจำนวนเต็ม'],
 ];
 
 const ROUND_MODES = [
-  ['ceil_1dec', 'ปัดเศษขึ้นเป็นทศนิยม 1 ตำแหน่ง (CEIL1)'],
-  ['ceil_int', 'ปัดเศษขึ้นเป็นจำนวนเต็ม (CEIL)'],
-  ['floor_int', 'ปัดเศษลงเป็นจำนวนเต็ม (FLOOR)'],
+  ['ceil_1dec', 'ปัดเศษขึ้นเป็นทศนิยม 1 ตำแหน่ง'],
+  ['ceil_int', 'ปัดเศษขึ้นเป็นจำนวนเต็ม'],
+  ['floor_int', 'ปัดเศษลงเป็นจำนวนเต็ม'],
   ['none', 'ทศนิยมตามจริง (ไม่ปัดเศษ)'],
+];
+
+const WIDTH_LAYER_TYPES = [
+  ['both', 'ทั้งม่านทึบและม่านโปร่ง'],
+  ['opaque', 'ม่านทึบ'],
+  ['sheer', 'ม่านโปร่ง'],
 ];
 
 /**
@@ -684,6 +690,7 @@ function normalizeWidthFormulaItem(wf, idx) {
   const item = Object.assign({
     id: 'wf_' + (idx + 1),
     curtainStyle: 'ม่านจีบ',
+    layerType: 'both', // 'opaque' (ม่านทึบ) | 'sheer' (ม่านโปร่ง) | 'both' (ทั้งม่านทึบและม่านโปร่ง)
     rodType: '*',
     railTracks: '*',
     pieces: 2,
@@ -697,6 +704,7 @@ function normalizeWidthFormulaItem(wf, idx) {
   }, def, wf || {});
   if (!item.rodType) item.rodType = '*';
   if (!item.railTracks) item.railTracks = '*';
+  if (!item.layerType || !['opaque', 'sheer', 'both'].includes(item.layerType)) item.layerType = 'both';
   return item;
 }
 
@@ -885,26 +893,36 @@ function evalFormulaExpr(expr, vars = {}, roundMode = 'none') {
 }
 
 /**
- * ค้นหาสูตรความกว้างผ้าม่านตามเงื่อนไข: รูปแบบผ้าม่าน, จำนวนผืน (pieces), จำนวนรางม่าน(ชั้น) (railTracks), ประเภทรางม่าน (rodType)
+ * ค้นหาสูตรความกว้างผ้าม่านตามเงื่อนไข:
+ * รูปแบบผ้าม่าน (curtainStyle), จำนวนผืน (pieces), จำนวนรางม่าน(ชั้น) (railTracks), ประเภทรางม่าน (rodType), และแยกม่านทึบ/ม่านโปร่ง/ทั้งคู่ (layerType: 'opaque' | 'sheer' | 'both')
  */
-function getWidthFormulasForStyle(curtainStyle, pieces = '', railTracks = '', rodType = '') {
+function getWidthFormulasForStyle(curtainStyle, pieces = '', railTracks = '', rodType = '', layerType = '') {
   const all = masterDB.widthFormulas || [];
-  if (!curtainStyle && !pieces && !railTracks && !rodType) return all;
+  if (!curtainStyle && !pieces && !railTracks && !rodType && !layerType) return all;
+  const matchLayerFn = f => {
+    if (!layerType) return true;
+    const lt = f.layerType || 'both';
+    return lt === 'both' || lt === '*' || lt === layerType;
+  };
   const matched = all.filter(f => {
     const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
     const matchPieces = !pieces || !f.pieces || String(f.pieces) === '*' || String(f.pieces) === String(pieces);
     const matchTracks = !railTracks || !f.railTracks || String(f.railTracks) === '*' || String(f.railTracks) === String(railTracks);
     const matchRod = !rodType || !f.rodType || f.rodType === '*' || f.rodType === rodType;
-    return matchStyle && matchPieces && matchTracks && matchRod;
+    return matchStyle && matchPieces && matchTracks && matchRod && matchLayerFn(f);
   });
   if (matched.length) return matched;
-  // Fallback: match by curtainStyle + pieces first, then by curtainStyle
-  const byStylePieces = all.filter(f => {
+  const byStyleLayerPieces = all.filter(f => {
     const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
     const matchPieces = !pieces || !f.pieces || String(f.pieces) === '*' || String(f.pieces) === String(pieces);
-    return matchStyle && matchPieces;
+    return matchStyle && matchPieces && matchLayerFn(f);
   });
-  if (byStylePieces.length) return byStylePieces;
+  if (byStyleLayerPieces.length) return byStyleLayerPieces;
+  const byStyleLayer = all.filter(f => {
+    const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
+    return matchStyle && matchLayerFn(f);
+  });
+  if (byStyleLayer.length) return byStyleLayer;
   const byStyle = all.filter(f => !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle));
   return byStyle.length ? byStyle : all;
 }
@@ -1058,9 +1076,10 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
   }
 
   // 4) คำนวณปริมาณผ้า แยกเกรนม่านทึบ ('opaque') และเกรนม่านโปร่ง ('sheer')
+  // ดึงขนาดหน้าผ้า (FW_FAB) และ Y-Repeat (YR) จากฐานข้อมูลผ้าตามผ้าที่เลือก และดึงจำนวนผืน (P) จากบานที่เลือก
   const fabricItem = opts.fabric || opts.fabricItem || null;
   let grainType = opts.grainType || 'opaque';
-  const fabW = num(fabricItem && fabricItem.fabricWidth) || num(opts.fabricRule && opts.fabricRule.fabricWidth) || (grainType === 'sheer' ? 300 : 140);
+  const fabW = num(fabricItem && fabricItem.fabricWidth) || (grainType === 'sheer' ? 300 : 140);
   // บังคับกฎ: เฉพาะผ้าที่มีขนาดหน้าผ้าเกิน 270 ซม. ขึ้นไปถึงใช้เกรนม่านโปร่งได้
   if (grainType === 'sheer' && !canFabricUseSheerGrain(fabW)) {
     grainType = 'opaque';
@@ -1070,10 +1089,10 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     || getFabricCalcRulesForWindow(styleName, grainType)[0]
     || defaultMasterDB().fabricCalcRules[0];
 
-  vars.FW_FAB = fabW || num(fRule && fRule.fabricWidth) || 140;
+  vars.FW_FAB = fabW;
   vars.YR = (fabricItem && fabricItem.yRepeat !== undefined && fabricItem.yRepeat !== '')
     ? num(fabricItem.yRepeat)
-    : num(fRule && fRule.yRepeat);
+    : 0;
   vars.G = num(fRule && fRule.gatherRatio) || G;
   vars.HEM_SIDE = (fRule && fRule.sideHem !== undefined && fRule.sideHem !== '') ? num(fRule.sideHem) : stdP.sideHem;
   vars.HEM_TB = (fRule && fRule.topBottomHem !== undefined && fRule.topBottomHem !== '') ? num(fRule.topBottomHem) : stdP.topBottomHem;
@@ -1239,22 +1258,46 @@ const DB_IMPORT_SCHEMAS = {
     },
   },
   widthFormulas: {
-    title: 'ฐานข้อมูลขนาดความกว้างผ้าม่าน (ตามรูปแบบม่าน / จำนวนผืน / จำนวนชั้นราง / ประเภทราง)',
-    pattern: 'curtainStyle, rodType, railTracks, pieces, label, railWidth, gatherRatio, overlap, sideReturn, widthExp, roundMode',
-    desc: 'คอลัมน์: รูปแบบผ้าม่าน, ประเภทรางม่าน(*), จำนวนชั้นราง(* หรือ 1/2), จำนวนผืน(P), ชื่อเงื่อนไข, ขนาดราง(RW), ระยะย่น(G), เผื่อเกยมาตรฐาน(OV=8), เผื่ออ้อมข้างมาตรฐาน(SR=8), สูตรความกว้างผ้า, การปัดเศษ',
+    title: 'ฐานข้อมูลขนาดความกว้างผ้าม่าน (แยกตามม่านทึบ / ม่านโปร่ง / ทั้งม่านทึบและม่านโปร่ง)',
+    pattern: 'curtainStyle, layerType, rodType, railTracks, pieces, label, railWidth, gatherRatio, overlap, sideReturn, widthExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบผ้าม่าน, ประเภทม่าน(both=ทั้งทึบและโปร่ง / opaque=ม่านทึบ / sheer=ม่านโปร่ง), ประเภทรางม่าน(*), จำนวนชั้นราง(* หรือ 1/2), จำนวนผืน(P), ชื่อเงื่อนไข, ขนาดราง(RW), ระยะย่น(G), เผื่อเกย(OV=8), เผื่ออ้อมข้าง(SR=8), สูตรความกว้างผ้า, การปัดเศษ',
     example: [
-      'curtainStyle, rodType, railTracks, pieces, label, railWidth, gatherRatio, overlap, sideReturn, widthExp, roundMode',
-      'ม่านจีบ, *, *, 2, ม่านจีบ 2 ผืน แยกกลาง มาตรฐาน (เกย 8 อ้อมข้าง 8), RW, 2.5, 8, 8, ((RW + OV + SR) / P), ceil_int',
-      'ม่านลอน, รางม่านลอน, *, 2, ม่านลอน 2 ผืน แยกกลาง (เกย 8 อ้อมข้าง 8), RW, 2.2, 8, 8, ((RW + OV + SR) / P), ceil_int',
+      'curtainStyle, layerType, rodType, railTracks, pieces, label, railWidth, gatherRatio, overlap, sideReturn, widthExp, roundMode',
+      'ม่านจีบ, both, *, *, 2, ม่านจีบ 2 ผืน แยกกลาง มาตรฐาน (เกย 8 อ้อมข้าง 8), RW, 2.5, 8, 8, ((RW + OV + SR) / P), ceil_int',
+      'ม่านจีบ, opaque, *, *, 2, ม่านจีบ เฉพาะม่านทึบ 2 ผืน, RW, 2.5, 8, 8, ((RW + OV + SR) / P), ceil_int',
+      'ม่านจีบ, sheer, *, *, 2, ม่านจีบ เฉพาะม่านโปร่ง 2 ผืน, RW, 2.5, 8, 8, ((RW + OV + SR) / P), ceil_int',
     ].join('\n'),
     headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
     parseRow(cols, idx) {
       if (!cols[0] && !cols[1]) return null;
-      // รองรับทั้งไฟล์รูปแบบ 11 คอลัมน์ใหม่ และ 9 คอลัมน์เดิม
-      if (cols.length >= 11) {
+      const parseLayer = v => {
+        const s = String(v || '').trim().toLowerCase();
+        if (s === 'opaque' || s === 'ม่านทึบ' || s === 'ทึบ') return 'opaque';
+        if (s === 'sheer' || s === 'ม่านโปร่ง' || s === 'โปร่ง') return 'sheer';
+        return 'both';
+      };
+      if (cols.length >= 12) {
         return {
           id: 'wf_imp_' + Date.now() + '_' + idx,
           curtainStyle: cols[0] || '*',
+          layerType: parseLayer(cols[1]),
+          rodType: cols[2] || '*',
+          railTracks: cols[3] || '*',
+          pieces: parseInt(cols[4], 10) || 2,
+          label: cols[5] || cols[0] || 'เงื่อนไขความกว้าง',
+          railWidth: cols[6] || 'RW',
+          gatherRatio: parseFloat(cols[7]) || 2.5,
+          overlap: cols[8] !== undefined && cols[8] !== '' ? parseFloat(cols[8]) : 8,
+          sideReturn: cols[9] !== undefined && cols[9] !== '' ? parseFloat(cols[9]) : 8,
+          widthExp: cols[10] || '((RW + OV + SR) / P)',
+          roundMode: cols[11] || 'ceil_int',
+        };
+      }
+      if (cols.length === 11) {
+        return {
+          id: 'wf_imp_' + Date.now() + '_' + idx,
+          curtainStyle: cols[0] || '*',
+          layerType: 'both',
           rodType: cols[1] || '*',
           railTracks: cols[2] || '*',
           pieces: parseInt(cols[3], 10) || 2,
@@ -1270,6 +1313,7 @@ const DB_IMPORT_SCHEMAS = {
       return {
         id: 'wf_imp_' + Date.now() + '_' + idx,
         curtainStyle: cols[0] || '*',
+        layerType: 'both',
         rodType: '*',
         railTracks: '*',
         label: cols[1] || cols[0] || 'เงื่อนไขความกว้าง',
@@ -1322,30 +1366,27 @@ const DB_IMPORT_SCHEMAS = {
     },
   },
   fabricCalcRules: {
-    title: 'ฐานข้อมูลคำนวณปริมาณผ้า (แยกเกรนม่านทึบ / เกรนม่านโปร่ง + เงื่อนไขปัดจำนวนหน้าผ้า)',
-    pattern: 'curtainStyle, grainType, label, fabricWidth, yRepeat, gatherRatio, sideHem, topBottomHem, pieces, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
-    desc: 'คอลัมน์: รูปแบบม่าน, เกรน(opaque/sheer), ชื่อสูตร, หน้าผ้า(FW_FAB), Y-Repeat(YR), ระยะย่น(G), เผื่อเย็บริม(HEM_SIDE=10), เผื่อเย็บบนล่าง(HEM_TB), จำนวนผืน(P), โหมดปัดหน้าผ้า, เกณฑ์เศษทศนิยม(0.9), บวกเพิ่มหน้า(+1), สูตรจำนวนหน้า(PANELS), สูตรY-Repeat(YR_CNT), สูตรหลา, การปัดเศษ',
+    title: 'ฐานข้อมูลคำนวณปริมาณผ้า (ดึงขนาดหน้าผ้า/Y-Repeat/จำนวนผืน จากผ้าและบานที่เลือกอัตโนมัติ)',
+    pattern: 'curtainStyle, grainType, label, gatherRatio, sideHem, topBottomHem, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบม่าน, เกรน(opaque=ทึบ / sheer=โปร่ง), ชื่อสูตร, ระยะย่น(G), เผื่อเย็บริม(HEM_SIDE=10), เผื่อเย็บบนล่าง(HEM_TB), โหมดปัดหน้าผ้า, เกณฑ์เศษทศนิยม(0.9), บวกเพิ่มหน้า(+1), สูตรจำนวนหน้า(PANELS), สูตรY-Repeat(YR_CNT), สูตรหลา, การปัดเศษ',
     example: [
-      'curtainStyle, grainType, label, fabricWidth, yRepeat, gatherRatio, sideHem, topBottomHem, pieces, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
-      'ม่านจีบ, opaque, เกรนม่านทึบ - ม่านจีบ, 140, 0, 2.5, 10, 35, 2, ceil_plus1_if_frac_ge, 0.9, 1, PANEL_ROUND(((WC * G) + HEM_SIDE) / FW_FAB) * P, YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0, (PANELS * (YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB))) / 90, ceil_1dec',
-      'ม่านจีบ, sheer, เกรนม่านโปร่ง - ม่านจีบ, 300, 0, 2.5, 10, 35, 2, ceil, 0.9, 0, P, 0, (((WC * G) + HEM_SIDE) * P) / 90, ceil_1dec',
+      'curtainStyle, grainType, label, gatherRatio, sideHem, topBottomHem, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
+      'ม่านจีบ, opaque, เกรนม่านทึบ - ม่านจีบ, 2.5, 10, 35, ceil_plus1_if_frac_ge, 0.9, 1, PANEL_ROUND(((WC * G) + HEM_SIDE) / FW_FAB) * P, YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0, (PANELS * (YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB))) / 90, ceil_1dec',
+      'ม่านจีบ, sheer, เกรนม่านโปร่ง - ม่านจีบ, 2.5, 10, 35, ceil, 0.9, 0, P, 0, (((WC * G) + HEM_SIDE) * P) / 90, ceil_1dec',
     ].join('\n'),
     headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
     parseRow(cols, idx) {
       if (!cols[0] && !cols[2]) return null;
-      const isSheer = String(cols[1] || '').toLowerCase() === 'sheer';
+      const isSheer = String(cols[1] || '').toLowerCase() === 'sheer' || String(cols[1] || '').includes('โปร่ง');
       if (cols.length >= 16) {
         return {
           id: 'fcr_imp_' + Date.now() + '_' + idx,
           curtainStyle: cols[0] || '*',
           grainType: isSheer ? 'sheer' : 'opaque',
           label: cols[2] || 'สูตรคำนวณปริมาณผ้า',
-          fabricWidth: parseFloat(cols[3]) || (isSheer ? 300 : 140),
-          yRepeat: parseFloat(cols[4]) || 0,
           gatherRatio: parseFloat(cols[5]) || 2.5,
           sideHem: cols[6] !== undefined && cols[6] !== '' ? parseFloat(cols[6]) : 10,
           topBottomHem: parseFloat(cols[7]) || 35,
-          pieces: parseInt(cols[8], 10) || 2,
           panelRoundMode: cols[9] || (isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge'),
           panelFracThreshold: cols[10] !== undefined && cols[10] !== '' ? parseFloat(cols[10]) : 0.9,
           panelExtraAdd: cols[11] !== undefined && cols[11] !== '' ? parseInt(cols[11], 10) : (isSheer ? 0 : 1),
@@ -1360,15 +1401,12 @@ const DB_IMPORT_SCHEMAS = {
         curtainStyle: cols[0] || '*',
         grainType: isSheer ? 'sheer' : 'opaque',
         label: cols[2] || 'สูตรคำนวณปริมาณผ้า',
-        fabricWidth: parseFloat(cols[3]) || 140,
-        yRepeat: parseFloat(cols[4]) || 0,
-        gatherRatio: parseFloat(cols[5]) || 2.5,
-        sideHem: cols[6] !== undefined && cols[6] !== '' ? parseFloat(cols[6]) : 10,
-        topBottomHem: parseFloat(cols[7]) || 35,
-        pieces: parseInt(cols[8], 10) || 2,
-        panelRoundMode: isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge',
-        panelFracThreshold: 0.9,
-        panelExtraAdd: isSheer ? 0 : 1,
+        gatherRatio: parseFloat(cols[3]) || 2.5,
+        sideHem: cols[4] !== undefined && cols[4] !== '' ? parseFloat(cols[4]) : 10,
+        topBottomHem: parseFloat(cols[5]) || 35,
+        panelRoundMode: cols[6] || (isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge'),
+        panelFracThreshold: cols[7] !== undefined && cols[7] !== '' ? parseFloat(cols[7]) : 0.9,
+        panelExtraAdd: cols[8] !== undefined && cols[8] !== '' ? parseInt(cols[8], 10) : (isSheer ? 0 : 1),
         panelCountExp: cols[9] || (isSheer ? 'P' : 'PANEL_ROUND(((WC * G) + HEM_SIDE) / FW_FAB) * P'),
         yRepeatCountExp: cols[10] || 'YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0',
         qtyExp: cols[11] || '(PANELS * (YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB))) / 90',
@@ -1512,6 +1550,7 @@ const MasterDBModal = (() => {
   let showPasteBox = false;
   let importMode = 'append'; // 'append' | 'replace'
   let fabricGrainFilter = 'all'; // 'all' | 'opaque' | 'sheer'
+  let widthLayerFilter = 'all'; // 'all' | 'opaque' | 'sheer' | 'both'
   let railCatFilter = 'all';
 
   const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1525,7 +1564,7 @@ const MasterDBModal = (() => {
           <div>
             <b style="color:#0b3a8c;font-size:12.5px">📥 นำเข้าข้อมูล "${escH(schema.title)}" จากไฟล์ .txt หรือ .csv (แยกเฉพาะฐานข้อมูลหน้านี้)</b>
             <div style="font-size:11.5px;color:#333;margin-top:2px">
-              <b>Pattern ข้อมูลที่ต้องนำเข้า:</b> <code style="background:#fff;padding:2px 6px;border:1px solid #ccd8ee;border-radius:4px;color:#b42318;font-weight:700">${escH(schema.pattern)}</code>
+              <b>รูปแบบข้อมูลที่ต้องนำเข้า:</b> <code style="background:#fff;padding:2px 6px;border:1px solid #ccd8ee;border-radius:4px;color:#b42318;font-weight:700">${escH(schema.pattern)}</code>
             </div>
             <div style="font-size:11px;color:#555;margin-top:2px">${escH(schema.desc)}</div>
           </div>
@@ -1536,16 +1575,16 @@ const MasterDBModal = (() => {
             </select>
             <button type="button" class="primary" data-db-import-file="${escH(tab)}">📂 เลือกไฟล์ .txt / .csv นำเข้า</button>
             <button type="button" data-db-toggle-paste="${escH(tab)}">📋 วางข้อความนำเข้า</button>
-            <button type="button" data-db-dl-sample="${escH(tab)}" title="ดาวน์โหลดไฟล์ตัวอย่างตาม Pattern ของฐานข้อมูลหน้านี้">⬇ ไฟล์ตัวอย่าง (.csv/.txt)</button>
+            <button type="button" data-db-dl-sample="${escH(tab)}" title="ดาวน์โหลดไฟล์ตัวอย่างของฐานข้อมูลหน้านี้">⬇ ไฟล์ตัวอย่าง (.csv/.txt)</button>
           </div>
         </div>
         <details style="margin-top:6px;font-size:11.5px">
-          <summary style="cursor:pointer;color:#1f6feb;font-weight:600">👁️ ดูตัวอย่างข้อมูล (Pattern Example สำหรับไฟล์ .txt และ .csv ของหมวดนี้)</summary>
+          <summary style="cursor:pointer;color:#1f6feb;font-weight:600">👁️ ดูตัวอย่างข้อมูลสำหรับนำเข้าของหมวดนี้</summary>
           <pre style="margin:4px 0 0;padding:6px 8px;background:#fff;border:1px solid #d5e0f2;border-radius:4px;font-size:11px;overflow-x:auto;line-height:1.4">${escH(schema.example)}</pre>
         </details>
         ${showPasteBox ? `
           <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #bfd6ff">
-            <textarea id="dbPasteTextarea" rows="4" placeholder="วางข้อมูลตาม Pattern (${escH(schema.pattern)}) บรรทัดละ 1 รายการ..." style="font-family:monospace;font-size:12px"></textarea>
+            <textarea id="dbPasteTextarea" rows="4" placeholder="วางข้อมูล (${escH(schema.pattern)}) บรรทัดละ 1 รายการ..." style="font-family:monospace;font-size:12px"></textarea>
             <div class="inline" style="margin-top:4px;justify-content:flex-end">
               <button type="button" data-db-cancel-paste="1">ยกเลิก</button>
               <button type="button" class="primary" data-db-run-paste="${escH(tab)}">✔ นำเข้าข้อมูลที่วาง</button>
@@ -1576,7 +1615,7 @@ const MasterDBModal = (() => {
       if (item) parsedItems.push(item);
     });
     if (!parsedItems.length) {
-      alert('ไม่พบข้อมูลที่ตรงตาม Pattern สำหรับนำเข้า กรุณาตรวจสอบรูปแบบข้อมูล');
+      alert('ไม่พบข้อมูลที่ตรงตามรูปแบบสำหรับการนำเข้า กรุณาตรวจสอบข้อมูลอีกครั้ง');
       return 0;
     }
     if (mode === 'replace') {
@@ -1608,6 +1647,11 @@ const MasterDBModal = (() => {
   function curtainSelectOpts(selected) {
     const opts = [['*', 'ทั้งหมด (*)'], ...(masterDB.curtains || []).map(c => [c.name, c.name])];
     return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
+  }
+
+  function widthLayerSelectOpts(selected) {
+    const cur = selected || 'both';
+    return WIDTH_LAYER_TYPES.map(([v, t]) => `<option value="${escH(v)}" ${cur === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
   }
 
   function rodSelectOpts(selected) {
@@ -1671,24 +1715,24 @@ const MasterDBModal = (() => {
         <table class="ed-tbl">
           <thead>
             <tr>
-              <th style="width:110px">Username</th>
-              <th style="width:110px">Password</th>
-              <th style="width:125px">สิทธิ์ (Role)</th>
-              <th>ชื่อพนักงาน (S.R.)</th>
-              <th>แผนก (DEPT.)</th>
-              <th>สาขา (Branch)</th>
+              <th style="width:110px">ชื่อผู้ใช้</th>
+              <th style="width:110px">รหัสผ่าน</th>
+              <th style="width:125px">สิทธิ์การใช้งาน</th>
+              <th>ชื่อพนักงาน</th>
+              <th>แผนก</th>
+              <th>สาขา</th>
               <th style="width:50px">ลบ</th>
             </tr>
           </thead>
           <tbody>
             ${masterDB.staff.map((st, i) => `
               <tr>
-                <td><input data-db-edit="staff.${i}.username" value="${escH(st.username || '')}" placeholder="Username"></td>
-                <td><input data-db-edit="staff.${i}.password" value="${escH(st.password || '')}" placeholder="Password"></td>
+                <td><input data-db-edit="staff.${i}.username" value="${escH(st.username || '')}" placeholder="ชื่อผู้ใช้"></td>
+                <td><input data-db-edit="staff.${i}.password" value="${escH(st.password || '')}" placeholder="รหัสผ่าน"></td>
                 <td>
                   <select data-db-edit="staff.${i}.role">
-                    <option value="staff" ${st.role !== 'admin' ? 'selected' : ''}>พนักงาน (Staff)</option>
-                    <option value="admin" ${st.role === 'admin' ? 'selected' : ''}>แอดมิน (Admin)</option>
+                    <option value="staff" ${st.role !== 'admin' ? 'selected' : ''}>พนักงาน</option>
+                    <option value="admin" ${st.role === 'admin' ? 'selected' : ''}>แอดมิน</option>
                   </select>
                 </td>
                 <td><input data-db-edit="staff.${i}.name" value="${escH(st.name)}" placeholder="ชื่อพนักงาน"></td>
@@ -1703,15 +1747,15 @@ const MasterDBModal = (() => {
     } else if (activeTab === 'fabrics') {
       body.innerHTML = `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>🧵 ฐานข้อมูลผ้า (แยกเกรนการคำนวณไว้ชัดเจน):</b><br>
+          <b>🧵 ฐานข้อมูลผ้า (สำหรับดึงขนาดหน้าผ้าและระยะลายผ้าไปคำนวณปริมาณผ้าอัตโนมัติ):</b><br>
           กำหนด ชื่อผ้า, ดีไซน์ผ้า, ขนาดหน้าผ้า (ซม.), Y-Repeat (ซม.) และเกรนที่ใช้คำนวณ<br>
           <span style="color:#b42318;font-weight:700">* เงื่อนไขสำคัญ: เฉพาะผ้าที่มีขนาดหน้าผ้าเกิน 270 ซม. ขึ้นไป (&gt; 270 ซม.) เท่านั้น ถึงสามารถเลือกใช้คำนวณได้ทั้งเกรนม่านทึบและเกรนม่านโปร่ง</span>
         </div>
         <table class="ed-tbl">
           <thead>
             <tr>
-              <th>ชื่อผ้า (CS DES.)</th>
-              <th style="width:130px">ดีไซน์ผ้า (DES.NO.)</th>
+              <th>ชื่อผ้า</th>
+              <th style="width:130px">ดีไซน์ผ้า</th>
               <th style="width:115px">ขนาดหน้าผ้า (ซม.)</th>
               <th style="width:105px">Y-Repeat (ซม.)</th>
               <th style="width:270px">เกรนการคำนวณผ้า</th>
@@ -1724,8 +1768,8 @@ const MasterDBModal = (() => {
               const mode = allowSheer ? (f.calcMode || 'both') : 'opaque';
               return `
               <tr>
-                <td><input data-db-edit="fabrics.${i}.name" value="${escH(f.name)}" placeholder="เช่น PASAYA Blackout"></td>
-                <td><input data-db-edit="fabrics.${i}.design" value="${escH(f.design)}" placeholder="เช่น BO-140"></td>
+                <td><input data-db-edit="fabrics.${i}.name" value="${escH(f.name)}" placeholder="ระบุชื่อผ้า"></td>
+                <td><input data-db-edit="fabrics.${i}.design" value="${escH(f.design)}" placeholder="ระบุดีไซน์"></td>
                 <td><input type="number" step="any" data-db-edit="fabrics.${i}.fabricWidth" value="${escH(f.fabricWidth)}" placeholder="140 หรือ 280"></td>
                 <td><input type="number" step="any" data-db-edit="fabrics.${i}.yRepeat" value="${escH(f.yRepeat ?? 0)}" placeholder="0"></td>
                 <td>
@@ -1743,46 +1787,67 @@ const MasterDBModal = (() => {
         <button type="button" class="primary" style="margin-top:8px" data-db-add="fabrics">➕ เพิ่มรายการผ้า</button>
       `;
     } else if (activeTab === 'widthFormulas') {
+      const wfAll = masterDB.widthFormulas || [];
       body.innerHTML = renderStdParamsBanner() + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>📐 ฐานข้อมูลขนาดความกว้างผ้าม่าน (แยกการคำนวณตาม รูปแบบผ้าม่าน / จำนวนผืน / จำนวนรางม่าน(ชั้น) / ประเภทรางม่าน):</b><br>
+          <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+            <b>📐 ฐานข้อมูลขนาดความกว้างผ้าม่าน (แยกการคำนวณเป็น ม่านทึบ / ม่านโปร่ง / ทั้งม่านทึบและม่านโปร่ง):</b>
+            <div class="inline">
+              <button type="button" class="${widthLayerFilter === 'all' ? 'primary' : ''}" data-db-wlayer-filter="all">ทั้งหมด (${wfAll.length})</button>
+              <button type="button" class="${widthLayerFilter === 'opaque' ? 'primary' : ''}" data-db-wlayer-filter="opaque">เฉพาะม่านทึบ</button>
+              <button type="button" class="${widthLayerFilter === 'sheer' ? 'primary' : ''}" data-db-wlayer-filter="sheer">เฉพาะม่านโปร่ง</button>
+              <button type="button" class="${widthLayerFilter === 'both' ? 'primary' : ''}" data-db-wlayer-filter="both">ทั้งม่านทึบและม่านโปร่ง</button>
+            </div>
+          </div>
           ค่ามาตรฐาน: <b>อ้อมข้างมาตรฐาน (<code>SR</code>) = 8 ซม.</b>, <b>เกยมาตรฐาน (<code>OV</code>) = 8 ซม.</b>, <b>ระยะย่นตามแต่ละรูปแบบผ้าม่าน (<code>G</code>)</b><br>
           ตัวแปรในสูตร: <code>RW</code> = ขนาดรางม่าน (กว้างเฟรม+เผื่อซ้าย+เผื่อขวา), <code>P</code> = จำนวนผืน, <code>RT</code> = จำนวนชั้นราง, <code>OV</code> = เผื่อเกย, <code>SR</code> = เผื่ออ้อมข้าง
         </div>
-        <table class="ed-tbl">
-          <thead>
-            <tr>
-              <th style="width:100px">รูปแบบผ้าม่าน</th>
-              <th style="width:105px">ประเภทรางม่าน</th>
-              <th style="width:90px">จำนวนชั้นราง</th>
-              <th style="width:60px">จำนวนผืน (P)</th>
-              <th>ชื่อเงื่อนไข</th>
-              <th style="width:65px">ระยะย่น (G)</th>
-              <th style="width:68px">เผื่อเกย (OV)</th>
-              <th style="width:74px">อ้อมข้าง (SR)</th>
-              <th style="width:135px">สูตรความกว้างผ้า</th>
-              <th style="width:155px">การปัดเศษ</th>
-              <th style="width:38px">ลบ</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${(masterDB.widthFormulas || []).map((wf, i) => `
+        <div style="overflow-x:auto">
+          <table class="ed-tbl" style="min-width:1120px">
+            <thead>
               <tr>
-                <td><select data-db-edit="widthFormulas.${i}.curtainStyle">${curtainSelectOpts(wf.curtainStyle)}</select></td>
-                <td><select data-db-edit="widthFormulas.${i}.rodType">${rodSelectOpts(wf.rodType || '*')}</select></td>
-                <td><select data-db-edit="widthFormulas.${i}.railTracks">${railTrackSelectOpts(wf.railTracks || '*')}</select></td>
-                <td><input type="number" step="1" min="1" data-db-edit="widthFormulas.${i}.pieces" value="${escH(wf.pieces ?? 2)}"></td>
-                <td><input data-db-edit="widthFormulas.${i}.label" value="${escH(wf.label || '')}" placeholder="ชื่อเงื่อนไข"></td>
-                <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.gatherRatio" value="${escH(wf.gatherRatio ?? 2.5)}"></td>
-                <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.overlap" value="${escH(wf.overlap ?? 8)}"></td>
-                <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.sideReturn" value="${escH(wf.sideReturn ?? 8)}"></td>
-                <td><input data-db-edit="widthFormulas.${i}.widthExp" value="${escH(wf.widthExp || '((RW + OV + SR) / P)')}"></td>
-                <td><select data-db-edit="widthFormulas.${i}.roundMode">${roundModeSelectOpts(wf.roundMode || 'ceil_int')}</select></td>
-                <td class="c"><button type="button" class="danger" data-db-del="widthFormulas.${i}">✕</button></td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-        <button type="button" class="primary" style="margin-top:8px" data-db-add="widthFormulas">➕ เพิ่มเงื่อนไขขนาดความกว้างผ้าม่าน</button>
+                <th style="width:95px">รูปแบบผ้าม่าน</th>
+                <th style="width:155px">ใช้คำนวณกับ</th>
+                <th style="width:105px">ประเภทรางม่าน</th>
+                <th style="width:88px">จำนวนชั้นราง</th>
+                <th style="width:58px">จำนวนผืน</th>
+                <th>ชื่อเงื่อนไข</th>
+                <th style="width:62px">ระยะย่น</th>
+                <th style="width:65px">เผื่อเกย</th>
+                <th style="width:70px">อ้อมข้าง</th>
+                <th style="width:130px">สูตรความกว้างผ้า</th>
+                <th style="width:150px">การปัดเศษ</th>
+                <th style="width:38px">ลบ</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wfAll.map((wf, i) => {
+                const lt = wf.layerType || 'both';
+                if (widthLayerFilter !== 'all' && lt !== widthLayerFilter) return '';
+                return `
+                <tr>
+                  <td><select data-db-edit="widthFormulas.${i}.curtainStyle">${curtainSelectOpts(wf.curtainStyle)}</select></td>
+                  <td><select data-db-edit="widthFormulas.${i}.layerType">${widthLayerSelectOpts(lt)}</select></td>
+                  <td><select data-db-edit="widthFormulas.${i}.rodType">${rodSelectOpts(wf.rodType || '*')}</select></td>
+                  <td><select data-db-edit="widthFormulas.${i}.railTracks">${railTrackSelectOpts(wf.railTracks || '*')}</select></td>
+                  <td><input type="number" step="1" min="1" data-db-edit="widthFormulas.${i}.pieces" value="${escH(wf.pieces ?? 2)}"></td>
+                  <td><input data-db-edit="widthFormulas.${i}.label" value="${escH(wf.label || '')}" placeholder="ชื่อเงื่อนไข"></td>
+                  <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.gatherRatio" value="${escH(wf.gatherRatio ?? 2.5)}"></td>
+                  <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.overlap" value="${escH(wf.overlap ?? 8)}"></td>
+                  <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.sideReturn" value="${escH(wf.sideReturn ?? 8)}"></td>
+                  <td><input data-db-edit="widthFormulas.${i}.widthExp" value="${escH(wf.widthExp || '((RW + OV + SR) / P)')}"></td>
+                  <td><select data-db-edit="widthFormulas.${i}.roundMode">${roundModeSelectOpts(wf.roundMode || 'ceil_int')}</select></td>
+                  <td class="c"><button type="button" class="danger" data-db-del="widthFormulas.${i}">✕</button></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="inline" style="margin-top:8px;flex-wrap:wrap">
+          <button type="button" class="primary" data-db-add="widthFormulas" data-wlayer="both">➕ เพิ่มเงื่อนไข (ทั้งม่านทึบและม่านโปร่ง)</button>
+          <button type="button" class="primary" data-db-add="widthFormulas" data-wlayer="opaque">➕ เพิ่มเงื่อนไข (เฉพาะม่านทึบ)</button>
+          <button type="button" class="primary" data-db-add="widthFormulas" data-wlayer="sheer">➕ เพิ่มเงื่อนไข (เฉพาะม่านโปร่ง)</button>
+        </div>
       `;
     } else if (activeTab === 'heightFormulas') {
       body.innerHTML = `
@@ -1836,29 +1901,27 @@ const MasterDBModal = (() => {
               <button type="button" class="${fabricGrainFilter === 'sheer' ? 'primary' : ''}" data-db-grain-filter="sheer">⬜ เกรนม่านโปร่ง (${sheerCount})</button>
             </div>
           </div>
-          • ค่ามาตรฐาน: <b>เผื่อเย็บริมผ้ามาตรฐาน (<code>HEM_SIDE</code>) = 10 ซม.</b>, <b>เผื่อเย็บบนล่างตามรูปแบบผ้าม่าน (<code>HEM_TB</code>)</b>, <b>ระยะย่นตามรูปแบบผ้าม่าน (<code>G</code>)</b><br>
+          • <b>ขนาดหน้าผ้า (<code>FW_FAB</code>)</b> และ <b>Y-Repeat (<code>YR</code>)</b> ระบบจะดึงจาก <b>ฐานข้อมูลผ้า</b> ตามผ้าที่เลือกในบานนั้นๆ มาคำนวณให้อัตโนมัติ<br>
+          • <b>จำนวนผืน (<code>P</code>)</b> ระบบจะดึงจากจำนวนผืนที่กำหนดในบานหน้าต่าง/ประตูนั้นๆ มาคำนวณให้อัตโนมัติ<br>
           • <b>เงื่อนไขการคำนวณหน้าผ้า (<code>PANEL_ROUND</code>)</b>: เช่น เกรนม่านทึบ หากคำนวณหน้าผ้าต่อผืนแล้วได้เศษทศนิยม <b>≥ 0.9</b> ขึ้นไป ให้ปัดเศษขึ้นเป็นจำนวนเต็มและ <b>+1 หน้า</b>
         </div>
         <div style="overflow-x:auto">
-          <table class="ed-tbl" style="min-width:1280px">
+          <table class="ed-tbl" style="min-width:1100px">
             <thead>
               <tr>
-                <th style="width:92px">รูปแบบม่าน</th>
-                <th style="width:105px">เกรนคำนวณ</th>
+                <th style="width:96px">รูปแบบม่าน</th>
+                <th style="width:110px">เกรนคำนวณ</th>
                 <th>ชื่อสูตร</th>
-                <th style="width:58px">หน้าผ้า (FW_FAB)</th>
-                <th style="width:54px">Y-Repeat (YR)</th>
-                <th style="width:52px">ระยะย่น (G)</th>
-                <th style="width:56px">เย็บริม (HEM_SIDE)</th>
-                <th style="width:60px">เย็บบนล่าง (HEM_TB)</th>
-                <th style="width:48px">ผืน (P)</th>
-                <th style="width:185px">เงื่อนไขปัดจำนวนหน้าผ้า</th>
-                <th style="width:56px">เศษ ≥</th>
-                <th style="width:52px">+เพิ่มหน้า</th>
-                <th style="width:150px">สูตรจำนวนหน้าผ้า (PANELS)</th>
-                <th style="width:135px">สูตรปริมาณผ้า (หลา)</th>
-                <th style="width:130px">การปัดเศษหลา</th>
-                <th style="width:36px">ลบ</th>
+                <th style="width:64px">ระยะย่น (G)</th>
+                <th style="width:68px">เย็บริม (HEM_SIDE)</th>
+                <th style="width:74px">เย็บบนล่าง (HEM_TB)</th>
+                <th style="width:205px">เงื่อนไขปัดจำนวนหน้าผ้า</th>
+                <th style="width:60px">เศษ ≥</th>
+                <th style="width:58px">+เพิ่มหน้า</th>
+                <th style="width:160px">สูตรจำนวนหน้าผ้า (PANELS)</th>
+                <th style="width:145px">สูตรปริมาณผ้า (หลา)</th>
+                <th style="width:135px">การปัดเศษหลา</th>
+                <th style="width:38px">ลบ</th>
               </tr>
             </thead>
             <tbody>
@@ -1875,12 +1938,9 @@ const MasterDBModal = (() => {
                     </select>
                   </td>
                   <td><input data-db-edit="fabricCalcRules.${i}.label" value="${escH(r.label || '')}"></td>
-                  <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.fabricWidth" value="${escH(r.fabricWidth ?? 140)}"></td>
-                  <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.yRepeat" value="${escH(r.yRepeat ?? 0)}"></td>
                   <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.gatherRatio" value="${escH(r.gatherRatio ?? 2.5)}"></td>
                   <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.sideHem" value="${escH(r.sideHem ?? 10)}"></td>
                   <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.topBottomHem" value="${escH(r.topBottomHem ?? 35)}"></td>
-                  <td><input type="number" step="1" data-db-edit="fabricCalcRules.${i}.pieces" value="${escH(r.pieces ?? 2)}"></td>
                   <td><select data-db-edit="fabricCalcRules.${i}.panelRoundMode">${panelRoundModeSelectOpts(r.panelRoundMode || (r.grainType === 'sheer' ? 'ceil' : 'ceil_plus1_if_frac_ge'))}</select></td>
                   <td><input type="number" step="0.05" min="0.05" max="0.99" data-db-edit="fabricCalcRules.${i}.panelFracThreshold" value="${escH(r.panelFracThreshold ?? 0.9)}"></td>
                   <td><input type="number" step="1" min="0" data-db-edit="fabricCalcRules.${i}.panelExtraAdd" value="${escH(r.panelExtraAdd ?? (r.grainType === 'sheer' ? 0 : 1))}"></td>
@@ -1966,7 +2026,7 @@ const MasterDBModal = (() => {
           <tbody>
             ${(masterDB.blinds || []).map((bl, i) => `
               <tr>
-                <td><input data-db-edit="blinds.${i}.name" value="${escH(bl.name || '')}" placeholder="เช่น ม่านม้วน Blackout"></td>
+                <td><input data-db-edit="blinds.${i}.name" value="${escH(bl.name || '')}" placeholder="ระบุชื่อมู่ลี่ / ม่านม้วน"></td>
                 <td><select data-db-edit="blinds.${i}.curtainStyle">${curtainSelectOpts(bl.curtainStyle)}</select></td>
                 <td><input type="number" step="0.1" min="1.5" data-db-edit="blinds.${i}.minSqm" value="${escH(bl.minSqm ?? 1.5)}"></td>
                 <td><select data-db-edit="blinds.${i}.roundMode">${roundModeSelectOpts(bl.roundMode || 'ceil_1dec')}</select></td>
@@ -2114,6 +2174,12 @@ const MasterDBModal = (() => {
     modal.addEventListener('input', onEditChange);
     modal.addEventListener('change', onEditChange);
     modal.addEventListener('click', e => {
+      const wLayerBtn = e.target.closest('[data-db-wlayer-filter]');
+      if (wLayerBtn) {
+        widthLayerFilter = wLayerBtn.dataset.dbWlayerFilter || 'all';
+        render();
+        return;
+      }
       const grainBtn = e.target.closest('[data-db-grain-filter]');
       if (grainBtn) {
         fabricGrainFilter = grainBtn.dataset.dbGrainFilter || 'all';
@@ -2179,7 +2245,7 @@ const MasterDBModal = (() => {
         if (ta && ta.value.trim()) {
           importTextIntoTab(runPasteBtn.dataset.dbRunPaste || activeTab, ta.value, importMode);
         } else {
-          alert('กรุณาวางข้อความตาม Pattern ก่อนกดนำเข้า');
+          alert('กรุณาวางข้อความตามรูปแบบที่กำหนดก่อนกดนำเข้า');
         }
         return;
       }
@@ -2213,9 +2279,11 @@ const MasterDBModal = (() => {
         } else if (t === 'remarks') {
           masterDB.remarks.push({ id, name: '' });
         } else if (t === 'widthFormulas') {
+          const wLayer = add.dataset.wlayer || (widthLayerFilter !== 'all' ? widthLayerFilter : 'both');
           masterDB.widthFormulas.push({
-            id, curtainStyle: 'ม่านจีบ', rodType: '*', railTracks: '*', pieces: 2,
-            label: 'เงื่อนไขความกว้างใหม่', railWidth: 'RW',
+            id, curtainStyle: 'ม่านจีบ', layerType: wLayer, rodType: '*', railTracks: '*', pieces: 2,
+            label: wLayer === 'opaque' ? 'เงื่อนไขความกว้างม่านทึบใหม่' : (wLayer === 'sheer' ? 'เงื่อนไขความกว้างม่านโปร่งใหม่' : 'เงื่อนไขความกว้างใหม่'),
+            railWidth: 'RW',
             gatherRatio: 2.5, overlap: sp.stdOverlap ?? 8, sideReturn: sp.stdSideReturn ?? 8,
             widthExp: '((RW + OV + SR) / P)', roundMode: 'ceil_int',
           });
@@ -2230,8 +2298,7 @@ const MasterDBModal = (() => {
           masterDB.fabricCalcRules.push({
             id, curtainStyle: 'ม่านจีบ', grainType: gType,
             label: isSheer ? 'สูตรเกรนม่านโปร่งใหม่' : 'สูตรเกรนม่านทึบใหม่',
-            fabricWidth: isSheer ? 300 : 140, yRepeat: 0,
-            gatherRatio: 2.5, sideHem: sp.stdSideHem ?? 10, topBottomHem: 35, pieces: 2,
+            gatherRatio: 2.5, sideHem: sp.stdSideHem ?? 10, topBottomHem: 35,
             panelRoundMode: isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge',
             panelFracThreshold: 0.9,
             panelExtraAdd: isSheer ? 0 : 1,
