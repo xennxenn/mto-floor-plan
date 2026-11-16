@@ -130,14 +130,19 @@ const hasVal = v => v !== undefined && v !== null && String(v).trim() !== '';
 
 function calcRailWidth(w) {
   if (!w) return '';
-  if (w.calcMode === 'manual' && hasVal(w.customRailW)) return String(w.customRailW).trim();
+  if ((w.calcMode === 'manual' || (w.manualFields && w.manualFields.railW)) && hasVal(w.customRailW)) {
+    return String(w.customRailW).trim();
+  }
   if (!hasVal(w.width) && !hasVal(w.extL) && !hasVal(w.extR)) return '';
   const sum = numVal(w.width) + numVal(w.extL) + numVal(w.extR);
   return sum ? String(Math.round(sum * 100) / 100) : '';
 }
 function calcRailHeight(w) {
   if (!w) return '';
-  if (w.calcMode === 'manual' && hasVal(w.customRailH)) return String(w.customRailH).trim();
+  if ((w.calcMode === 'manual' || (w.manualFields && w.manualFields.railH)) && hasVal(w.customRailH)) {
+    return String(w.customRailH).trim();
+  }
+  // คำนวณความสูงราง = สูงเฟรม + เผื่อบน + เผื่อล่าง
   if (!hasVal(w.height) && !hasVal(w.extT) && !hasVal(w.extB)) return '';
   const sum = numVal(w.height) + numVal(w.extT) + numVal(w.extB);
   return sum ? String(Math.round(sum * 100) / 100) : '';
@@ -721,6 +726,29 @@ function windowSVG(w) {
     }
   }
 
+  // ==================== 6) โซนคลิกแก้ไขแม่นยำรายจุดบนแปลนหน้าต่าง/ประตู (Interactive Hit Zones) ====================
+  const hit = (field, title, hx, hy, hw, hh) =>
+    `<rect class="svg-hit" data-svg-field="${field}" x="${Math.round(hx)}" y="${Math.round(hy)}" width="${Math.max(8, Math.round(hw))}" height="${Math.max(8, Math.round(hh))}" fill="transparent" style="cursor:pointer"><title>คลิกเพื่อแก้ไข: ${title}</title></rect>`;
+
+  s += hit('wallL', 'พื้นที่ด้านซ้าย', 2, hLineY - 18, Math.max(20, hLineX0 - 2), 26);
+  s += hit('extL', 'เผื่อด้านซ้าย (+)', leftOuterX, hLineY - 18, plusX1 - leftOuterX, 24);
+  s += hit('width', 'ความกว้างเฟรม', plusX1, hLineY - 18, plusX2 - plusX1, 24);
+  s += hit('extR', 'เผื่อด้านขวา (+)', plusX2, hLineY - 18, vLineX - plusX2, 24);
+  s += hit('wallR', 'พื้นที่ด้านขวา', hLineX1 - 2, hLineY - 18, Math.max(24, VW - hLineX1), 26);
+
+  s += hit('ceilT', 'พื้นที่ด้านบน', vLineX - 24, 0, 56, Math.max(14, vLineY0 + 4));
+  s += hit('extT', 'เผื่อด้านบน (+)', vLineX + 2, topOuterY, Math.max(28, VW - vLineX - 4), plusY1 - topOuterY);
+  s += hit('height', 'ความสูงเฟรม', vLineX + 2, plusY1, Math.max(28, VW - vLineX - 4), plusY2 - plusY1);
+  s += hit('extB', 'เผื่อด้านล่าง (+)', vLineX + 2, plusY2, Math.max(28, VW - vLineX - 4), botOuterY - plusY2);
+  s += hit('floorB', 'พื้นที่ด้านล่าง', vLineX - 24, vLineY1 - 2, 56, Math.max(16, VH - vLineY1));
+
+  s += hit('fullH', 'ความสูงเต็ม', 0, cy - 14, Math.max(48, leftOuterX - 4), 34);
+  s += hit('fullW', 'ความกว้างเต็ม', leftOuterX, botOuterY + 1, rightOuterX - leftOuterX, Math.max(16, VH - botOuterY - 1));
+  if (hasUnequalSplit) {
+    s += hit('split', 'จุดแบ่งผ้าม่านซ้าย/ขวาไม่เท่ากัน', leftOuterX, y0 - 6, rightOuterX - leftOuterX, 26);
+  }
+  s += hit('layers', 'หน้ากากการใช้งานผ้าม่าน / รูปแบบบาน / จุดแบ่งราง', leftOuterX, hasUnequalSplit ? y0 + 20 : y0, rightOuterX - leftOuterX, Math.max(24, y1 - (hasUnequalSplit ? y0 + 20 : y0)));
+
   s += '</svg>';
   return s;
 }
@@ -776,7 +804,7 @@ function rMap(sheet) {
       <div class="r map-note-hd">${L('หมายเหตุ :')}</div>
       <ol class="notes-list">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ol>
     </div>
-    <div class="rt">
+    <div class="rt" data-map-part="roomOpts">
       <div class="r"><span class="ol">แอร์ผนัง</span>${CB(r.aircon === 'no', 'No')}${CB(r.aircon === 'yes', 'Yes')}${L('<b><u>No.</u></b>')}${F(r.refNo)}</div>
       ${yn('เหล็กดัด', r.grille)}
       <div class="r"><span class="ol">มุ้งลวด</span>${CB(r.screen === 'no', 'No')}${CB(r.screen === 'yes', 'Yes')}${L('<b><u>โปร.</u></b>')}${F(r.promo)}</div>
@@ -784,19 +812,21 @@ function rMap(sheet) {
   </div>`;
 }
 
-function rCalc(t, r, u1, u2) {
+function rCalc(t, r, u1, u2, rowKey = '') {
   r = r || {};
-  return `<div class="calc-row">
+  const tRaw = String(r.t ?? '').trim();
+  const showU2 = (tRaw && (tRaw.endsWith('หลา') || tRaw.endsWith('ตร.ม.') || tRaw.endsWith('เมตร'))) ? '' : u2;
+  return `<div class="calc-row" data-calc-row="${esc(rowKey)}">
     <span class="c-lbl">${t}</span>
-    <span class="fl">${esc(r.a)}</span>
+    <span class="fl" data-calc-col="a">${esc(r.a)}</span>
     <span class="c-op">X</span>
-    <span class="fl">${esc(r.b)}</span>
+    <span class="fl" data-calc-col="b">${esc(r.b)}</span>
     <span class="c-op">=</span>
-    <span class="fl">${esc(r.n)}</span>
+    <span class="fl" data-calc-col="n">${esc(r.n)}</span>
     <span class="c-unit">${u1}</span>
     <span class="c-op">=</span>
-    <span class="fl">${esc(r.t)}</span>
-    <span class="c-unit2">${u2}</span>
+    <span class="fl" data-calc-col="t">${esc(r.t)}</span>
+    <span class="c-unit2">${showU2}</span>
   </div>`;
 }
 
@@ -813,25 +843,25 @@ function rWinCell(w, n, winIdx = 0) {
   const isBlind1 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle1);
   const isBlind2 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle2);
 
-  return `<div class="wc" data-preview-win="${winIdx}" title="คลิกเพื่อแก้ไขข้อมูลหน้าต่าง/ประตู บานที่ ${esc(numLabel)}">
-    <div class="r"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(w.label)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
-    <div class="opt-align-row">
+  return `<div class="wc" data-preview-win="${winIdx}" title="คลิกที่ส่วนใดของจุดที่ ${esc(numLabel)} เพื่อแก้ไขตรงจุดนั้นทันที">
+    <div class="r" data-win-part="header"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(w.label)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
+    <div class="opt-align-row" data-win-part="box">
       <span class="opt-lbl">กล่องม่าน</span>
       <span class="opt-col1">${CB(w.box === 'no', 'No')}</span>
       <span class="opt-col2">${CB(w.box === 'yes', 'Yes')}</span>
       ${F(boxSizeTxt)}
     </div>
-    <div class="opt-align-row">
+    <div class="opt-align-row" data-win-part="mount">
       <span class="opt-lbl">ขาจับราง</span>
       <span class="opt-col1">${CB(w.mount === 'wall', 'ผนัง')}</span>
       <span class="opt-col2">${CB(w.mount === 'ceiling', 'เพดาน')}</span>
       ${ceilAttachTxt ? F(ceilAttachTxt) : '<span class="opt-spacer"></span>'}
     </div>
     <div class="wdiag">${windowSVG(w)}</div>
-    <div class="calc-group">
-      ${rCalc('รางม่าน', w.rail, 'ชั้น', 'เมตร')}
-      ${rCalc('ผ้าม่านทึบ', w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา')}
-      ${rCalc('ผ้าม่านโปร่ง', w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา')}
+    <div class="calc-group" data-win-part="calc">
+      ${rCalc('รางม่าน', w.rail, 'ชั้น', 'เมตร', 'rail')}
+      ${rCalc('ผ้าม่านทึบ', w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา', 'blackout')}
+      ${rCalc('ผ้าม่านโปร่ง', w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา', 'sheer')}
     </div>
   </div>`;
 }
@@ -867,8 +897,9 @@ function rWinGrid(list, startNo, sheet, sIdx, cIdx) {
 
 function rFabric(sheet) {
   const f = sheet.fabrics;
+  const colKeys = ['blackout', 'sheer', 'roller', 'blinds', 'other'];
   const cols = [f.blackout, f.sheer, f.roller, f.blinds, f.other];
-  const row = (label, key) => `<tr><th>${label}</th>${cols.map(c => `<td>${esc(c[key])}</td>`).join('')}</tr>`;
+  const row = (label, key) => `<tr><th>${label}</th>${cols.map((c, ci) => `<td data-fab-col="${colKeys[ci]}" data-fab-field="${key}">${esc(c[key])}</td>`).join('')}</tr>`;
   const chkMini = on => `<span class="cb-mini">${on ? '✓' : ''}</span>`;
   return `<table class="s-tb">
     <colgroup>
@@ -878,23 +909,23 @@ function rFabric(sheet) {
     <thead>
       <tr>
         <th>PRODUCT (สินค้า) :</th>
-        <th class="th-split">
+        <th class="th-split" data-fab-col="blackout">
           <div class="split-box">
             <div>${chkMini(f.blackout.isOpaque)}<span>ทึบ</span></div>
             <div>${chkMini(f.blackout.isSheer)}<span>โปร่ง</span></div>
           </div>
           <div class="split-title">CURTAIN<br>ผ้าม่านทึบ</div>
         </th>
-        <th class="th-split">
+        <th class="th-split" data-fab-col="sheer">
           <div class="split-box">
             <div>${chkMini(f.sheer.isOpaque)}<span>ทึบ</span></div>
             <div>${chkMini(f.sheer.isSheer)}<span>โปร่ง</span></div>
           </div>
           <div class="split-title">SHEER<br>ผ้าม่านโปร่ง</div>
         </th>
-        <th>ROLLER BLINDS<br>ม่านม้วน</th>
-        <th>BAMBOO BLINDS<br>มู่ลี่</th>
-        <th>OTHER<br>${esc(f.other.label || 'อื่นๆ')}</th>
+        <th data-fab-col="roller">ROLLER BLINDS<br>ม่านม้วน</th>
+        <th data-fab-col="blinds">BAMBOO BLINDS<br>มู่ลี่</th>
+        <th data-fab-col="other">OTHER<br>${esc(f.other.label || 'อื่นๆ')}</th>
       </tr>
     </thead>
     <tbody>
@@ -934,7 +965,7 @@ function rRods(sheet) {
       <col>
     </colgroup>
     <tbody>
-      <tr>
+      <tr data-rod-part="rodType">
         <td class="hcell">ROD TYPE<br>ประเภทรางม่าน<br>${CB(r.typeNo, 'NO')}</td>
         <td colspan="2">
           <div class="rod-top-grid">
@@ -950,8 +981,8 @@ function rRods(sheet) {
         </td>
       </tr>
       <tr>
-        <td class="hcell">HOLD BACK :<br>ตะขอเกี่ยวสายรวบ<br>${CB(r.holdNo, 'NO')}</td>
-        <td>
+        <td class="hcell" data-rod-part="holdBack">HOLD BACK :<br>ตะขอเกี่ยวสายรวบ<br>${CB(r.holdNo, 'NO')}</td>
+        <td data-rod-part="holdBack">
           <div class="hold-grid">
             ${vTextSVG('แบบ', 18, 34)}
             <div>
@@ -969,7 +1000,7 @@ function rRods(sheet) {
             </div>
           </div>
         </td>
-        <td rowspan="2" class="grom-td">
+        <td rowspan="2" class="grom-td" data-rod-part="grommet">
           <div class="grom-wrap">
             ${vTextSVG('ห่วงตาไก่', 18, 136)}
             <div class="grom-list">
@@ -980,7 +1011,7 @@ function rRods(sheet) {
           </div>
         </td>
       </tr>
-      <tr>
+      <tr data-rod-part="drawRod">
         <td class="hcell">DRAW-ROD :<br>ก้านจูง<br>${CB(r.drawNo, 'NO')}</td>
         <td class="draw-td">
           <div class="draw-grid">${rDrawCol('ผ้าม่านทึบ', r.drawBlackout)}${rDrawCol('ผ้าม่านโปร่ง', r.drawSheer)}</div>
@@ -992,15 +1023,15 @@ function rRods(sheet) {
 
 function rSign(order) {
   const g = order.sign;
-  const col = (name, label, date) => `<div class="sign-col">
+  const col = (key, name, label, date) => `<div class="sign-col" data-sign-part="${key}">
     <div class="r"><span class="lb">${label}</span>${F(name)}</div>
     <div class="r"><span class="lb">DATE (วันที่)</span>${F(fmtDate(date))}</div>
   </div>`;
   return `<div class="s-sign">
-    ${col(g.requester || order.staff.name, 'Request Name (ชื่อผู้ขอ) :', g.requesterDate)}
-    ${col(g.customer || order.customer.name, 'CUSTOMER NAME (ชื่อลูกค้า)', g.customerDate)}
-    ${col(g.installer, 'CURTAIN INSTALLER (ชื่อช่างติดตั้ง)', g.installerDate)}
-    ${col(g.cs, 'C.S. NAME (ชื่อผู้ทำใบเสนอราคา)', g.csDate)}
+    ${col('requester', g.requester || order.staff.name, 'Request Name (ชื่อผู้ขอ) :', g.requesterDate)}
+    ${col('customer', g.customer || order.customer.name, 'CUSTOMER NAME (ชื่อลูกค้า)', g.customerDate)}
+    ${col('installer', g.installer, 'CURTAIN INSTALLER (ชื่อช่างติดตั้ง)', g.installerDate)}
+    ${col('cs', g.cs, 'C.S. NAME (ชื่อผู้ทำใบเสนอราคา)', g.csDate)}
   </div>`;
 }
 

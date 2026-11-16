@@ -493,11 +493,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
 }
 .wc .wdiag svg { width: 100%; height: 100%; max-height: 150px; }
 
-/* Req #8: "_____" , "X" , "=" ของขนาดราง ผ้าม่านทึบ ผ้าม่านโปร่ง ตรงกันเป็นแนวตั้งเดียวกันเป๊ะ */
+/* Req #8: "_____" , "X" , "=" ของขนาดราง ผ้าม่านทึบ ผ้าม่านโปร่ง ตรงกันเป็นแนวตั้งเดียวกันเป๊ะ (รองรับการแสดง "จำนวนหน้า / จำนวนหลา") */
 .calc-group { display: flex; flex-direction: column; gap: 1px; }
 .calc-row {
   display: grid;
-  grid-template-columns: 54px 1fr 14px 1fr 14px 36px 20px 14px 46px 24px;
+  grid-template-columns: 52px 1fr 11px 1fr 11px 28px 18px 11px 82px 22px;
   align-items: flex-end;
   min-height: 15px;
   line-height: 1.38;
@@ -676,6 +676,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
 .sign-col .lb { font-size: 8.4px; }
 
 @media screen {
+  body.right-only-mode #editor {
+    display: none !important;
+  }
+
   .page .s-hd,
   .page .s-cust .cl,
   .page .s-cust .cr,
@@ -699,9 +703,111 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
   .page .s-tb:hover,
   .page .s-rod:hover,
   .page .s-sign:hover {
-    background-color: rgba(31, 111, 235, 0.06);
+    background-color: rgba(31, 111, 235, 0.05);
     box-shadow: inset 0 0 0 1.5px rgba(31, 111, 235, 0.55);
   }
+  .page .wc [data-win-part]:hover,
+  .page .s-tb [data-fab-col]:hover,
+  .page .s-rod [data-rod-part]:hover,
+  .page .s-sign [data-sign-part]:hover {
+    background-color: rgba(31, 111, 235, 0.10);
+    outline: 1.5px dashed #1f6feb;
+  }
+  .page .wdiag svg .svg-hit:hover {
+    fill: rgba(31, 111, 235, 0.14);
+    stroke: #1f6feb;
+    stroke-width: 1px;
+    stroke-dasharray: 2 2;
+  }
+}
+
+/* Per-field Auto / Manual toggle button */
+.calc-cell-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.field-mode-btn {
+  padding: 2px 4px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  min-width: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.field-mode-btn.is-auto {
+  background: #e8f2ff;
+  border: 1px solid #9ec5fe;
+  color: #0a58ca;
+}
+.field-mode-btn.is-manual {
+  background: #fff3cd;
+  border: 1px solid #ffecb5;
+  color: #856404;
+}
+
+/* Floating Quick Popover Editor for Right-Side Direct Editing */
+.pdf-quick-popover {
+  position: fixed;
+  z-index: 1200;
+  background: #fff;
+  border: 2px solid #1f6feb;
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(13, 38, 76, 0.28);
+  max-height: calc(100vh - 70px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pdf-quick-popover .pop-hd {
+  background: #1f6feb;
+  color: #fff;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: move;
+  user-select: none;
+}
+.pdf-quick-popover .pop-hd button.ghost {
+  color: #fff;
+  border-color: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.12);
+  padding: 2px 8px;
+}
+.pdf-quick-popover .pop-body {
+  padding: 10px 12px;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+.pdf-quick-popover .pop-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #dde3ec;
+}
+.pdf-quick-popover .pop-tabs button {
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+.pdf-quick-popover .pop-tabs button.active {
+  background: #1f6feb;
+  color: #fff;
+  border-color: #1f6feb;
+  font-weight: 700;
+}
+.pdf-quick-popover .pop-highlight-box {
+  padding: 8px 10px;
+  background: #fff8eb;
+  border: 1.5px solid #f59f00;
+  border-radius: 7px;
+  margin-bottom: 6px;
 }
 
 @keyframes jumpFlashAnim {

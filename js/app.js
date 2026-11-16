@@ -18,11 +18,22 @@ function newWindow(planNo = '') {
     planNo: String(planNo || ''),
     label: '',
     calcMode: 'auto', // 'auto' | 'manual'
+    manualFields: {}, // เลือกกรอกเองเฉพาะบางรายการ: { railW, railH, railA, railB, railN, railT, boA, boB, boN, boT, shA, shB, shN, shT }
     customRailW: '',
     customRailH: '',
     unequalSplit: false,
     splitLeft: '',
     splitRight: '',
+    railTracks: '',   // จำนวนรางม่าน (ชั้น): '' = อัตโนมัติ, '1' = 1 ชั้น, '2' = 2 ชั้น
+    pieces1: '',      // จำนวนผืน ชั้นที่ 1: '' = ตามสูตร, '1', '2', '3', '4'
+    pieces2: '',      // จำนวนผืน ชั้นที่ 2
+    noRail: false,    // กรณีไม่รับรางม่าน
+    noRailDeductPreset: 'existing_pleat_2',
+    noRailDeductCustom: '',
+    yardMode1: 'exact', // 'exact' | 'ceil_yard' | 'ceil_plus' | 'exact_plus'
+    extraYards1: '',
+    yardMode2: 'exact',
+    extraYards2: '',
     railModel: '',
     curtainStyle1: '',
     curtainStyle2: '',
@@ -587,16 +598,34 @@ function dimFieldRow(b, label, numKey, noteKey, idx, isRailCalc = false) {
   </div>`;
 }
 
+function isFieldManual(w, key) {
+  if (!w) return false;
+  if (w.calcMode === 'manual') return true;
+  return !!(w.manualFields && w.manualFields[key]);
+}
+
 function autoCalculateWindow(w, sh) {
   if (!w) return;
+  if (!w.manualFields || typeof w.manualFields !== 'object') w.manualFields = {};
+  const mf = w.manualFields;
+  const isAllManual = w.calcMode === 'manual';
+
   const rw = +calcRailWidth(w) || +w.width || 0;
   const rh = +calcRailHeight(w) || +w.height || 0;
-  if (rw) {
-    w.rail.a = String(rw);
-    const tracks = (w.curtainStyle1 && w.curtainStyle2) ? 2 : 1;
-    w.rail.b = String(tracks);
-    w.rail.n = String(tracks);
-    w.rail.t = String(Math.round((rw / 100) * tracks * 100) / 100);
+  const effTracks = +w.railTracks || ((w.curtainStyle1 && w.curtainStyle2) ? 2 : 1);
+
+  if (!isAllManual) {
+    if (w.noRail) {
+      if (!mf.railA) w.rail.a = 'ไม่รับราง';
+      if (!mf.railB) w.rail.b = '-';
+      if (!mf.railN) w.rail.n = '0';
+      if (!mf.railT) w.rail.t = '-';
+    } else if (rw) {
+      if (!mf.railA) w.rail.a = String(rw);
+      if (!mf.railB) w.rail.b = String(effTracks);
+      if (!mf.railN) w.rail.n = String(effTracks);
+      if (!mf.railT) w.rail.t = String(Math.round((rw / 100) * effTracks * 100) / 100);
+    }
   }
 
   const wfAll = masterDB.widthFormulas || [];
@@ -605,12 +634,12 @@ function autoCalculateWindow(w, sh) {
   const blindAll = masterDB.blinds || [];
   const ruleAll = masterDB.fabricCalcRules || [];
 
-  // Layer 1 (ม่านทึบ / ม่านม้วน / มู่ลี่)
+  // Layer 1 (ม่านทึบ / ม่านม้วน / มู่ลี่) — แยกตามเงื่อนไข: รูปแบบผ้าม่าน, จำนวนผืน, จำนวนรางม่าน(ชั้น), ประเภทรางม่าน
   const style1 = w.curtainStyle1 || '';
   const wf1 = (w.widthFormulaId1 && wfAll.find(f => f.id === w.widthFormulaId1))
-    || getWidthFormulasForStyle(style1)[0] || null;
+    || getWidthFormulasForStyle(style1, w.pieces1, effTracks, w.rodType)[0] || null;
   const hf1 = (w.heightFormulaId1 && hfAll.find(f => f.id === w.heightFormulaId1))
-    || getHeightFormulasForWindow(style1, w.rodType, w.hookSize)[0] || null;
+    || getHeightFormulasForWindow(style1, w.rodType, w.hookSize, effTracks, w.pieces1)[0] || null;
   const fab1 = (w.fabricId1 && fabAll.find(f => f.id === w.fabricId1)) || null;
   if (fab1 && !canFabricUseSheerGrain(fab1.fabricWidth)) {
     w.grainType1 = 'opaque';
@@ -621,30 +650,39 @@ function autoCalculateWindow(w, sh) {
   const blind1 = (w.blindId1 && blindAll.find(b => b.id === w.blindId1))
     || getBlindsForStyle(style1)[0] || null;
 
-  if (wf1 || hf1 || isBlindOrRollerStyle(style1) || rule1 || fab1) {
-    const r1 = computeCurtainLayerByWidthHeight(w, wf1, hf1, {
-      curtainStyle: style1,
-      fabric: fab1,
-      grainType: grain1,
-      fabricRule: rule1,
-      blindItem: blind1,
-    });
-    if (r1.a) w.blackout.a = r1.a;
-    if (r1.b) w.blackout.b = r1.b;
-    if (r1.n) w.blackout.n = r1.n;
-    if (r1.t) w.blackout.t = r1.t;
-  } else if (rw || rh) {
-    if (rw) w.blackout.a = String(rw);
-    if (rh) w.blackout.b = String(rh);
+  if (!isAllManual) {
+    if (wf1 || hf1 || isBlindOrRollerStyle(style1) || rule1 || fab1) {
+      const r1 = computeCurtainLayerByWidthHeight(w, wf1, hf1, {
+        curtainStyle: style1,
+        pieces: w.pieces1 || (wf1 && wf1.pieces) || '',
+        railTracks: effTracks,
+        fabric: fab1,
+        grainType: grain1,
+        fabricRule: rule1,
+        blindItem: blind1,
+        yardMode: w.yardMode1 || 'exact',
+        extraYards: w.extraYards1 || 0,
+      });
+      if (r1.a && !mf.boA) w.blackout.a = r1.a;
+      if (r1.b && !mf.boB) w.blackout.b = r1.b;
+      if (r1.n && !mf.boN) w.blackout.n = r1.n;
+      if (r1.t && !mf.boT) w.blackout.t = r1.t;
+    } else if (rw || rh) {
+      if (rw && !mf.boA) w.blackout.a = String(rw);
+      if (rh && !mf.boB) {
+        const deduct = getNoRailHeightDeduction(w);
+        w.blackout.b = String(Math.max(0, Math.round((rh - deduct) * 100) / 100));
+      }
+    }
   }
 
   // Layer 2 (ม่านโปร่ง)
-  if (w.curtainStyle2 || w.widthFormulaId2 || w.heightFormulaId2 || w.fabricId2 || w.fabricRuleId2) {
+  if (!isAllManual && (w.curtainStyle2 || w.widthFormulaId2 || w.heightFormulaId2 || w.fabricId2 || w.fabricRuleId2)) {
     const style2 = w.curtainStyle2 || w.curtainStyle1 || '';
     const wf2 = (w.widthFormulaId2 && wfAll.find(f => f.id === w.widthFormulaId2))
-      || getWidthFormulasForStyle(style2)[0] || null;
+      || getWidthFormulasForStyle(style2, w.pieces2 || w.pieces1, effTracks, w.rodType)[0] || null;
     const hf2 = (w.heightFormulaId2 && hfAll.find(f => f.id === w.heightFormulaId2))
-      || getHeightFormulasForWindow(style2, w.rodType, w.hookSize)[0] || null;
+      || getHeightFormulasForWindow(style2, w.rodType, w.hookSize, effTracks, w.pieces2 || w.pieces1)[0] || null;
     const fab2 = (w.fabricId2 && fabAll.find(f => f.id === w.fabricId2)) || null;
     if (fab2 && !canFabricUseSheerGrain(fab2.fabricWidth)) {
       w.grainType2 = 'opaque';
@@ -658,15 +696,19 @@ function autoCalculateWindow(w, sh) {
     if (wf2 || hf2 || isBlindOrRollerStyle(style2) || rule2 || fab2) {
       const r2 = computeCurtainLayerByWidthHeight(w, wf2, hf2, {
         curtainStyle: style2,
+        pieces: w.pieces2 || w.pieces1 || (wf2 && wf2.pieces) || '',
+        railTracks: effTracks,
         fabric: fab2,
         grainType: grain2,
         fabricRule: rule2,
         blindItem: blind2,
+        yardMode: w.yardMode2 || 'exact',
+        extraYards: w.extraYards2 || 0,
       });
-      if (r2.a) w.sheer.a = r2.a;
-      if (r2.b) w.sheer.b = r2.b;
-      if (r2.n) w.sheer.n = r2.n;
-      if (r2.t) w.sheer.t = r2.t;
+      if (r2.a && !mf.shA) w.sheer.a = r2.a;
+      if (r2.b && !mf.shB) w.sheer.b = r2.b;
+      if (r2.n && !mf.shN) w.sheer.n = r2.n;
+      if (r2.t && !mf.shT) w.sheer.t = r2.t;
     }
   }
 
@@ -706,6 +748,7 @@ function windowEditorHTML(w, i, planOpenings) {
   const isAdmin = isAdminUser();
   const dbBtnAttr = isAdmin ? 'class="admin-only-db"' : 'class="admin-only-db" hidden';
   const isManual = w.calcMode === 'manual';
+  const mf = w.manualFields || {};
   const needHook = curtainNeedsHook(w.curtainStyle1, w.curtainStyle2);
   const curtainOpts = `<option value="">-- เลือก --</option>` +
     masterDB.curtains.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
@@ -714,7 +757,7 @@ function windowEditorHTML(w, i, planOpenings) {
   const rodTypeOpts = `<option value="">-- เลือกประเภทรางม่าน --</option>` +
     ['รางม่านจีบ', 'รางโชว์', 'รางม่านลอน', 'รางม่านพับ'].map(rt => `<option value="${esc(rt)}">${esc(rt)}</option>`).join('');
 
-  const railList = getRailsForStyle(w.curtainStyle1);
+  const railList = getRailsForStyle(w.curtainStyle1, w.rodType);
   const railModelOpts = `<option value="">-- เลือกรุ่นรางและอุปกรณ์ (${railList.length} รายการ) --</option>` +
     railList.map(r => `<option value="${esc(r.name)}">${esc(r.name)} (${esc(r.rodCategory || '-')}${r.curtainStyle ? ' • ' + esc(r.curtainStyle) : ''})</option>`).join('');
 
@@ -729,24 +772,25 @@ function windowEditorHTML(w, i, planOpenings) {
 
   const railW = calcRailWidth(w);
   const railH = calcRailHeight(w);
+  const effTracks = +w.railTracks || ((w.curtainStyle1 && w.curtainStyle2) ? 2 : 1);
 
   const style1 = w.curtainStyle1 || '';
   const style2 = w.curtainStyle2 || w.curtainStyle1 || '';
   const isBlind1 = isBlindOrRollerStyle(style1);
   const isBlind2 = isBlindOrRollerStyle(style2);
 
-  const wfList1 = getWidthFormulasForStyle(style1);
-  const hfList1 = getHeightFormulasForWindow(style1, w.rodType, w.hookSize);
-  const wfList2 = getWidthFormulasForStyle(style2);
-  const hfList2 = getHeightFormulasForWindow(style2, w.rodType, w.hookSize);
+  const wfList1 = getWidthFormulasForStyle(style1, w.pieces1, effTracks, w.rodType);
+  const hfList1 = getHeightFormulasForWindow(style1, w.rodType, w.hookSize, effTracks, w.pieces1);
+  const wfList2 = getWidthFormulasForStyle(style2, w.pieces2 || w.pieces1, effTracks, w.rodType);
+  const hfList2 = getHeightFormulasForWindow(style2, w.rodType, w.hookSize, effTracks, w.pieces2 || w.pieces1);
 
-  const wfOpts1 = `<option value="">-- เลือกสูตรกว้าง (${wfList1.length} ค่า) --</option>` +
-    wfList1.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.label)} (ย่น ${esc(f.gatherRatio)}, เกย ${esc(f.overlap)}, อ้อม ${esc(f.sideReturn)})</option>`).join('');
-  const hfOpts1 = `<option value="">-- เลือกสูตรสูง (${hfList1.length} ค่า) --</option>` +
+  const wfOpts1 = `<option value="">-- อัตโนมัติตามเงื่อนไข (${wfList1.length} สูตร) --</option>` +
+    wfList1.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.label)} (ผืน:${esc(f.pieces)}, ย่น:${esc(f.gatherRatio)}, เกย:${esc(f.overlap)}, อ้อม:${esc(f.sideReturn)})</option>`).join('');
+  const hfOpts1 = `<option value="">-- อัตโนมัติตามเงื่อนไข (${hfList1.length} สูตร) --</option>` +
     hfList1.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.rodType ? `${f.rodType} ` : '')}${esc(f.hookSize ? `ตะขอ ${f.hookSize} ` : '')}${esc(f.label)} (${esc(f.heightExp)})</option>`).join('');
-  const wfOpts2 = `<option value="">-- เลือกสูตรกว้าง (${wfList2.length} ค่า) --</option>` +
-    wfList2.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.label)} (ย่น ${esc(f.gatherRatio)}, เกย ${esc(f.overlap)}, อ้อม ${esc(f.sideReturn)})</option>`).join('');
-  const hfOpts2 = `<option value="">-- เลือกสูตรสูง (${hfList2.length} ค่า) --</option>` +
+  const wfOpts2 = `<option value="">-- อัตโนมัติตามเงื่อนไข (${wfList2.length} สูตร) --</option>` +
+    wfList2.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.label)} (ผืน:${esc(f.pieces)}, ย่น:${esc(f.gatherRatio)}, เกย:${esc(f.overlap)}, อ้อม:${esc(f.sideReturn)})</option>`).join('');
+  const hfOpts2 = `<option value="">-- อัตโนมัติตามเงื่อนไข (${hfList2.length} สูตร) --</option>` +
     hfList2.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.rodType ? `${f.rodType} ` : '')}${esc(f.hookSize ? `ตะขอ ${f.hookSize} ` : '')}${esc(f.label)} (${esc(f.heightExp)})</option>`).join('');
 
   // Fabrics & Grain rules (เฉพาะผ้าที่มีขนาดหน้าผ้าเกิน 270 ขึ้นไปถึงสามารถใช้คำนวณได้ทั้งเกรนม่านทึบและเกรนม่านโปร่ง)
@@ -772,14 +816,19 @@ function windowEditorHTML(w, i, planOpenings) {
   const blindOpts1 = `<option value="">-- เลือกมู่ลี่/ม่านม้วน (${blinds1.length} รายการ) --</option>` +
     blinds1.map(bl => `<option value="${esc(bl.id)}">${esc(bl.name)} [${esc(bl.curtainStyle)}] (ขั้นต่ำ ${esc(bl.minSqm || 1.5)} ตร.ม./ผืน)</option>`).join('');
 
-  const unit1 = isBlind1 ? 'ตร.ม.' : 'หลา';
-  const unit2 = isBlind2 ? 'ตร.ม.' : 'หลา';
+  const unit1 = isBlind1 ? 'ตร.ม.' : 'หน้า / หลา';
+  const unit2 = isBlind2 ? 'ตร.ม.' : 'หน้า / หลา';
 
-  const calc = (key, title, u1, u2) => `<tr><th class="r">${title}</th>
-    <td><input ${b(key + '.a')} placeholder="กว้าง"></td><td class="op">×</td>
-    <td><input ${b(key + '.b')} placeholder="สูง/ชั้น"></td><td class="op">=</td>
-    <td><input ${b(key + '.n')} placeholder="${u1}"></td><td class="op">=</td>
-    <td><input ${b(key + '.t')} placeholder="${u2}"></td></tr>`;
+  const lockBtn = (mKey, titleTxt) => {
+    const locked = isFieldManual(w, mKey);
+    return `<button type="button" class="field-mode-btn ${locked ? 'is-manual' : 'is-auto'}" data-act="toggleFieldManual" data-i="${i}" data-mkey="${mKey}" title="${locked ? 'ขณะนี้: กรอกเอง (คลิกเพื่อสลับเป็นคำนวณอัตโนมัติ)' : 'ขณะนี้: คำนวณอัตโนมัติ (คลิกเพื่อล็อกค่ากรอกเอง)'} — ${titleTxt}">${locked ? '✍️' : '⚡'}</button>`;
+  };
+
+  const calc = (key, mPrefix, title, u1, u2) => `<tr><th class="r">${title}</th>
+    <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'A', title + ' กว้าง')}<input ${b(key + '.a')} data-mkey="${mPrefix}A" placeholder="กว้าง"></div></td><td class="op">×</td>
+    <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'B', title + ' สูง/ชั้น')}<input ${b(key + '.b')} data-mkey="${mPrefix}B" placeholder="สูง/ชั้น"></div></td><td class="op">=</td>
+    <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'N', title + ' จำนวน')}<input ${b(key + '.n')} data-mkey="${mPrefix}N" placeholder="${u1}"></div></td><td class="op">=</td>
+    <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'T', title + ' รวม')}<input ${b(key + '.t')} data-mkey="${mPrefix}T" placeholder="${u2}"></div></td></tr>`;
 
   const targetOpts = getLayerTargetsForWindow(w);
   const layersHTML = (w.layers || []).map((ly, li) => `
@@ -796,6 +845,16 @@ function windowEditorHTML(w, i, planOpenings) {
     </div>
   `).join('');
 
+  const noRailDeductVal = getNoRailHeightDeduction(w);
+  const noRailPresetOpts = NO_RAIL_DEDUCT_PRESETS.filter(p => p[0] !== '0').map(([v, labelText]) =>
+    `<option value="${esc(v)}">${esc(labelText)}</option>`
+  ).join('');
+  const yardModeOpts = YARD_DISPLAY_MODES.map(([v, labelText]) =>
+    `<option value="${esc(v)}">${esc(labelText)}</option>`
+  ).join('');
+
+  const manualKeysCount = Object.values(mf).filter(Boolean).length;
+
   return `<div class="win-ed" data-win-idx="${i}">
     <div class="win-ed-hd">
       <span class="num">ลำดับ ${esc(w.planNo || (i + 1))}</span>
@@ -807,11 +866,12 @@ function windowEditorHTML(w, i, planOpenings) {
       <button type="button" data-act="delWin" data-i="${i}" class="danger" title="ลบบานนี้">✕</button>
     </div>
 
-    <div class="calc-mode-bar">
-      <span>⚙️ โหมดกำหนดขนาดในแปลน:</span>
-      <div class="inline">
-        <label><input type="radio" name="calcMode${i}" value="auto" ${b('calcMode')}> ⚡ คำนวณอัตโนมัติตามสูตร</label>
-        <label><input type="radio" name="calcMode${i}" value="manual" ${b('calcMode')}> ✍️ กรอกค่าเอง</label>
+    <div class="calc-mode-bar" style="flex-wrap:wrap;gap:6px">
+      <span>⚙️ โหมดคำนวณ / กรอกเอง (เลือกเฉพาะบางรายการหรือทั้งหมดได้):</span>
+      <div class="inline" style="flex-wrap:wrap">
+        <button type="button" class="${!isManual && manualKeysCount === 0 ? 'primary' : ''}" data-act="setAllAuto" data-i="${i}" title="ตั้งค่าให้ทุกรายการคำนวณอัตโนมัติตามสูตร">⚡ อัตโนมัติทั้งหมด</button>
+        <button type="button" class="${isManual ? 'primary' : ''}" data-act="setAllManual" data-i="${i}" title="ตั้งค่าให้กรอกเองทุกรายการ">✍️ กรอกเองทั้งหมด</button>
+        ${!isManual && manualKeysCount > 0 ? `<span class="pill" style="background:#fff3cd;color:#856404;font-size:11px">✍️ กรอกเองบางรายการ (${manualKeysCount} ช่อง) • กดปุ่ม ⚡/✍️ หน้าช่องเพื่อสลับ</span>` : `<span style="font-size:11px;color:#555">กดปุ่ม ⚡/✍️ หน้าแต่ละช่องเพื่อเลือกกรอกเองเฉพาะบางรายการได้</span>`}
       </div>
     </div>
 
@@ -825,13 +885,38 @@ function windowEditorHTML(w, i, planOpenings) {
       <label>รูปแบบผ้าม่านชั้นที่ 2 (ม่านโปร่ง - ถ้าต่างกันจะคั่น "/")
         <select ${b('curtainStyle2')}>${curtainOpts}</select>
       </label>
-      <label>ประเภทรางม่าน (ใช้จับคู่คำนวณความสูง)
-        <select ${b('rodType')}>${rodTypeOpts}</select>
+      <label>จำนวนผืน ชั้นที่ 1 / ชั้นที่ 2 (เงื่อนไขคำนวณขนาดม่าน)
+        <span class="inline">
+          <select ${b('pieces1')} title="จำนวนผืน ชั้นที่ 1">
+            <option value="">ชั้น 1: ตามสูตร</option>
+            <option value="1">ชั้น 1: 1 ผืน (รวบข้างเดียว)</option>
+            <option value="2">ชั้น 1: 2 ผืน (แยกกลาง)</option>
+            <option value="3">ชั้น 1: 3 ผืน</option>
+            <option value="4">ชั้น 1: 4 ผืน</option>
+          </select>
+          <select ${b('pieces2')} title="จำนวนผืน ชั้นที่ 2">
+            <option value="">ชั้น 2: ตามชั้น 1/สูตร</option>
+            <option value="1">ชั้น 2: 1 ผืน</option>
+            <option value="2">ชั้น 2: 2 ผืน</option>
+            <option value="3">ชั้น 2: 3 ผืน</option>
+            <option value="4">ชั้น 2: 4 ผืน</option>
+          </select>
+        </span>
       </label>
-      <label>รุ่นรางและอุปกรณ์
+      <label>จำนวนรางม่าน(ชั้น) & ประเภทรางม่าน
+        <span class="inline">
+          <select ${b('railTracks')} style="max-width:115px" title="จำนวนชั้นรางม่าน">
+            <option value="">อัตโนมัติ (${effTracks} ชั้น)</option>
+            <option value="1">ราง 1 ชั้น</option>
+            <option value="2">ราง 2 ชั้น</option>
+          </select>
+          <select ${b('rodType')}>${rodTypeOpts}</select>
+        </span>
+      </label>
+      <label>รุ่นรางและอุปกรณ์เสริม
         <span class="inline">
           <select ${b('railModel')}>${railModelOpts}</select>
-          <button type="button" data-act="openDbRails" ${dbBtnAttr} title="ฐานข้อมูลรางและอุปกรณ์">🗄️</button>
+          <button type="button" data-act="openDbRails" ${dbBtnAttr} title="ฐานข้อมูลรางม่านและอุปกรณ์เสริม">🗄️</button>
         </span>
       </label>
       <label>ขนาดตะขอ ${needHook ? '<b>(ม่านจีบ/ลอน)</b>' : '<small>(เฉพาะม่านจีบ/ลอน)</small>'}
@@ -851,9 +936,28 @@ function windowEditorHTML(w, i, planOpenings) {
           <small style="color:#555">ช่องบาน</small>
         </span>
       </label>
-      <label>ข้อความระยะความสูง (= สูงเต็ม)
-        <input ${b('drop')} placeholder="เช่น สูงเต็ม">
-      </label>
+    </div>
+
+    <div style="margin-top:6px;padding:7px 9px;background:#fff8f6;border:1px dashed #ef9a9a;border-radius:6px">
+      <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <label class="inline" style="font-weight:700;color:#b71c1c;cursor:pointer">
+          <input type="checkbox" ${b('noRail')}>
+          🚫 ไม่รับรางม่าน (ให้ระบบลดขนาดความสูงผ้าม่านตามตัวเลือกพร้อมรายละเอียด)
+        </label>
+        ${w.noRail ? `<span style="font-size:11.5px;color:#b71c1c;font-weight:700">ลดความสูงผ้าม่านลง: <b>-${esc(noRailDeductVal)} ซม.</b></span>` : ''}
+      </div>
+      ${w.noRail ? `
+        <div class="grid2" style="margin-top:6px">
+          <label class="${w.noRailDeductPreset === 'custom' ? '' : 'full'}">เลือกรายละเอียดการลดขนาดความสูงผ้าม่าน (เมื่อไม่รับรางม่าน)
+            <select ${b('noRailDeductPreset')}>${noRailPresetOpts}</select>
+          </label>
+          ${w.noRailDeductPreset === 'custom' ? `
+            <label>ระบุระยะที่ต้องการลดความสูงผ้าม่านเอง (ซม.)
+              <input type="number" step="any" min="0" ${b('noRailDeductCustom')} placeholder="เช่น 2.5">
+            </label>
+          ` : ''}
+        </div>
+      ` : ''}
     </div>
 
     <div class="opts">
@@ -876,12 +980,12 @@ function windowEditorHTML(w, i, planOpenings) {
 
     <div class="subcard" style="margin:6px 0">
       <div class="inline" style="justify-content:space-between;margin-bottom:4px">
-        <b style="margin:0">📏 ขนาดและพื้นที่รอบบาน (พร้อมช่องใส่หมายเหตุ เช่น ชนแอร์, ปลั๊กไฟ, บิ้วอิน)</b>
+        <b style="margin:0">📏 ขนาดและพื้นที่รอบบาน (ความสูงราง = สูงเฟรม + เผื่อบน + เผื่อล่าง)</b>
         <button type="button" data-act="openDbRemarks" ${dbBtnAttr} title="เพิ่ม/ลบ/แก้ไขข้อความหมายเหตุในฐานข้อมูล">🗄️ ฐานข้อมูลหมายเหตุ</button>
       </div>
       <div class="dim-grid">
-        ${dimFieldRow(b, 'ความกว้าง', 'width', 'noteWidth', i, true)}
-        ${dimFieldRow(b, 'ความสูง', 'height', 'noteHeight', i, true)}
+        ${dimFieldRow(b, 'ความกว้าง (เฟรม)', 'width', 'noteWidth', i, true)}
+        ${dimFieldRow(b, 'ความสูง (เฟรม)', 'height', 'noteHeight', i, true)}
         ${dimFieldRow(b, 'พื้นที่ด้านซ้าย', 'wallL', 'noteWallL', i)}
         ${dimFieldRow(b, 'พื้นที่ด้านขวา', 'wallR', 'noteWallR', i)}
         ${dimFieldRow(b, 'พื้นที่ด้านบน', 'ceilT', 'noteCeilT', i)}
@@ -893,21 +997,26 @@ function windowEditorHTML(w, i, planOpenings) {
         ${dimFieldRow(b, 'ความกว้างเต็ม', 'fullW', 'noteFullW', i)}
         ${dimFieldRow(b, 'ความสูงเต็ม', 'fullH', 'noteFullH', i)}
       </div>
-      <div class="rail-summary" data-rail-sum="${i}">
-        ${isManual ? `
-          <label class="inline" style="font-size:12px">กว้างรางม่าน (กรอกเอง): <input type="number" step="any" ${b('customRailW')} placeholder="ก.ราง" style="width:76px;font-weight:700"></label>
-          <label class="inline" style="font-size:12px">สูงรางม่าน (กรอกเอง): <input type="number" step="any" ${b('customRailH')} placeholder="ส.ราง" style="width:76px;font-weight:700"></label>
-        ` : `
-          <span>ขนาดความกว้างรางม่าน = <b>${railW || '-'}</b></span>
-          <span>ขนาดความสูงรางม่าน = <b>${railH || '-'}</b></span>
-        `}
+      <div class="rail-summary" data-rail-sum="${i}" style="flex-wrap:wrap;gap:8px">
+        <span class="inline" style="font-size:12px">
+          ${lockBtn('railW', 'ขนาดความกว้างรางม่าน')}
+          ${isFieldManual(w, 'railW')
+            ? `กว้างราง (กรอกเอง): <input type="number" step="any" ${b('customRailW')} placeholder="ก.ราง" style="width:76px;font-weight:700">`
+            : `กว้างรางม่าน (กว้าง+เผื่อซ้าย+เผื่อขวา) = <b>${railW || '-'}</b>`}
+        </span>
+        <span class="inline" style="font-size:12px">
+          ${lockBtn('railH', 'ขนาดความสูงรางม่าน')}
+          ${isFieldManual(w, 'railH')
+            ? `สูงราง (กรอกเอง): <input type="number" step="any" ${b('customRailH')} placeholder="ส.ราง" style="width:76px;font-weight:700">`
+            : `สูงรางม่าน (สูงเฟรม+เผื่อบน+เผื่อล่าง) = <b>${railH || '-'}</b>`}
+        </span>
         <button type="button" data-act="fillSize" data-i="${i}">↘ ส่งค่าราง/ม่านลงตารางคำนวณ</button>
       </div>
       <div style="margin-top:6px;padding:7px 9px;background:#f7faff;border:1px dashed #90caf9;border-radius:6px">
         <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
           <label class="inline" style="font-weight:700;color:#0d47a1;cursor:pointer">
             <input type="checkbox" ${b('unequalSplit')}>
-            ✂️ แบ่งผ้าม่านผืนซ้าย / ผืนขวา ไม่เท่ากัน (กำหนดจุดแบ่งที่รางม่านเดียวกัน)
+            ✂️ แบ่งผ้าม่านผืนซ้าย / ผืนขวา ไม่เท่ากัน (กำหนดจุดแบ่งที่รางม่านเดียวกัน • คิดหน้าและหลาแยกผืนแล้วนำมารวมกัน)
           </label>
           ${w.unequalSplit ? `<span style="font-size:11.5px;color:#1565c0;font-weight:700">ขนาดผ้าม่าน: <b>${esc(w.splitLeft || '?')}/${esc(w.splitRight || '?')}</b> | ขนาดรางม่าน: <b>${esc(railW || w.rail?.a || '-')}</b></span>` : ''}
         </div>
@@ -921,7 +1030,7 @@ function windowEditorHTML(w, i, planOpenings) {
             </label>
           </div>
           <div style="font-size:11px;color:#455a64;margin-top:3px">
-            * แสดงจุดแบ่งและขนาดช่วงที่แบ่งกำกับไว้บนแปลนหน้าต่าง/ประตู โดยความกว้างผ้าม่านแสดงเป็น <b>ผืนซ้าย/ผืนขวา</b> (เช่น 150/250) แต่ขนาดรางม่านยังคงเป็นความกว้างรวม (เช่น 400)
+            * แสดงจุดแบ่งและขนาดช่วงที่แบ่งกำกับไว้บนแปลนหน้าต่าง/ประตู โดยความกว้างผ้าม่านแสดงเป็น <b>ผืนซ้าย/ผืนขวา</b> (เช่น 150/250) และคำนวณจำนวนหน้า/จำนวนหลาแยกซ้าย+ขวาแล้วรวมกันอัตโนมัติ
           </div>
         ` : ''}
       </div>
@@ -939,7 +1048,7 @@ function windowEditorHTML(w, i, planOpenings) {
 
     <div class="subcard" style="margin-top:6px">
       <div class="inline" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:6px">
-        <b style="margin:0">🧮 คำนวณขนาดราง / ผ้าม่านทึบ / ผ้าม่านโปร่ง / มู่ลี่ & ม่านม้วน (${isManual ? 'โหมดกรอกค่าเอง' : 'โหมดคำนวณอัตโนมัติ'})</b>
+        <b style="margin:0">🧮 คำนวณขนาดราง / ผ้าม่านทึบ / ผ้าม่านโปร่ง (แสดง จำนวนหน้า / จำนวนหลา)</b>
         <div class="inline">
           <button type="button" class="primary" data-act="applyFormula" data-i="${i}" title="คำนวณตามสูตรความกว้าง ความสูง และปริมาณผ้า">⚡ คำนวณตามสูตร</button>
           <button type="button" data-act="openDbWidthFormulas" ${dbBtnAttr} title="ฐานข้อมูลคำนวณขนาดความกว้างผ้าม่าน">📐 สูตรกว้าง</button>
@@ -978,6 +1087,16 @@ function windowEditorHTML(w, i, planOpenings) {
               <select ${b('fabricRuleId1')}>${fRuleOpts1}</select>
             </label>
           </div>
+          <div class="grid2" style="margin-top:4px">
+            <label>การแสดงจำนวนผ้า ชั้นที่ 1 (หลา)
+              <select ${b('yardMode1')}>${yardModeOpts}</select>
+            </label>
+            ${(w.yardMode1 === 'ceil_plus' || w.yardMode1 === 'exact_plus') ? `
+              <label>จำนวนหลาที่ต้องการบวกเพิ่ม (ชั้นที่ 1)
+                <input type="number" step="any" ${b('extraYards1')} placeholder="เช่น 1 หรือ 1.5">
+              </label>
+            ` : `<div></div>`}
+          </div>
         `}
 
         <div class="grid2" style="margin-top:4px;padding-top:4px;border-top:1px dashed #ccd6e6">
@@ -1002,13 +1121,23 @@ function windowEditorHTML(w, i, planOpenings) {
             <select ${b('fabricRuleId2')}>${fRuleOpts2}</select>
           </label>
         </div>
+        <div class="grid2" style="margin-top:4px">
+          <label>การแสดงจำนวนผ้า ชั้นที่ 2 (หลา)
+            <select ${b('yardMode2')}>${yardModeOpts}</select>
+          </label>
+          ${(w.yardMode2 === 'ceil_plus' || w.yardMode2 === 'exact_plus') ? `
+            <label>จำนวนหลาที่ต้องการบวกเพิ่ม (ชั้นที่ 2)
+              <input type="number" step="any" ${b('extraYards2')} placeholder="เช่น 1 หรือ 1.5">
+            </label>
+          ` : `<div></div>`}
+        </div>
       </div>
 
       <table class="calc-ed">
         <tr><th></th><th>ขนาดกว้าง</th><th></th><th>ขนาดสูง/ชั้น</th><th></th><th>จำนวน</th><th></th><th>รวม (${unit1})</th></tr>
-        ${calc('rail', 'รางม่าน', 'ชั้น', 'เมตร')}
-        ${calc('blackout', isBlind1 ? style1 : 'ผ้าม่านทึบ', 'ผืน', unit1)}
-        ${calc('sheer', 'ผ้าม่านโปร่ง', 'ผืน', unit2)}
+        ${calc('rail', 'rail', 'รางม่าน', 'ชั้น', 'เมตร')}
+        ${calc('blackout', 'bo', isBlind1 ? style1 : 'ผ้าม่านทึบ', 'ผืน', unit1)}
+        ${calc('sheer', 'sh', 'ผ้าม่านโปร่ง', 'ผืน', unit2)}
       </table>
     </div>
   </div>`;
@@ -1152,7 +1281,7 @@ function touchAndSave() {
   saveOrders();
 }
 
-function changed(sheetPath, sharedPath) {
+function changed(sheetPath, sharedPath, fromPopover = false) {
   const sh = currentSheet();
   if (sh && sheetPath) {
     const mWin = /^windows\.(\d+)\.(.+)$/.exec(sheetPath);
@@ -1161,7 +1290,26 @@ function changed(sheetPath, sharedPath) {
       const field = mWin[2];
       const w = sh.windows[idx];
       if (w) {
-        if (/^(curtainStyle1|curtainStyle2|rodType|hookSize|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit)$/.test(field)) {
+        if (!w.manualFields || typeof w.manualFields !== 'object') w.manualFields = {};
+        // หากผู้ใช้พิมพ์แก้ไขในช่องตารางคำนวณโดยตรง ให้ล็อกเฉพาะช่องนั้นเป็น "กรอกเอง (✍️)" อัตโนมัติ
+        const manualCellMap = {
+          'rail.a': 'railA', 'rail.b': 'railB', 'rail.n': 'railN', 'rail.t': 'railT',
+          'blackout.a': 'boA', 'blackout.b': 'boB', 'blackout.n': 'boN', 'blackout.t': 'boT',
+          'sheer.a': 'shA', 'sheer.b': 'shB', 'sheer.n': 'shN', 'sheer.t': 'shT',
+        };
+        if (manualCellMap[field]) {
+          const mk = manualCellMap[field];
+          w.manualFields[mk] = true;
+          const winCard = document.querySelector(`.win-ed[data-win-idx="${idx}"]`);
+          if (winCard) {
+            const btn = winCard.querySelector(`[data-act="toggleFieldManual"][data-mkey="${mk}"]`);
+            if (btn) {
+              btn.textContent = '✍️';
+              btn.classList.remove('is-auto');
+              btn.classList.add('is-manual');
+            }
+          }
+        } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailDeductPreset|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit)$/.test(field)) {
           if (!curtainNeedsHook(w.curtainStyle1, w.curtainStyle2)) w.hookSize = '';
           w.paneStyle = String(getPaneCount(w));
           if (field === 'unequalSplit' && w.unequalSplit) {
@@ -1183,6 +1331,9 @@ function changed(sheetPath, sharedPath) {
           }
           renderWindowsEditor();
           syncSheetInputs();
+          if (fromPopover && typeof refreshActivePopoverIfStructural === 'function') {
+            refreshActivePopoverIfStructural(field);
+          }
         } else if (field === 'splitLeft' || field === 'splitRight') {
           const rwNum = +calcRailWidth(w) || +w.width || +w.rail?.a || 0;
           if (field === 'splitLeft' && w.splitLeft !== '' && rwNum > 0) {
@@ -1211,18 +1362,28 @@ function changed(sheetPath, sharedPath) {
           }
           const winCard = document.querySelector(`.win-ed[data-win-idx="${idx}"]`);
           if (winCard) syncSheetInputs(winCard);
-        } else if (/^(width|height|extL|extR|extT|extB|customRailW|customRailH)$/.test(field)) {
+          const popEl = document.getElementById('pdfQuickPopover');
+          if (popEl && !popEl.hidden) syncSheetInputs(popEl);
+        } else if (/^(width|height|extL|extR|extT|extB|customRailW|customRailH|noRailDeductCustom|extraYards1|extraYards2)$/.test(field)) {
+          if (field === 'customRailW') w.manualFields.railW = true;
+          if (field === 'customRailH') w.manualFields.railH = true;
           if (w.calcMode !== 'manual') {
             autoCalculateWindow(w, sh);
             const winCard = document.querySelector(`.win-ed[data-win-idx="${idx}"]`);
             if (winCard) syncSheetInputs(winCard);
+            const popEl = document.getElementById('pdfQuickPopover');
+            if (popEl && !popEl.hidden) syncSheetInputs(popEl);
           }
           const rw = calcRailWidth(w), rh = calcRailHeight(w);
           const sumEl = document.querySelector(`[data-rail-sum="${idx}"]`);
           if (sumEl && w.calcMode !== 'manual') {
             const bs = sumEl.querySelectorAll('b');
-            if (bs[0]) bs[0].textContent = rw || '-';
-            if (bs[1]) bs[1].textContent = rh || '-';
+            if (bs[0] && !isFieldManual(w, 'railW')) bs[0].textContent = rw || '-';
+            if (bs[1] && !isFieldManual(w, 'railH')) bs[1].textContent = rh || '-';
+          }
+          const popRailSum = document.getElementById('popRailSumText');
+          if (popRailSum) {
+            popRailSum.innerHTML = `กว้างราง = <b>${esc(rw || '-')}</b> • สูงราง (สูงเฟรม+เผื่อบน+เผื่อล่าง) = <b>${esc(rh || '-')}</b>`;
           }
         }
         const t = document.querySelector(`[data-thumb="${idx}"]`);
@@ -1239,7 +1400,7 @@ function changed(sheetPath, sharedPath) {
   }
 
   clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => { renderPreview(); touchAndSave(); }, 120);
+  renderTimer = setTimeout(() => { renderPreview(); touchAndSave(); }, 100);
 }
 
 function renderAllWorkspace() {
@@ -1396,14 +1557,18 @@ function onFieldInput(e) {
   else if (el.type === 'radio') { if (!el.checked) return; v = el.value; }
   else v = el.value;
 
+  const isFromPopover = !!el.closest('#pdfQuickPopover');
+
   if (el.dataset.shared) {
     const ord = currentOrder(); if (!ord) return;
     setPath(ord, el.dataset.shared, v);
-    changed(null, el.dataset.shared);
+    if (isFromPopover) syncSharedInputs(document.getElementById('editor'));
+    changed(null, el.dataset.shared, isFromPopover);
   } else if (el.dataset.sheet) {
     const sh = currentSheet(); if (!sh) return;
     setPath(sh, el.dataset.sheet, v);
-    changed(el.dataset.sheet, null);
+    if (isFromPopover) syncSheetInputs(document.getElementById('editor'));
+    changed(el.dataset.sheet, null, isFromPopover);
   }
 }
 document.addEventListener('input', onFieldInput);
@@ -1413,10 +1578,11 @@ document.addEventListener('change', onFieldInput);
 document.addEventListener('click', e => {
   const el = e.target;
   if (el.type === 'radio' && (el.dataset.shared || el.dataset.sheet)) {
+    const isFromPopover = !!el.closest('#pdfQuickPopover');
     if (el.dataset.was === '1') {
       el.checked = false;
-      if (el.dataset.shared) { setPath(currentOrder(), el.dataset.shared, ''); changed(null, el.dataset.shared); }
-      else { setPath(currentSheet(), el.dataset.sheet, ''); changed(el.dataset.sheet, null); }
+      if (el.dataset.shared) { setPath(currentOrder(), el.dataset.shared, ''); changed(null, el.dataset.shared, isFromPopover); }
+      else { setPath(currentSheet(), el.dataset.sheet, ''); changed(el.dataset.sheet, null, isFromPopover); }
     }
     document.querySelectorAll(`input[type=radio][name="${el.name}"]`).forEach(r => { r.dataset.was = r.checked ? '1' : ''; });
   }
@@ -1467,6 +1633,51 @@ const actions = {
     const w = sh.windows; [w[i - 1], w[i]] = [w[i], w[i - 1]];
     renderWindowsEditor(); changed();
   },
+  setAllAuto(i) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    w.calcMode = 'auto';
+    w.manualFields = {};
+    autoCalculateWindow(w, sh);
+    renderWindowsEditor();
+    syncSheetInputs();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
+  setAllManual(i) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    w.calcMode = 'manual';
+    if (!w.customRailW) w.customRailW = calcRailWidth(w);
+    if (!w.customRailH) w.customRailH = calcRailHeight(w);
+    renderWindowsEditor();
+    syncSheetInputs();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
+  toggleFieldManual(i, _li, btnEl) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    const mKey = btnEl && btnEl.dataset ? btnEl.dataset.mkey : '';
+    if (!mKey) return;
+    if (!w.manualFields || typeof w.manualFields !== 'object') w.manualFields = {};
+    if (w.calcMode === 'manual') {
+      // สลับจากกรอกเองทั้งหมดเป็นกรอกเองเฉพาะบางรายการ โดยปลดล็อกเฉพาะช่องที่คลิก
+      w.calcMode = 'auto';
+      ['railW', 'railH', 'railA', 'railB', 'railN', 'railT', 'boA', 'boB', 'boN', 'boT', 'shA', 'shB', 'shN', 'shT'].forEach(k => {
+        w.manualFields[k] = (k !== mKey);
+      });
+    } else {
+      w.manualFields[mKey] = !w.manualFields[mKey];
+      if (mKey === 'railW' && w.manualFields.railW && !w.customRailW) w.customRailW = calcRailWidth(w);
+      if (mKey === 'railH' && w.manualFields.railH && !w.customRailH) w.customRailH = calcRailHeight(w);
+    }
+    autoCalculateWindow(w, sh);
+    renderWindowsEditor();
+    syncSheetInputs();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
   fillSize(i) {
     const sh = currentSheet(); if (!sh) return;
     const w = sh.windows[i];
@@ -1485,8 +1696,15 @@ const actions = {
         w.sheer.a = rw;
       }
     }
-    if (rh) { w.blackout.b = rh; w.sheer.b = rh; }
-    renderWindowsEditor(); changed();
+    if (rh) {
+      const deduct = getNoRailHeightDeduction(w);
+      const effH = String(Math.max(0, Math.round((+rh - deduct) * 100) / 100));
+      w.blackout.b = effH;
+      w.sheer.b = effH;
+    }
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
   },
   applyFormula(i) {
     const sh = currentSheet(); if (!sh) return;
@@ -1495,41 +1713,57 @@ const actions = {
     autoCalculateWindow(w, sh);
     renderWindowsEditor();
     syncSheetInputs();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
   },
   addLayer(i) {
     const sh = currentSheet(); if (!sh) return;
     sh.windows[i].layers.push({ op: 'split', target: 'all', label: '' });
-    renderWindowsEditor(); changed();
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
   },
   incPane(i) {
     const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
     const w = sh.windows[i];
     w.paneStyle = String(Math.min(24, getPaneCount(w) + 1));
-    renderWindowsEditor(); changed();
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
   },
   decPane(i) {
     const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
     const w = sh.windows[i];
     w.paneStyle = String(Math.max(1, getPaneCount(w) - 1));
-    renderWindowsEditor(); changed();
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
   },
   delLayer(i, li) {
     const sh = currentSheet(); if (!sh) return;
     const list = sh.windows[i].layers;
     if (list.length <= 1) { list[0] = { op: '', target: 'all', label: '' }; }
     else list.splice(li, 1);
-    renderWindowsEditor(); changed();
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
   },
   addNote(focus = true) {
     const sh = currentSheet(); if (!sh) return;
-    sh.notes.push(''); renderNotesEditor(); changed();
-    if (focus) document.querySelector(`[data-note="${sh.notes.length - 1}"]`).focus();
+    sh.notes.push(''); renderNotesEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+    if (focus) {
+      const nEl = document.querySelector(`[data-note="${sh.notes.length - 1}"]`);
+      if (nEl) nEl.focus();
+    }
   },
   delNote(i) {
     const sh = currentSheet(); if (!sh) return;
     sh.notes.splice(i, 1); if (!sh.notes.length) sh.notes.push('');
-    renderNotesEditor(); changed();
+    renderNotesEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
   },
   syncFromPlan() {
     const sh = currentSheet(); if (!sh) return;
@@ -1540,6 +1774,7 @@ const actions = {
   },
   openPlan() {
     const sh = currentSheet(); if (!sh) return;
+    closePdfQuickPopover();
     PlanEditor.open(sh.plan.items, items => {
       sh.plan.items = items;
       syncWindowsFromPlan(sh);
@@ -1569,7 +1804,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]');
   if (b) {
     const fn = actions[b.dataset.act];
-    if (fn) fn(b.dataset.i !== undefined ? +b.dataset.i : undefined, b.dataset.li !== undefined ? +b.dataset.li : undefined);
+    if (fn) fn(b.dataset.i !== undefined ? +b.dataset.i : undefined, b.dataset.li !== undefined ? +b.dataset.li : undefined, b);
     return;
   }
   const navCust = e.target.closest('[data-nav-cust]');
@@ -1632,8 +1867,762 @@ document.addEventListener('click', e => {
   }
 });
 
+/* =========================================================
+   Right-Only Mode (ซ่อนแผงซ้ายได้) + Pinpoint Floating Popover Editor บนใบงานด้านขวา
+   ========================================================= */
+let rightOnlyMode = false;
+let activePopoverCtx = null;
+
+function setRightOnlyMode(on) {
+  rightOnlyMode = !!on;
+  document.body.classList.toggle('right-only-mode', rightOnlyMode);
+  const btn = document.getElementById('btnToggleLeftPanel');
+  if (btn) {
+    btn.classList.toggle('primary', rightOnlyMode);
+    btn.innerHTML = rightOnlyMode
+      ? '📋 แสดงแผงข้อมูลด้านซ้าย'
+      : '🖥️ ซ่อนแผงซ้าย (คลิกแก้ไขบนใบงานด้านขวา)';
+  }
+  setTimeout(() => { fitZoomWidth(); }, 60);
+}
+
+function ensureQuickPopoverEl() {
+  let pop = document.getElementById('pdfQuickPopover');
+  if (pop) return pop;
+  pop = document.createElement('div');
+  pop.id = 'pdfQuickPopover';
+  pop.className = 'pdf-quick-popover no-print';
+  pop.hidden = true;
+  document.body.appendChild(pop);
+
+  pop.addEventListener('click', e => {
+    e.stopPropagation();
+    if (e.target.closest('[data-pop-close]')) {
+      closePdfQuickPopover();
+      return;
+    }
+    const tabBtn = e.target.closest('[data-pop-wintab]');
+    if (tabBtn && activePopoverCtx && activePopoverCtx.type === 'win') {
+      activePopoverCtx.subTab = tabBtn.dataset.popWintab;
+      activePopoverCtx.focusField = '';
+      renderActivePopoverContent();
+      return;
+    }
+    const fabTabBtn = e.target.closest('[data-pop-fabcol]');
+    if (fabTabBtn && activePopoverCtx && activePopoverCtx.type === 'fabric') {
+      activePopoverCtx.fabCol = fabTabBtn.dataset.popFabcol;
+      renderActivePopoverContent();
+      return;
+    }
+    const rodTabBtn = e.target.closest('[data-pop-rodpart]');
+    if (rodTabBtn && activePopoverCtx && activePopoverCtx.type === 'rod') {
+      activePopoverCtx.rodPart = rodTabBtn.dataset.popRodpart;
+      renderActivePopoverContent();
+      return;
+    }
+    const pickFabBtn = e.target.closest('[data-pop-pick-fab]');
+    if (pickFabBtn) {
+      const col = pickFabBtn.dataset.popPickFab;
+      const selEl = pop.querySelector('#popFabDbPicker');
+      const sh = currentSheet();
+      if (sh && selEl && selEl.value) {
+        if (col === 'roller' || col === 'blinds') {
+          const bl = (masterDB.blinds || []).find(x => x.id === selEl.value);
+          if (bl) sh.fabrics[col].name = bl.name || '';
+        } else {
+          const fb = (masterDB.fabrics || []).find(x => x.id === selEl.value);
+          if (fb) {
+            sh.fabrics[col].name = fb.name || '';
+            sh.fabrics[col].design = fb.design || '';
+          }
+        }
+        renderActivePopoverContent();
+        syncSheetInputs();
+        changed();
+      }
+      return;
+    }
+    const pickRailBtn = e.target.closest('[data-pop-pick-rail]');
+    if (pickRailBtn) {
+      const rKey = pickRailBtn.dataset.popPickRail;
+      const selEl = pop.querySelector(`#popRailPicker_${rKey}`);
+      const sh = currentSheet();
+      if (sh && selEl && selEl.value) {
+        const rl = (masterDB.rails || []).find(x => x.id === selEl.value);
+        if (rl && sh.rods[rKey]) {
+          sh.rods[rKey].model = rl.name || '';
+          if (rl.defaultColor) sh.rods[rKey].color = rl.defaultColor;
+          renderActivePopoverContent();
+          syncSheetInputs();
+          changed();
+        }
+      }
+      return;
+    }
+  });
+
+  // Dragging popover header
+  let popDrag = null;
+  pop.addEventListener('pointerdown', e => {
+    const hd = e.target.closest('.pop-hd-drag');
+    if (!hd || e.target.closest('button')) return;
+    const rect = pop.getBoundingClientRect();
+    popDrag = { startX: e.clientX, startY: e.clientY, origL: rect.left, origT: rect.top };
+    e.preventDefault();
+  });
+  document.addEventListener('pointermove', e => {
+    if (!popDrag) return;
+    const nx = Math.max(8, Math.min(window.innerWidth - 320, popDrag.origL + (e.clientX - popDrag.startX)));
+    const ny = Math.max(8, Math.min(window.innerHeight - 120, popDrag.origT + (e.clientY - popDrag.startY)));
+    pop.style.left = nx + 'px';
+    pop.style.top = ny + 'px';
+  });
+  document.addEventListener('pointerup', () => { popDrag = null; });
+
+  return pop;
+}
+
+function closePdfQuickPopover() {
+  const pop = document.getElementById('pdfQuickPopover');
+  if (pop) pop.hidden = true;
+  activePopoverCtx = null;
+}
+
+function positionPopoverNear(pop, anchorX, anchorY) {
+  const pw = Math.min(540, window.innerWidth - 24);
+  pop.style.width = pw + 'px';
+  let left = anchorX + 14;
+  let top = anchorY - 24;
+  if (left + pw > window.innerWidth - 12) {
+    left = Math.max(12, anchorX - pw - 14);
+  }
+  if (left < 12) left = 12;
+  const maxTop = Math.max(12, window.innerHeight - 490);
+  if (top > maxTop) top = maxTop;
+  if (top < 54) top = 54;
+  pop.style.left = Math.round(left) + 'px';
+  pop.style.top = Math.round(top) + 'px';
+}
+
+function refreshActivePopover() {
+  const pop = document.getElementById('pdfQuickPopover');
+  if (!pop || pop.hidden || !activePopoverCtx) return;
+  renderActivePopoverContent();
+}
+
+function refreshActivePopoverIfStructural(changedField) {
+  const pop = document.getElementById('pdfQuickPopover');
+  if (!pop || pop.hidden || !activePopoverCtx) return;
+  if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailDeductPreset|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|unequalSplit)$/.test(changedField)) {
+    renderActivePopoverContent();
+  }
+}
+
+function renderActivePopoverContent() {
+  const pop = ensureQuickPopoverEl();
+  const ctx = activePopoverCtx;
+  if (!ctx) return;
+  const ord = currentOrder();
+  const sh = currentSheet();
+  if (!ord || !sh) return;
+
+  const DIM_LABELS = {
+    width: ['ความกว้าง (เฟรม)', 'noteWidth'],
+    height: ['ความสูง (เฟรม)', 'noteHeight'],
+    extL: ['เผื่อด้านซ้าย (+)', 'noteExtL'],
+    extR: ['เผื่อด้านขวา (+)', 'noteExtR'],
+    extT: ['เผื่อด้านบน (+)', 'noteExtT'],
+    extB: ['เผื่อด้านล่าง (+)', 'noteExtB'],
+    wallL: ['พื้นที่ด้านซ้าย', 'noteWallL'],
+    wallR: ['พื้นที่ด้านขวา', 'noteWallR'],
+    ceilT: ['พื้นที่ด้านบน', 'noteCeilT'],
+    floorB: ['พื้นที่ด้านล่าง', 'noteFloorB'],
+    fullW: ['ความกว้างเต็ม', 'noteFullW'],
+    fullH: ['ความสูงเต็ม', 'noteFullH'],
+  };
+
+  let title = '✏️ แก้ไขข้อมูลบนใบงาน';
+  let bodyHTML = '';
+
+  if (ctx.type === 'win') {
+    const i = ctx.wIdx;
+    const w = sh.windows[i];
+    if (!w) return;
+    const b = p => `data-sheet="windows.${i}.${p}"`;
+    const subTab = ctx.subTab || 'dims';
+    const numLabel = w.planNo || (i + 1);
+    title = `🪟 จุดที่ ${esc(numLabel)} (${esc(w.label || 'หน้าต่าง/ประตู')}) — คลิกแก้ไขตรงจุด`;
+
+    const tabBar = `
+      <div class="pop-tabs">
+        <button type="button" class="${subTab === 'dims' ? 'active' : ''}" data-pop-wintab="dims">📏 ขนาดรอบบาน</button>
+        <button type="button" class="${subTab === 'style' ? 'active' : ''}" data-pop-wintab="style">🎀 รูปแบบม่าน & ราง</button>
+        <button type="button" class="${subTab === 'mask' ? 'active' : ''}" data-pop-wintab="mask">🪟 หน้ากาก & แบ่งซ้าย/ขวา</button>
+        <button type="button" class="${subTab === 'calc' ? 'active' : ''}" data-pop-wintab="calc">🧮 คำนวณ & หน้า/หลา</button>
+      </div>
+    `;
+
+    if (subTab === 'dims') {
+      const fKey = (ctx.svgField && DIM_LABELS[ctx.svgField]) ? ctx.svgField : '';
+      const fMeta = fKey ? DIM_LABELS[fKey] : null;
+      const rw = calcRailWidth(w), rh = calcRailHeight(w);
+      bodyHTML = tabBar + `
+        ${fMeta ? `
+          <div class="pop-highlight-box">
+            <b>🎯 จุดที่คลิกบนรูปแปลน: <span style="color:#b42318">${esc(fMeta[0])}</span></b>
+            <div class="grid2" style="margin-top:4px">
+              <label>ขนาด (${esc(fMeta[0])})
+                <input type="number" step="any" ${b(fKey)} data-pop-autofocus="1" placeholder="ระบุขนาด (ซม.)" style="font-weight:700;font-size:14px">
+              </label>
+              <label>หมายเหตุกำกับจุดนี้
+                <input list="dlRemarks" ${b(fMeta[1])} placeholder="เช่น ชนแอร์, ปลั๊กไฟ, บิ้วอิน">
+              </label>
+            </div>
+          </div>
+        ` : ''}
+        <div class="dim-grid" style="margin-top:6px">
+          ${dimFieldRow(b, 'ความกว้าง (เฟรม)', 'width', 'noteWidth', i, true)}
+          ${dimFieldRow(b, 'ความสูง (เฟรม)', 'height', 'noteHeight', i, true)}
+          ${dimFieldRow(b, 'เผื่อด้านซ้าย (+)', 'extL', 'noteExtL', i, true)}
+          ${dimFieldRow(b, 'เผื่อด้านขวา (+)', 'extR', 'noteExtR', i, true)}
+          ${dimFieldRow(b, 'เผื่อด้านบน (+)', 'extT', 'noteExtT', i, true)}
+          ${dimFieldRow(b, 'เผื่อด้านล่าง (+)', 'extB', 'noteExtB', i, true)}
+          ${dimFieldRow(b, 'พื้นที่ด้านซ้าย', 'wallL', 'noteWallL', i)}
+          ${dimFieldRow(b, 'พื้นที่ด้านขวา', 'wallR', 'noteWallR', i)}
+          ${dimFieldRow(b, 'พื้นที่ด้านบน', 'ceilT', 'noteCeilT', i)}
+          ${dimFieldRow(b, 'พื้นที่ด้านล่าง', 'floorB', 'noteFloorB', i)}
+          ${dimFieldRow(b, 'ความกว้างเต็ม', 'fullW', 'noteFullW', i)}
+          ${dimFieldRow(b, 'ความสูงเต็ม', 'fullH', 'noteFullH', i)}
+        </div>
+        <div id="popRailSumText" style="margin-top:6px;padding:6px 8px;background:#eef4ff;border-radius:5px;font-size:12px">
+          กว้างราง = <b>${esc(rw || '-')}</b> • สูงราง (สูงเฟรม+เผื่อบน+เผื่อล่าง) = <b>${esc(rh || '-')}</b>
+        </div>
+      `;
+    } else if (subTab === 'style') {
+      const needHook = curtainNeedsHook(w.curtainStyle1, w.curtainStyle2);
+      const curtainOpts = `<option value="">-- เลือก --</option>` +
+        masterDB.curtains.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+      const hookOpts = `<option value="">-- เลือกขนาดตะขอ --</option>` +
+        masterDB.hooks.map(h => `<option value="${esc(h.name)}">${esc(h.name)}</option>`).join('');
+      const rodTypeOpts = `<option value="">-- เลือกประเภทรางม่าน --</option>` +
+        ['รางม่านจีบ', 'รางโชว์', 'รางม่านลอน', 'รางม่านพับ'].map(rt => `<option value="${esc(rt)}">${esc(rt)}</option>`).join('');
+      const noRailPresetOpts = NO_RAIL_DEDUCT_PRESETS.filter(p => p[0] !== '0').map(([v, labelText]) =>
+        `<option value="${esc(v)}">${esc(labelText)}</option>`
+      ).join('');
+      const planOpenings = getPlanOpenings(sh);
+      const planSelectOpts = `<option value="">-- ดึงจากจุดในแปลนห้อง --</option>` +
+        planOpenings.map((op, oi) => {
+          const no = op.label || (oi + 1);
+          const code = (op.type === 'door' ? 'D' : 'W') + no;
+          return `<option value="${oi}">จุดที่ ${esc(no)} (${esc(code)})</option>`;
+        }).join('');
+
+      bodyHTML = tabBar + `
+        <div class="grid3">
+          <label>ลำดับจุด
+            <input ${b('planNo')} placeholder="1, 2...">
+          </label>
+          <label>รหัส/ตำแหน่ง (W1, D1)
+            <input ${b('label')} data-pop-autofocus="1" placeholder="เช่น W1, D1">
+          </label>
+          <label>ดึงจากแปลนห้อง
+            <select data-plan-pick="${i}">${planSelectOpts}</select>
+          </label>
+        </div>
+        <div class="grid2" style="margin-top:6px">
+          <label>รูปแบบผ้าม่านชั้นที่ 1 (ม่านทึบ/หลัก)
+            <select ${b('curtainStyle1')}>${curtainOpts}</select>
+          </label>
+          <label>รูปแบบผ้าม่านชั้นที่ 2 (ม่านโปร่ง)
+            <select ${b('curtainStyle2')}>${curtainOpts}</select>
+          </label>
+          <label>จำนวนผืน ชั้นที่ 1 / ชั้นที่ 2
+            <span class="inline">
+              <select ${b('pieces1')}>
+                <option value="">ชั้น1: ตามสูตร</option>
+                <option value="1">1 ผืน</option>
+                <option value="2">2 ผืน</option>
+                <option value="3">3 ผืน</option>
+                <option value="4">4 ผืน</option>
+              </select>
+              <select ${b('pieces2')}>
+                <option value="">ชั้น2: ตามสูตร</option>
+                <option value="1">1 ผืน</option>
+                <option value="2">2 ผืน</option>
+                <option value="3">3 ผืน</option>
+                <option value="4">4 ผืน</option>
+              </select>
+            </span>
+          </label>
+          <label>จำนวนชั้นรางม่าน & ประเภทราง
+            <span class="inline">
+              <select ${b('railTracks')} style="max-width:95px">
+                <option value="">อัตโนมัติ</option>
+                <option value="1">1 ชั้น</option>
+                <option value="2">2 ชั้น</option>
+              </select>
+              <select ${b('rodType')}>${rodTypeOpts}</select>
+            </span>
+          </label>
+          <label>ขนาดตะขอ ${needHook ? '<b>(ม่านจีบ/ลอน)</b>' : ''}
+            <select ${b('hookSize')} ${needHook ? '' : 'disabled'}>${hookOpts}</select>
+          </label>
+          <label>ข้อความระยะความสูง (= สูงเต็ม)
+            <input ${b('drop')} placeholder="เช่น สูงเต็ม">
+          </label>
+        </div>
+        <div style="margin-top:6px;padding:6px 8px;background:#fff8f6;border:1px dashed #ef9a9a;border-radius:6px">
+          <label class="inline" style="font-weight:700;color:#b71c1c;cursor:pointer">
+            <input type="checkbox" ${b('noRail')}>
+            🚫 ไม่รับรางม่าน (ลดขนาดความสูงผ้าม่านตามตัวเลือก)
+          </label>
+          ${w.noRail ? `
+            <div class="grid2" style="margin-top:4px">
+              <label class="${w.noRailDeductPreset === 'custom' ? '' : 'full'}">ตัวเลือกลดความสูงผ้าม่าน
+                <select ${b('noRailDeductPreset')}>${noRailPresetOpts}</select>
+              </label>
+              ${w.noRailDeductPreset === 'custom' ? `
+                <label>ลดความสูงเอง (ซม.)
+                  <input type="number" step="any" ${b('noRailDeductCustom')} placeholder="ซม.">
+                </label>
+              ` : ''}
+            </div>
+          ` : ''}
+        </div>
+        <div class="opts" style="margin-top:6px">
+          <div><span class="olbl">กล่องม่าน</span>
+            <label><input type="radio" name="pop_box${i}" value="no" ${b('box')}>No</label>
+            <label><input type="radio" name="pop_box${i}" value="yes" ${b('box')}>Yes</label>
+            ${w.box === 'yes' ? `<input ${b('boxSize')} placeholder="ขนาดกล่องม่าน" style="width:140px">` : ''}
+          </div>
+          <div><span class="olbl">ขาจับราง</span>
+            <label><input type="radio" name="pop_mount${i}" value="wall" ${b('mount')}>ผนัง</label>
+            <label><input type="radio" name="pop_mount${i}" value="ceiling" ${b('mount')}>เพดาน</label>
+            ${w.mount === 'wall' ? `
+              <label style="margin-left:4px;font-weight:700"><input type="checkbox" ${b('wallCeilingAttach')}>ผนังชิดเพดาน</label>
+              ${w.wallCeilingAttach ? `<input ${b('wallCeilingNote')} placeholder="ระบุระยะ" style="width:100px">` : ''}
+            ` : ''}
+          </div>
+        </div>
+      `;
+    } else if (subTab === 'mask') {
+      const targetOpts = getLayerTargetsForWindow(w);
+      const layersHTML = (w.layers || []).map((ly, li) => `
+        <div class="layer-row">
+          <span class="layer-tag">ผืนที่ ${li + 1}</span>
+          <select data-sheet="windows.${i}.layers.${li}.op">
+            ${LAYER_OPS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}
+          </select>
+          <select data-sheet="windows.${i}.layers.${li}.target" style="max-width:135px">
+            ${targetOpts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}
+          </select>
+          <input data-sheet="windows.${i}.layers.${li}.label" placeholder="ป้ายกำกับ" style="width:75px">
+          <button type="button" class="danger" data-act="delLayer" data-i="${i}" data-li="${li}">✕</button>
+        </div>
+      `).join('');
+
+      bodyHTML = tabBar + `
+        <div class="grid2">
+          <label>รูปแบบหน้าต่าง/ประตู (แบบ 1–9 โค้ง 90°)
+            <select ${b('cornerShape')}>${CORNER_SHAPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>
+          </label>
+          <label>จำนวนช่องบานในกรอบ
+            <span class="inline">
+              <button type="button" data-act="decPane" data-i="${i}">−</button>
+              <input type="number" min="1" max="24" step="1" ${b('paneStyle')} style="max-width:65px;text-align:center;font-weight:700">
+              <button type="button" data-act="incPane" data-i="${i}">＋</button>
+            </span>
+          </label>
+        </div>
+        <div style="margin-top:6px;padding:7px 9px;background:#f7faff;border:1px dashed #90caf9;border-radius:6px">
+          <label class="inline" style="font-weight:700;color:#0d47a1;cursor:pointer">
+            <input type="checkbox" ${b('unequalSplit')}>
+            ✂️ แบ่งผ้าม่านผืนซ้าย / ผืนขวา ไม่เท่ากันบนรางเดียว (เช่น 150/250 ราง 400)
+          </label>
+          ${w.unequalSplit ? `
+            <div class="grid2" style="margin-top:6px">
+              <label>ขนาดช่วงแบ่งผืนซ้าย (ซม.)
+                <input type="number" step="any" ${b('splitLeft')} data-pop-autofocus="1" placeholder="เช่น 150">
+              </label>
+              <label>ขนาดช่วงแบ่งผืนขวา (ซม.)
+                <input type="number" step="any" ${b('splitRight')} placeholder="เช่น 250">
+              </label>
+            </div>
+          ` : ''}
+        </div>
+        <div style="margin-top:6px">
+          <div class="inline" style="justify-content:space-between;margin-bottom:4px">
+            <b>🪟 หน้ากากแสดงการรวบม่าน / โซ่ดึง</b>
+            <button type="button" data-act="addLayer" data-i="${i}">➕ เพิ่มชิ้นผ้าม่าน</button>
+          </div>
+          <div class="layers-ed">${layersHTML}</div>
+        </div>
+      `;
+    } else if (subTab === 'calc') {
+      const style1 = w.curtainStyle1 || '';
+      const style2 = w.curtainStyle2 || w.curtainStyle1 || '';
+      const effTracks = +w.railTracks || ((w.curtainStyle1 && w.curtainStyle2) ? 2 : 1);
+      const isBlind1 = isBlindOrRollerStyle(style1);
+      const isBlind2 = isBlindOrRollerStyle(style2);
+      const wfList1 = getWidthFormulasForStyle(style1, w.pieces1, effTracks, w.rodType);
+      const hfList1 = getHeightFormulasForWindow(style1, w.rodType, w.hookSize, effTracks, w.pieces1);
+      const fabricsAll = masterDB.fabrics || [];
+      const fabOpts = `<option value="">-- เลือกผ้า (${fabricsAll.length}) --</option>` +
+        fabricsAll.map(f => `<option value="${esc(f.id)}">${esc(f.name)} (หน้า ${esc(f.fabricWidth)})</option>`).join('');
+      const selFab1 = fabricsAll.find(f => f.id === w.fabricId1) || null;
+      const allowSheer1 = !selFab1 || canFabricUseSheerGrain(selFab1.fabricWidth);
+      const selFab2 = fabricsAll.find(f => f.id === w.fabricId2) || null;
+      const allowSheer2 = !selFab2 || canFabricUseSheerGrain(selFab2.fabricWidth);
+      const yardModeOpts = YARD_DISPLAY_MODES.map(([v, labelText]) =>
+        `<option value="${esc(v)}">${esc(labelText)}</option>`
+      ).join('');
+      const lockBtn = (mKey, titleTxt) => {
+        const locked = isFieldManual(w, mKey);
+        return `<button type="button" class="field-mode-btn ${locked ? 'is-manual' : 'is-auto'}" data-act="toggleFieldManual" data-i="${i}" data-mkey="${mKey}" title="${locked ? 'กรอกเอง (คลิกเพื่อสลับเป็นอัตโนมัติ)' : 'คำนวณอัตโนมัติ (คลิกเพื่อล็อกกรอกเอง)'}">${locked ? '✍️' : '⚡'}</button>`;
+      };
+      const calcRowEd = (key, mPrefix, rowTitle, u1, u2) => `<tr><th class="r">${rowTitle}</th>
+        <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'A', rowTitle + ' กว้าง')}<input ${b(key + '.a')} placeholder="กว้าง"></div></td><td class="op">×</td>
+        <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'B', rowTitle + ' สูง/ชั้น')}<input ${b(key + '.b')} placeholder="สูง/ชั้น"></div></td><td class="op">=</td>
+        <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'N', rowTitle + ' จำนวน')}<input ${b(key + '.n')} placeholder="${u1}"></div></td><td class="op">=</td>
+        <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'T', rowTitle + ' รวม')}<input ${b(key + '.t')} placeholder="${u2}"></div></td></tr>`;
+
+      bodyHTML = tabBar + `
+        <div class="inline" style="justify-content:space-between;flex-wrap:wrap;margin-bottom:6px">
+          <div class="inline">
+            <button type="button" class="${w.calcMode !== 'manual' ? 'primary' : ''}" data-act="setAllAuto" data-i="${i}">⚡ อัตโนมัติทั้งหมด</button>
+            <button type="button" class="${w.calcMode === 'manual' ? 'primary' : ''}" data-act="setAllManual" data-i="${i}">✍️ กรอกเองทั้งหมด</button>
+          </div>
+          <button type="button" class="primary" data-act="applyFormula" data-i="${i}">🔄 คำนวณใหม่ตามสูตร</button>
+        </div>
+        <div class="grid2">
+          <label>สูตรความกว้าง (ชั้น 1: ${esc(style1 || 'ม่านทึบ')})
+            <select ${b('widthFormulaId1')}>
+              <option value="">-- อัตโนมัติตามเงื่อนไข --</option>
+              ${wfList1.map(f => `<option value="${esc(f.id)}">${esc(f.label)}</option>`).join('')}
+            </select>
+          </label>
+          <label>สูตรความสูง (ชั้น 1: ${esc(style1 || 'ม่านทึบ')})
+            <select ${b('heightFormulaId1')}>
+              <option value="">-- อัตโนมัติตามเงื่อนไข --</option>
+              ${hfList1.map(f => `<option value="${esc(f.id)}">${esc(f.label)} (${esc(f.heightExp)})</option>`).join('')}
+            </select>
+          </label>
+          <label>เลือกผ้าชั้น 1 (ม่านทึบ)
+            <select ${b('fabricId1')}>${fabOpts}</select>
+          </label>
+          <label>เกรนผ้าชั้น 1
+            <select ${b('grainType1')}>
+              <option value="opaque">เกรนม่านทึบ (Opaque)</option>
+              <option value="sheer" ${allowSheer1 ? '' : 'disabled'}>เกรนม่านโปร่ง (&gt;270 ซม.)</option>
+            </select>
+          </label>
+          <label>การแสดงจำนวนหลา (ชั้น 1)
+            <select ${b('yardMode1')}>${yardModeOpts}</select>
+          </label>
+          ${(w.yardMode1 === 'ceil_plus' || w.yardMode1 === 'exact_plus') ? `
+            <label>+ หลาที่ต้องการเพิ่ม (ชั้น 1)
+              <input type="number" step="any" ${b('extraYards1')} placeholder="เช่น 1">
+            </label>
+          ` : `<div></div>`}
+          <label>เลือกผ้าชั้น 2 (ม่านโปร่ง)
+            <select ${b('fabricId2')}>${fabOpts}</select>
+          </label>
+          <label>เกรนผ้าชั้น 2
+            <select ${b('grainType2')}>
+              <option value="opaque">เกรนม่านทึบ (Opaque)</option>
+              <option value="sheer" ${allowSheer2 ? '' : 'disabled'}>เกรนม่านโปร่ง (&gt;270 ซม.)</option>
+            </select>
+          </label>
+          <label>การแสดงจำนวนหลา (ชั้น 2)
+            <select ${b('yardMode2')}>${yardModeOpts}</select>
+          </label>
+          ${(w.yardMode2 === 'ceil_plus' || w.yardMode2 === 'exact_plus') ? `
+            <label>+ หลาที่ต้องการเพิ่ม (ชั้น 2)
+              <input type="number" step="any" ${b('extraYards2')} placeholder="เช่น 1">
+            </label>
+          ` : `<div></div>`}
+        </div>
+        <table class="calc-ed" style="margin-top:6px">
+          <tr><th></th><th>ขนาดกว้าง</th><th></th><th>สูง/ชั้น</th><th></th><th>จำนวน</th><th></th><th>รวม (หน้า / หลา)</th></tr>
+          ${calcRowEd('rail', 'rail', 'รางม่าน', 'ชั้น', 'เมตร')}
+          ${calcRowEd('blackout', 'bo', isBlind1 ? style1 : 'ผ้าม่านทึบ', 'ผืน', isBlind1 ? 'ตร.ม.' : 'หน้า / หลา')}
+          ${calcRowEd('sheer', 'sh', 'ผ้าม่านโปร่ง', 'ผืน', isBlind2 ? 'ตร.ม.' : 'หน้า / หลา')}
+        </table>
+      `;
+    }
+
+    bodyHTML += `
+      <div class="inline" style="justify-content:space-between;margin-top:8px;padding-top:6px;border-top:1px solid #e1e6ef">
+        <div class="inline">
+          <button type="button" data-act="addWin">➕ เพิ่มบานใหม่</button>
+          <button type="button" data-act="dupWin" data-i="${i}">⧉ คัดลอกบานนี้</button>
+          <button type="button" class="danger" data-act="delWin" data-i="${i}">🗑️ ลบบานนี้</button>
+        </div>
+        <button type="button" class="primary" data-pop-close="1">✔ เสร็จสิ้น</button>
+      </div>
+    `;
+  } else if (ctx.type === 'customer') {
+    title = '👤 แก้ไขข้อมูลลูกค้า & สถานที่ติดตั้ง';
+    bodyHTML = `
+      <div class="grid2">
+        <label class="full">ชื่อลูกค้า (CUSTOMER NAME)
+          <input data-shared="customer.name" data-pop-autofocus="1">
+        </label>
+        <label>เลขที่ <input data-shared="customer.houseNo"></label>
+        <label>ชั้น <input data-shared="customer.floor"></label>
+        <label>หมู่ <input data-shared="customer.moo"></label>
+        <label>ถนน <input data-shared="customer.road"></label>
+        <label class="full">อาคาร/หมู่บ้าน <input data-shared="customer.building"></label>
+        <label>ซอย <input data-shared="customer.soi"></label>
+        <label>ตำบล/แขวง <input data-shared="customer.subdistrict"></label>
+        <label>อำเภอ/เขต <input data-shared="customer.district"></label>
+        <label>จังหวัด <input data-shared="customer.province"></label>
+        <label>รหัสไปรษณีย์ <input data-shared="customer.zipcode"></label>
+        <label>มือถือ (MOBILE) <input data-shared="customer.mobile"></label>
+        <label>โทรศัพท์ (TEL.) <input data-shared="customer.tel"></label>
+        <label>อีเมล (EMAIL) <input data-shared="customer.email"></label>
+        <label>วันที่ส่ง (DELIVERY DATE) <input type="date" data-shared="customer.deliveryDate"></label>
+        <label>สถานที่ส่ง (DELIVERY PLACE) <input data-shared="customer.deliveryPlace"></label>
+      </div>
+    `;
+  } else if (ctx.type === 'staff') {
+    title = '🧑‍💼 แก้ไขเลขที่ออเดอร์ / พนักงาน / ส่วนลด';
+    bodyHTML = `
+      <div class="grid2">
+        <label>ORDER NO (เลขที่) <input data-shared="staff.orderNo" data-pop-autofocus="1" placeholder="-"></label>
+        <label>S.R. (ชื่อพนักงาน) <input data-shared="staff.name"></label>
+        <label>DEPT. (แผนก) <input data-shared="staff.dept"></label>
+        <label>Branch (สาขา) <input data-shared="staff.branch"></label>
+      </div>
+      <div class="subcard" style="margin-top:6px">
+        <b>💰 ส่วนลด (%)</b>
+        <div class="grid2" style="margin-top:4px">
+          <label>ผ้าทึบ (%) <input type="number" step="0.1" data-shared="discount.blackout"></label>
+          <label>ผ้าโปร่ง (%) <input type="number" step="0.1" data-shared="discount.sheer"></label>
+          <label>อุปกรณ์ (%) <input type="number" step="0.1" data-shared="discount.equipment"></label>
+          <label>ค่าแรง (%) <input type="number" step="0.1" data-shared="discount.labor"></label>
+        </div>
+      </div>
+    `;
+  } else if (ctx.type === 'map') {
+    title = '🗺️ แก้ไขชื่อห้อง / แปลนห้อง / สภาพหน้างาน / หมายเหตุ';
+    bodyHTML = `
+      <div class="inline" style="justify-content:space-between;margin-bottom:6px">
+        <label style="flex:1">ชื่อห้อง (MAP ROOM)
+          <input data-sheet="room.name" data-pop-autofocus="1" placeholder="เช่น ห้องนอนใหญ่, ห้องรับแขก">
+        </label>
+        <button type="button" class="primary" data-act="openPlan" style="margin-top:16px">✏️ วาด/แก้ไขแปลนห้อง</button>
+      </div>
+      <div class="opts">
+        <div><span class="olbl">แอร์ผนัง</span>
+          <label><input type="radio" name="pop_aircon" value="no" data-sheet="room.aircon">No</label>
+          <label><input type="radio" name="pop_aircon" value="yes" data-sheet="room.aircon">Yes</label>
+        </div>
+        <div><span class="olbl">เหล็กดัด</span>
+          <label><input type="radio" name="pop_grille" value="no" data-sheet="room.grille">No</label>
+          <label><input type="radio" name="pop_grille" value="yes" data-sheet="room.grille">Yes</label>
+        </div>
+        <div><span class="olbl">มุ้งลวด</span>
+          <label><input type="radio" name="pop_screen" value="no" data-sheet="room.screen">No</label>
+          <label><input type="radio" name="pop_screen" value="yes" data-sheet="room.screen">Yes</label>
+        </div>
+      </div>
+      <div class="grid2">
+        <label>No. <input data-sheet="room.refNo"></label>
+        <label>โปร. <input data-sheet="room.promo"></label>
+      </div>
+      <div style="margin-top:6px">
+        <div class="inline" style="justify-content:space-between;margin-bottom:4px">
+          <b>📝 หมายเหตุห้อง</b>
+          <button type="button" data-act="addNote">➕ เพิ่มข้อหมายเหตุ</button>
+        </div>
+        <ol style="margin:0;padding-left:18px">
+          ${(sh.notes || []).map((n, ni) => `<li style="margin-bottom:4px"><div class="inline"><input data-sheet="notes.${ni}" placeholder="หมายเหตุข้อ ${ni + 1}"><button type="button" class="danger" data-act="delNote" data-i="${ni}">✕</button></div></li>`).join('')}
+        </ol>
+      </div>
+    `;
+  } else if (ctx.type === 'fabric') {
+    const col = ctx.fabCol || 'blackout';
+    const colTitles = {
+      blackout: 'ผ้าม่านทึบ (CURTAIN)',
+      sheer: 'ผ้าม่านโปร่ง (SHEER)',
+      roller: 'ม่านม้วน (ROLLER BLINDS)',
+      blinds: 'มู่ลี่ (BAMBOO BLINDS)',
+      other: 'อื่นๆ (OTHER)',
+    };
+    title = `🧵 แก้ไขตารางผ้าและสินค้า — ${colTitles[col] || ''}`;
+    const isBlindCol = col === 'roller' || col === 'blinds';
+    const dbOptions = isBlindCol
+      ? (masterDB.blinds || []).map(x => `<option value="${esc(x.id)}">${esc(x.name)} [${esc(x.curtainStyle)}]</option>`).join('')
+      : (masterDB.fabrics || []).map(x => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.design || '-')}) หน้าผ้า ${esc(x.fabricWidth)}</option>`).join('');
+
+    bodyHTML = `
+      <div class="pop-tabs">
+        ${Object.entries(colTitles).map(([k, t]) => `<button type="button" class="${col === k ? 'active' : ''}" data-pop-fabcol="${k}">${t.split(' ')[0]}</button>`).join('')}
+      </div>
+      <div class="inline" style="margin:6px 0">
+        <select id="popFabDbPicker">
+          <option value="">-- เลือกจากฐานข้อมูล${isBlindCol ? 'มู่ลี่/ม่านม้วน' : 'ผ้า'} --</option>
+          ${dbOptions}
+        </select>
+        <button type="button" class="primary" data-pop-pick-fab="${col}">↘ ดึงค่า</button>
+      </div>
+      ${(col === 'blackout' || col === 'sheer') ? `
+        <div class="opts">
+          <label><input type="checkbox" data-sheet="fabrics.${col}.isOpaque"> ทึบ</label>
+          <label><input type="checkbox" data-sheet="fabrics.${col}.isSheer"> โปร่ง</label>
+        </div>
+      ` : ''}
+      ${col === 'other' ? `<label style="margin-bottom:6px">หัวข้อคอลัมน์ OTHER <input data-sheet="fabrics.other.label"></label>` : ''}
+      <div class="grid2">
+        <label>CS DES. (ผ้า) <input list="${isBlindCol ? 'dlBlinds' : 'dlFabrics'}" data-sheet="fabrics.${col}.name" data-pop-autofocus="1"></label>
+        <label>DES.NO. (ดีไซน์) <input data-sheet="fabrics.${col}.design"></label>
+        <label>COLOUR (สี) <input data-sheet="fabrics.${col}.color"></label>
+        <label>QTY. (จำนวนหลา) <input data-sheet="fabrics.${col}.qty"></label>
+      </div>
+    `;
+  } else if (ctx.type === 'rod') {
+    const part = ctx.rodPart || 'rodType';
+    title = '🛤️ แก้ไขรางม่าน / ตะขอเกี่ยวสายรวบ / ก้านจูง / ห่วงตาไก่';
+    const railPickerFor = (rKey, catName) => {
+      const items = (masterDB.rails || []).filter(r => !r.rodCategory || r.rodCategory === catName || r.rodCategory === '*');
+      return `<div class="inline" style="margin-bottom:4px">
+        <select id="popRailPicker_${rKey}">
+          <option value="">-- เลือก ${catName} จากฐานข้อมูล (${items.length}) --</option>
+          ${items.map(r => `<option value="${esc(r.id)}">${esc(r.name)} (${esc(r.defaultColor || '-')})</option>`).join('')}
+        </select>
+        <button type="button" data-pop-pick-rail="${rKey}">↘ ดึง</button>
+      </div>`;
+    };
+    bodyHTML = `
+      <div class="pop-tabs">
+        <button type="button" class="${part === 'rodType' ? 'active' : ''}" data-pop-rodpart="rodType">🛤️ ประเภทรางม่าน</button>
+        <button type="button" class="${part === 'holdBack' ? 'active' : ''}" data-pop-rodpart="holdBack">🪝 ตะขอสายรวบ</button>
+        <button type="button" class="${part === 'drawRod' ? 'active' : ''}" data-pop-rodpart="drawRod">🦯 ก้านจูง</button>
+        <button type="button" class="${part === 'grommet' ? 'active' : ''}" data-pop-rodpart="grommet">⭕ ห่วงตาไก่</button>
+      </div>
+      ${part === 'rodType' ? `
+        <label class="inline" style="margin:6px 0;font-weight:700"><input type="checkbox" data-sheet="rods.typeNo"> NO (ไม่รับรางม่าน)</label>
+        ${railPickerFor('pleat', 'รางม่านจีบ')}
+        <div class="grid2" style="margin-bottom:6px">
+          <label>รางม่านจีบ <input list="dlRails" data-sheet="rods.pleat.model" data-pop-autofocus="1"></label>
+          <label>สี <input data-sheet="rods.pleat.color"></label>
+        </div>
+        ${railPickerFor('show', 'รางโชว์')}
+        <div class="grid3" style="margin-bottom:6px">
+          <label>รางโชว์ <input list="dlRails" data-sheet="rods.show.model"></label>
+          <label>สี <input data-sheet="rods.show.color"></label>
+          <label>หัวปิดราง <input data-sheet="rods.show.cap"></label>
+        </div>
+        ${railPickerFor('wave', 'รางม่านลอน')}
+        <div class="grid2" style="margin-bottom:6px">
+          <label>รางม่านลอน <input list="dlRails" data-sheet="rods.wave.model"></label>
+          <label>สี <input data-sheet="rods.wave.color"></label>
+        </div>
+        ${railPickerFor('fold', 'รางม่านพับ')}
+        <div class="grid2">
+          <label>รางม่านพับ <input list="dlRails" data-sheet="rods.fold.model"></label>
+          <label>สี <input data-sheet="rods.fold.color"></label>
+        </div>
+      ` : ''}
+      ${part === 'holdBack' ? `
+        <div class="opts" style="margin-top:6px">
+          <label><input type="checkbox" data-sheet="rods.holdNo"> NO</label>
+          <label><input type="checkbox" data-sheet="rods.holdStd"> แบบมาตรฐาน</label>
+          <label><input type="checkbox" data-sheet="rods.holdCrystal"> แบบคริสตัล</label>
+        </div>
+        <div class="grid2">
+          <label class="inline"><input type="checkbox" data-sheet="rods.hold.silver.on"> เงิน <input type="number" min="0" data-sheet="rods.hold.silver.qty" placeholder="อัน"></label>
+          <label class="inline"><input type="checkbox" data-sheet="rods.hold.black.on"> ดำ <input type="number" min="0" data-sheet="rods.hold.black.qty" placeholder="อัน"></label>
+          <label class="inline"><input type="checkbox" data-sheet="rods.hold.brass.on"> ทองเหลือง <input type="number" min="0" data-sheet="rods.hold.brass.qty" placeholder="อัน"></label>
+          <label class="inline"><input type="checkbox" data-sheet="rods.hold.copper.on"> ทองแดง <input type="number" min="0" data-sheet="rods.hold.copper.qty" placeholder="อัน"></label>
+        </div>
+      ` : ''}
+      ${part === 'drawRod' ? `
+        <label class="inline" style="margin:6px 0;font-weight:700"><input type="checkbox" data-sheet="rods.drawNo"> NO (ไม่ใช้ก้านจูง)</label>
+        <div class="grid2">
+          ${['drawBlackout', 'drawSheer'].map((dk, di) => `
+            <div class="subcard">
+              <b>${di === 0 ? 'ผ้าม่านทึบ' : 'ผ้าม่านโปร่ง'}</b>
+              <div class="qty-grid" style="margin-top:4px">
+                <label><input type="checkbox" data-sheet="rods.${dk}.wood.on"> ลายไม้</label><input type="number" min="0" data-sheet="rods.${dk}.wood.qty" placeholder="อัน">
+                <label><input type="checkbox" data-sheet="rods.${dk}.alu.on"> อลูมิเนียม</label><input type="number" min="0" data-sheet="rods.${dk}.alu.qty" placeholder="อัน">
+                <label><input type="checkbox" data-sheet="rods.${dk}.acrylic.on"> อะคริลิค</label><input type="number" min="0" data-sheet="rods.${dk}.acrylic.qty" placeholder="อัน">
+                <label><input type="checkbox" data-sheet="rods.${dk}.size120"> ขนาด 120 cm</label><span></span>
+                <label>ขนาดอื่น (cm)</label><input type="number" min="0" data-sheet="rods.${dk}.sizeCustom">
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${part === 'grommet' ? `
+        <div style="margin-top:6px">
+          ${[
+            ['flat', 'แบบเรียบ', [['silver', 'สีเงิน'], ['brass', 'ทองเหลือง'], ['copper', 'ทองแดง']]],
+            ['wave', 'แบบลอน', [['brass', 'ทองเหลือง'], ['copper', 'ทองแดง']]],
+            ['ripple', 'แบบคลื่น', [['brass', 'ทองเหลือง'], ['copper', 'ทองแดง']]],
+          ].map(([gk, gtitle, gcols]) => `
+            <div class="subcard" style="margin-bottom:6px">
+              <b>${gtitle}</b>
+              <div class="opts" style="margin:4px 0 0">
+                ${gcols.map(([ck, cl]) => `<label><input type="checkbox" data-sheet="rods.grommet.${gk}.${ck}">${cl}</label>`).join('')}
+                <label><input type="checkbox" data-sheet="rods.grommet.${gk}.other">อื่นๆ</label>
+                <input data-sheet="rods.grommet.${gk}.otherText" placeholder="ระบุ" style="width:120px">
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    `;
+  } else if (ctx.type === 'sign') {
+    title = '✍️ แก้ไขข้อมูลลงชื่อ & วันที่';
+    bodyHTML = `
+      <div class="grid2">
+        <label>ชื่อผู้ขอ (Request Name) <input data-shared="sign.requester" data-pop-autofocus="1"></label>
+        <label>วันที่ <input type="date" data-shared="sign.requesterDate"></label>
+        <label>ชื่อลูกค้า (Customer) <input data-shared="sign.customer"></label>
+        <label>วันที่ <input type="date" data-shared="sign.customerDate"></label>
+        <label>ชื่อช่างติดตั้ง (Installer) <input data-shared="sign.installer"></label>
+        <label>วันที่ <input type="date" data-shared="sign.installerDate"></label>
+        <label>ชื่อผู้ทำใบเสนอราคา (C.S.) <input data-shared="sign.cs"></label>
+        <label>วันที่ <input type="date" data-shared="sign.csDate"></label>
+      </div>
+    `;
+  }
+
+  pop.innerHTML = `
+    <div class="pop-hd pop-hd-drag">
+      <span>${title}</span>
+      <button type="button" class="ghost" data-pop-close="1" title="ปิดหน้าต่างแก้ไขนี้">✕</button>
+    </div>
+    <div class="pop-body">${bodyHTML}</div>
+  `;
+  pop.hidden = false;
+  syncSharedInputs(pop);
+  syncSheetInputs(pop);
+
+  const af = pop.querySelector('[data-pop-autofocus="1"]');
+  if (af) {
+    setTimeout(() => {
+      try { af.focus(); if (af.select) af.select(); } catch (e) {}
+    }, 30);
+  }
+}
+
+function openPdfQuickPopover(ctx, clientX, clientY) {
+  activePopoverCtx = ctx;
+  const pop = ensureQuickPopoverEl();
+  renderActivePopoverContent();
+  positionPopoverNear(pop, clientX, clientY);
+}
+
+// ปิด Popover เมื่อคลิกพื้นที่ว่างนอกใบงานหรือกด Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePdfQuickPopover();
+});
+
 function scrollAndFlashEditor(targetEl, focusSelector) {
-  if (!targetEl) return;
+  if (!targetEl || rightOnlyMode) return;
   if (targetEl.tagName === 'DETAILS') targetEl.open = true;
   const parentDetails = targetEl.closest('details.sec');
   if (parentDetails) parentDetails.open = true;
@@ -1644,7 +2633,7 @@ function scrollAndFlashEditor(targetEl, focusSelector) {
   targetEl.classList.add('jump-flash');
   targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  if (focusSelector) {
+  if (focusSelector && !rightOnlyMode) {
     const inputEl = targetEl.querySelector(focusSelector) || document.querySelector(focusSelector);
     if (inputEl && typeof inputEl.focus === 'function') {
       setTimeout(() => {
@@ -1684,7 +2673,6 @@ function switchToSheetSection(targetSheetIdx, secId, focusSelector, customTarget
     renderTopSheetNav();
   }
 
-  // หากกำลังกรองเฉพาะหมวดอื่นอยู่ ให้สลับมาหมวดที่คลิกทันที
   if (activeSectionFilter !== 'all' && activeSectionFilter !== secId) {
     applySectionFilter(secId);
   } else {
@@ -1697,11 +2685,14 @@ function switchToSheetSection(targetSheetIdx, secId, focusSelector, customTarget
   scrollAndFlashEditor(targetEl, focusSelector);
 }
 
-// คลิกที่ส่วนใดของใบ PDF ด้านขวา -> เปลี่ยนหน้าข้อมูลด้านซ้ายไปยังส่วนนั้นทันที
+// คลิกที่ส่วนใดของใบ PDF ด้านขวา -> เปิดกล่องแก้ไขลอยตรงจุดที่คลิกทันที (และซิงค์แผงซ้ายด้วยหากเปิดอยู่)
 document.getElementById('preview').addEventListener('click', e => {
   if (e.target.closest('.float-note-box')) return;
   const pageEl = e.target.closest('.page[data-page-idx]');
-  if (!pageEl) return;
+  if (!pageEl) {
+    closePdfQuickPopover();
+    return;
+  }
 
   const ord = currentOrder();
   if (!ord) return;
@@ -1716,32 +2707,25 @@ document.getElementById('preview').addEventListener('click', e => {
     switchToCustomerSection('secCompany', '[data-shared="company.name"]');
     return;
   }
-  if (e.target.closest('.s-cust .disc')) {
-    switchToCustomerSection('secDiscount', '[data-shared="discount.blackout"]');
-    return;
-  }
-  if (e.target.closest('.s-cust .cr')) {
-    switchToCustomerSection('secStaff', '[data-shared="staff.orderNo"]');
+  if (e.target.closest('.s-cust .disc') || e.target.closest('.s-cust .cr')) {
+    switchToCustomerSection(e.target.closest('.s-cust .disc') ? 'secDiscount' : 'secStaff', '[data-shared="staff.orderNo"]');
+    openPdfQuickPopover({ type: 'staff', sIdx }, e.clientX, e.clientY);
     return;
   }
   if (e.target.closest('.s-cust')) {
     switchToCustomerSection('secCustomer', '[data-shared="customer.name"]');
+    openPdfQuickPopover({ type: 'customer', sIdx }, e.clientX, e.clientY);
     return;
   }
   if (e.target.closest('.s-sign')) {
     switchToCustomerSection('secSign', '[data-shared="sign.requester"]');
-    return;
-  }
-  if (e.target.closest('.s-map .notes-list, .s-map .map-note-hd')) {
-    switchToSheetSection(sIdx, 'secNotes', '[data-note="0"]');
-    return;
-  }
-  if (e.target.closest('.s-map .pbox')) {
-    switchToSheetSection(sIdx, 'secPlan', '[data-sheet="room.name"]');
+    openPdfQuickPopover({ type: 'sign', sIdx }, e.clientX, e.clientY);
     return;
   }
   if (e.target.closest('.s-map')) {
-    switchToSheetSection(sIdx, 'secPlan', '[data-sheet="room.name"]');
+    const isNotes = !!e.target.closest('.s-map .notes-list, .s-map .map-note-hd');
+    switchToSheetSection(sIdx, isNotes ? 'secNotes' : 'secPlan', isNotes ? '[data-note="0"]' : '[data-sheet="room.name"]');
+    openPdfQuickPopover({ type: 'map', sIdx }, e.clientX, e.clientY);
     return;
   }
   const winCell = e.target.closest('.wc[data-preview-win]');
@@ -1760,26 +2744,49 @@ document.getElementById('preview').addEventListener('click', e => {
         renderTopSheetNav();
       }
     }
-    let focusSel = `[data-sheet="windows.${wIdx}.label"]`;
-    if (e.target.closest('.calc-group')) {
+
+    const svgHit = e.target.closest('[data-svg-field]');
+    const svgField = svgHit ? svgHit.dataset.svgField : '';
+    const winPartEl = e.target.closest('[data-win-part]');
+    const winPart = winPartEl ? winPartEl.dataset.winPart : '';
+
+    let subTab = 'dims';
+    let focusSel = `[data-sheet="windows.${wIdx}.width"]`;
+    if (svgField === 'layers' || svgField === 'split') {
+      subTab = 'mask';
+      focusSel = `[data-sheet="windows.${wIdx}.paneStyle"]`;
+    } else if (svgField) {
+      subTab = 'dims';
+      focusSel = `[data-sheet="windows.${wIdx}.${svgField}"]`;
+    } else if (winPart === 'calc' || e.target.closest('.calc-group')) {
+      subTab = 'calc';
       focusSel = `[data-sheet="windows.${wIdx}.widthFormulaId1"]`;
-    } else if (e.target.closest('.wdiag')) {
-      focusSel = `[data-sheet="windows.${wIdx}.width"]`;
+    } else if (winPart === 'header' || winPart === 'box' || winPart === 'mount') {
+      subTab = 'style';
+      focusSel = `[data-sheet="windows.${wIdx}.label"]`;
     }
+
     switchToSheetSection(
       sIdx,
       'secWins',
       focusSel,
       () => document.querySelector(`.win-ed[data-win-idx="${wIdx}"]`)
     );
+    openPdfQuickPopover({ type: 'win', sIdx, wIdx, subTab, svgField }, e.clientX, e.clientY);
     return;
   }
   if (e.target.closest('.s-tb')) {
-    switchToSheetSection(sIdx, 'secFabrics', '[data-sheet="fabrics.blackout.name"]');
+    const colEl = e.target.closest('[data-fab-col]');
+    const fabCol = colEl ? colEl.dataset.fabCol : 'blackout';
+    switchToSheetSection(sIdx, 'secFabrics', `[data-sheet="fabrics.${fabCol}.name"]`);
+    openPdfQuickPopover({ type: 'fabric', sIdx, fabCol }, e.clientX, e.clientY);
     return;
   }
   if (e.target.closest('.s-rod')) {
+    const partEl = e.target.closest('[data-rod-part]');
+    const rodPart = partEl ? partEl.dataset.rodPart : 'rodType';
     switchToSheetSection(sIdx, 'secRods', '[data-sheet="rods.pleat.model"]');
+    openPdfQuickPopover({ type: 'rod', sIdx, rodPart }, e.clientX, e.clientY);
     return;
   }
 });
@@ -2046,6 +3053,13 @@ function fitZoomPage() {
 zoomEl.addEventListener('input', () => setZoom(+zoomEl.value));
 document.getElementById('zoomFitWidth').onclick = fitZoomWidth;
 document.getElementById('zoomFitPage').onclick = fitZoomPage;
+
+const btnToggleLeftPanel = document.getElementById('btnToggleLeftPanel');
+if (btnToggleLeftPanel) {
+  btnToggleLeftPanel.addEventListener('click', () => {
+    setRightOnlyMode(!rightOnlyMode);
+  });
+}
 
 document.getElementById('modeAllPages').onclick = () => {
   previewMode = 'all';
