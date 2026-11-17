@@ -28,6 +28,14 @@ function newWindow(planNo = '') {
     pieces1: '',      // จำนวนผืน ชั้นที่ 1: '' = ตามสูตร, '1', '2', '3', '4'
     pieces2: '',      // จำนวนผืน ชั้นที่ 2
     noRail: false,    // กรณีไม่รับรางม่าน
+    noRailStatus: 'ใช้รางเดิม', // ข้อความแสดงในช่องจำนวนราง: 'ใช้รางเดิม' | 'ไม่เอาราง'
+    railCountUnit: '', // หน่วยช่องชั้น: '' = อัตโนมัติ, 'ชั้น', 'ผืน', 'ชุด'
+    railUnit: '',      // หน่วยช่องจำนวนราง: '' = อัตโนมัติตามฐานข้อมูลราง, 'เมตร', 'ชุด', 'ชุด/เมตร', 'เมตร/ชุด', 'ตร.ม.'
+    railSetRanges: '', // กำหนดช่วงแบ่งชุดเฉพาะบาน (ถ้าว่างใช้จากฐานข้อมูลราง)
+    rowLabel1: '',     // ชื่อแถวที่ 1 (ค่าเริ่มต้น "รางม่าน" หรือ "ผืนที่ 1" สำหรับม่านม้วน/มู่ลี่)
+    rowLabel2: '',     // ชื่อแถวที่ 2 (ค่าเริ่มต้น "ผ้าม่านทึบ")
+    rowLabel3: '',     // ชื่อแถวที่ 3 (ค่าเริ่มต้น "ผ้าม่านโปร่ง")
+    blindPieces: [],   // ม่านม้วน/มู่ลี่หลายผืน: [{ w, h }]  ผืนที่ 1, ผืนที่ 2 ...
     noRailDeductPreset: 'existing_pleat_2',
     noRailDeductCustom: '',
     backLayerHeightDeduct: '0', // กรณีม่าน 2 ชั้น เลือกลดความสูงม่านชั้นด้านหลังเพิ่มได้ 0, 0.5 หรือ 1 ซม.
@@ -43,6 +51,8 @@ function newWindow(planNo = '') {
       widthLeft: '', widthRight: '', widthTotal: '',
       heightDeduct: '2',
       noteDeduct: '',
+      hemClearanceType: 'float', // 'float' = ลอยจากพื้น | 'puddle' = กองพื้น | 'touch' = พอดีพื้น
+      hemClearanceVal: '',       // ระยะชายม่านที่ต้องการ (ซม.)
       railLeft: calcRow(), boLeft: calcRow(), shLeft: calcRow(),
       railRight: calcRow(), boRight: calcRow(), shRight: calcRow(),
       boName: '', boDesign: '', boColor: '', boQty: '',
@@ -285,6 +295,12 @@ function normalizeWindow(w, idx) {
   }
   if (nw.sheer && nw.sheer.t) {
     nw.sheer.t = String(nw.sheer.t).replace(/\s*หน้า\s*\/\s*/g, '/');
+  }
+  // ล้างค่าผิดพลาดเดิม "8 x -1.5" บนบานที่ยังไม่มีขนาดหน้าต่าง/ประตู
+  const hasAnyDim = !!(parseFloat(nw.width) > 0 || parseFloat(nw.height) > 0 || parseFloat(nw.customRailW) > 0 || parseFloat(nw.customRailH) > 0);
+  if (!hasAnyDim && nw.calcMode !== 'manual') {
+    if (nw.blackout && nw.blackout.a === '8' && nw.blackout.b === '-1.5') nw.blackout = calcRow();
+    if (nw.sheer && nw.sheer.a === '8' && nw.sheer.b === '-1.5') nw.sheer = calcRow();
   }
   return nw;
 }
@@ -727,6 +743,20 @@ function autoUpdateSheetFabricTableQty(sh) {
   });
 }
 
+/**
+ * คำนวณแปลนงานม่านจั่ว
+ * 1) ขนาดรางม่านจั่ว = ความยาวด้านเอียงของสามเหลี่ยม (พีทาโกรัส X² + Y² = Z²) ปัดเศษลงเป็นจำนวนเต็ม
+ *    X = ความกว้างช่วงนั้นๆ, Y = ผลต่างความสูงของช่วงนั้นๆ
+ * 2) ความสูงม่านจั่ว = ความสูงที่สูงที่สุดของช่วงนั้นๆ แล้วลดขนาดตามที่กำหนด (heightDeduct)
+ * 3) ความกว้างผ้าม่าน = คำนวณตามสูตรของแต่ละรูปแบบม่านที่กำหนดไว้ในฐานข้อมูล (ใช้ขนาดรางเอียง Z เป็น RW)
+ */
+function calcGableSlopeLength(spanWidth, hLow, hHigh) {
+  const X = parseFloat(spanWidth) || 0;
+  const Y = Math.abs((parseFloat(hHigh) || 0) - (parseFloat(hLow) || 0));
+  if (X <= 0) return 0;
+  return Math.floor(Math.sqrt((X * X) + (Y * Y)) + 1e-9);
+}
+
 function autoCalculateGable(w, sh) {
   if (!w || w.specialType !== 'gable') return;
   if (!w.gable || typeof w.gable !== 'object') w.gable = {};
@@ -735,6 +765,11 @@ function autoCalculateGable(w, sh) {
   const gType = String(g.type);
   const isSingleSpan = gType === '3' || gType === '5';
   const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+  // ชื่อห้องแปลนม่านจั่ว = ชื่อห้อง + ตำแหน่งหน้าต่าง/ประตู (เช่น ห้องนอนใหญ่ W1)
+  const roomName = (sh && sh.room && String(sh.room.name || '').trim()) || '';
+  const autoTitle = [roomName, String(w.label || '').trim()].filter(Boolean).join(' ');
+  if (!g.titleManual) g.title = autoTitle;
 
   const deduct = num(g.heightDeduct);
   const fullA = num(g.fullA);
@@ -752,79 +787,93 @@ function autoCalculateGable(w, sh) {
   const wRight = num(g.widthRight);
   const wTotal = num(g.widthTotal) || (wLeft + wRight);
   const effTracks = +w.railTracks || ((w.curtainStyle1 && w.curtainStyle2) ? 2 : 1);
+  const isTwoLayer = effTracks >= 2 || !!(w.curtainStyle1 && w.curtainStyle2);
+  const backDeductVal = isTwoLayer ? num(w.backLayerHeightDeduct) : 0;
+  const backDeduct1 = (w.backLayerTarget === 'layer1') ? backDeductVal : 0;
+  const backDeduct2 = (w.backLayerTarget !== 'layer1') ? backDeductVal : 0;
 
-  if (!g.railLeft) g.railLeft = calcRow();
-  if (!g.boLeft) g.boLeft = calcRow();
-  if (!g.shLeft) g.shLeft = calcRow();
-  if (!g.railRight) g.railRight = calcRow();
-  if (!g.boRight) g.boRight = calcRow();
-  if (!g.shRight) g.shRight = calcRow();
+  ['railLeft', 'boLeft', 'shLeft', 'railRight', 'boRight', 'shRight'].forEach(k => {
+    g[k] = calcRow();
+  });
+
+  const style1 = String(w.curtainStyle1 || '').trim();
+  const style2 = String(w.curtainStyle2 || '').trim();
+  const wfAll = masterDB.widthFormulas || [];
+  const ruleAll = masterDB.fabricCalcRules || [];
+  const fab1 = resolveWindowFabricChoice(w, sh, 1);
+  const fab2 = resolveWindowFabricChoice(w, sh, 2);
+  // บานจำลองสำหรับคำนวณ (ไม่หักลดซ้ำ เพราะความสูงม่านจั่วหักลดตาม heightDeduct แล้ว)
+  const calcWin = Object.assign({}, w, { noRail: false, unequalSplit: false, calcMode: 'auto', manualFields: {} });
+
+  const calcLayer = (layerNo, railZ, curtainH, piecesForSpan) => {
+    const style = layerNo === 1 ? style1 : (style2 || style1);
+    if (!style || railZ <= 0 || curtainH <= 0) return null;
+    const layerType = layerNo === 1 ? 'opaque' : 'sheer';
+    const wf = (w[`widthFormulaId${layerNo}`] && wfAll.find(f => f.id === w[`widthFormulaId${layerNo}`]))
+      || getWidthFormulasForStyle(style, piecesForSpan, effTracks, w.rodType, layerType)[0]
+      || null;
+    const fabItem = layerNo === 1 ? fab1 : fab2;
+    let grain = w[`grainType${layerNo}`] || (layerNo === 1 ? 'opaque' : 'sheer');
+    if (fabItem && !canFabricUseSheerGrain(fabItem.fabricWidth)) grain = 'opaque';
+    const rule = (w[`fabricRuleId${layerNo}`] && ruleAll.find(r => r.id === w[`fabricRuleId${layerNo}`]))
+      || getFabricCalcRulesForStyle(style, grain)[0]
+      || null;
+    return computeCurtainLayerByWidthHeight(calcWin, wf, null, {
+      curtainStyle: style,
+      pieces: piecesForSpan,
+      railTracks: effTracks,
+      fabric: fabItem,
+      grainType: grain,
+      fabricRule: rule,
+      yardMode: w[`yardMode${layerNo}`] || 'exact',
+      extraYards: w[`extraYards${layerNo}`] || 0,
+      overrideRW: railZ,
+      overrideRH: curtainH,
+    });
+  };
+
+  const fillSpan = (side, spanW, hLowFull, hHighFull, maxRedH, piecesForSpan) => {
+    const railZ = calcGableSlopeLength(spanW, hLowFull, hHighFull);
+    const fullMaxH = Math.max(hLowFull, hHighFull);
+    const rail = g[`rail${side}`];
+    if (railZ > 0 || fullMaxH > 0) {
+      rail.a = railZ > 0 ? String(railZ) : '';
+      rail.b = fullMaxH > 0 ? String(fullMaxH) : '';
+      rail.n = String(effTracks);
+      rail.t = railZ > 0 ? String(Math.round(Math.max(1, railZ / 100) * effTracks * 100) / 100) : '';
+    }
+    g[`slope${side}`] = railZ > 0 ? String(railZ) : '';
+    if (style1) {
+      const h1 = Math.max(0, Math.round((maxRedH - backDeduct1) * 100) / 100);
+      const r1 = calcLayer(1, railZ, h1, piecesForSpan);
+      if (r1) Object.assign(g[`bo${side}`], { a: r1.a || '', b: r1.b || '', n: r1.n || '', t: r1.t || '' });
+    }
+    if (style2) {
+      const h2 = Math.max(0, Math.round((maxRedH - backDeduct2) * 100) / 100);
+      const r2 = calcLayer(2, railZ, h2, piecesForSpan);
+      if (r2) Object.assign(g[`sh${side}`], { a: r2.a || '', b: r2.b || '', n: r2.n || '', t: r2.t || '' });
+    }
+  };
 
   if (isSingleSpan) {
-    // ช่วงเดียว (แบบที่ 3 หรือ แบบที่ 5): ใช้ความกว้างวัดจริง (wTotal) และความสูงมากสุดของช่วงนั้น
-    const maxH = Math.max(redANum, redBNum);
-    const fullMaxH = Math.max(fullA, fullB);
-    if (wTotal > 0 || maxH > 0) {
-      g.railLeft.a = wTotal > 0 ? String(wTotal) : '';
-      g.railLeft.b = fullMaxH > 0 ? String(fullMaxH) : (maxH > 0 ? String(maxH) : '');
-      g.railLeft.n = String(effTracks);
-      if (w.curtainStyle1) {
-        g.boLeft.a = wTotal > 0 ? String(wTotal) : '';
-        g.boLeft.b = maxH > 0 ? String(maxH) : '';
-        g.boLeft.n = String(w.pieces1 || 1);
-      }
-      if (w.curtainStyle2) {
-        const backDeduct = (w.backLayerTarget !== 'layer1') ? num(w.backLayerHeightDeduct) : 0;
-        g.shLeft.a = wTotal > 0 ? String(wTotal) : '';
-        g.shLeft.b = maxH > 0 ? String(Math.max(0, Math.round((maxH - backDeduct) * 100) / 100)) : '';
-        g.shLeft.n = String(w.pieces2 || 1);
-      }
-    }
-    g.railRight = calcRow();
-    g.boRight = calcRow();
-    g.shRight = calcRow();
+    // ช่วงเดียว (แบบที่ 3 / 5): X = ความกว้างรวม, Y = |B - A|
+    fillSpan('Left', wTotal, fullA, fullB, Math.max(redANum, redBNum), String(w.pieces1 || 1));
+    g.slopeRight = '';
   } else {
-    // แบ่งซ้าย-ขวา 2 ช่วง (แบบที่ 1, 2, 4)
-    const maxHLeft = Math.max(redANum, redBNum);
-    const fullMaxHLeft = Math.max(fullA, fullB);
-    const maxHRight = Math.max(redBNum, redCNum);
-    const fullMaxHRight = Math.max(fullB, fullC);
-    const backDeduct2 = (w.backLayerTarget !== 'layer1') ? num(w.backLayerHeightDeduct) : 0;
-    const backDeduct1 = (w.backLayerTarget === 'layer1') ? num(w.backLayerHeightDeduct) : 0;
-
-    if (wLeft > 0 || maxHLeft > 0) {
-      g.railLeft.a = wLeft > 0 ? String(wLeft) : '';
-      g.railLeft.b = fullMaxHLeft > 0 ? String(fullMaxHLeft) : (maxHLeft > 0 ? String(maxHLeft) : '');
-      g.railLeft.n = String(effTracks);
-      if (w.curtainStyle1) {
-        g.boLeft.a = wLeft > 0 ? String(wLeft) : '';
-        g.boLeft.b = maxHLeft > 0 ? String(Math.max(0, Math.round((maxHLeft - backDeduct1) * 100) / 100)) : '';
-        g.boLeft.n = '1';
-      }
-      if (w.curtainStyle2) {
-        g.shLeft.a = wLeft > 0 ? String(wLeft) : '';
-        g.shLeft.b = maxHLeft > 0 ? String(Math.max(0, Math.round((maxHLeft - backDeduct2) * 100) / 100)) : '';
-        g.shLeft.n = '1';
-      }
-    }
-    if (wRight > 0 || maxHRight > 0) {
-      g.railRight.a = wRight > 0 ? String(wRight) : '';
-      g.railRight.b = fullMaxHRight > 0 ? String(fullMaxHRight) : (maxHRight > 0 ? String(maxHRight) : '');
-      g.railRight.n = String(effTracks);
-      if (w.curtainStyle1) {
-        g.boRight.a = wRight > 0 ? String(wRight) : '';
-        g.boRight.b = maxHRight > 0 ? String(Math.max(0, Math.round((maxHRight - backDeduct1) * 100) / 100)) : '';
-        g.boRight.n = '1';
-      }
-      if (w.curtainStyle2) {
-        g.shRight.a = wRight > 0 ? String(wRight) : '';
-        g.shRight.b = maxHRight > 0 ? String(Math.max(0, Math.round((maxHRight - backDeduct2) * 100) / 100)) : '';
-        g.shRight.n = '1';
-      }
-    }
+    // แบ่งซ้าย-ขวา (แบบที่ 1 / 2 / 4): ซ้าย X = กว้างซ้าย, Y = |B - A| | ขวา X = กว้างขวา, Y = |C - B|
+    fillSpan('Left', wLeft, fullA, fullB, Math.max(redANum, redBNum), '1');
+    fillSpan('Right', wRight, fullB, fullC, Math.max(redBNum, redCNum), '1');
   }
 
-  // ซิงค์ข้อมูลเข้ากับขนาดหลักของบานเพื่อให้คำนวณปริมาณผ้า (หน้า/หลา) ได้ทันที
+  // รวมจำนวนหลาของม่านจั่ว (ซ้าย + ขวา) เพื่อแสดงในตารางสินค้าม่านจั่ว
+  const sumYards = (...rows) => {
+    const total = rows.reduce((s, r) => s + (r && r.t ? extractYardsFromCalcText(r.t) : 0), 0);
+    return total > 0 ? String(Math.round(total * 10) / 10) : '';
+  };
+  if (!g.boQtyManual) g.boQty = sumYards(g.boLeft, g.boRight);
+  if (!g.shQtyManual) g.shQty = sumYards(g.shLeft, g.shRight);
+
+  // ซิงค์ข้อมูลเข้ากับขนาดหลักของบานเพื่อให้แปลนหลักแสดงขนาดได้
   const totalMeasW = isSingleSpan ? wTotal : (wLeft + wRight);
   const maxFullH = isSingleSpan ? Math.max(fullA, fullB) : Math.max(fullA, fullB, fullC);
   if (totalMeasW > 0 && !w.width) w.width = String(totalMeasW);
@@ -850,17 +899,11 @@ function autoCalculateWindow(w, sh) {
   const extraDeduct2 = (isTwoLayer && w.backLayerTarget !== 'layer1') ? backDeductVal : 0;
 
   if (!isAllManual) {
-    if (w.noRail) {
-      if (!mf.railA) w.rail.a = 'ไม่รับราง';
-      if (!mf.railB) w.rail.b = '-';
-      if (!mf.railN) w.rail.n = '0';
-      if (!mf.railT) w.rail.t = '-';
-    } else if (rw || rh) {
-      if (rw && !mf.railA) w.rail.a = String(rw);
-      if (!mf.railB) w.rail.b = rh ? String(rh) : '';
-      if (!mf.railN) w.rail.n = String(effTracks);
-      if (rw && !mf.railT) w.rail.t = String(Math.round((rw / 100) * effTracks * 100) / 100);
-    }
+    const railRes = computeWindowRailRow(w, sh);
+    if (!mf.railA) w.rail.a = railRes.a;
+    if (!mf.railB) w.rail.b = railRes.b;
+    if (!mf.railN) w.rail.n = railRes.n;
+    if (!mf.railT) w.rail.t = railRes.t;
   }
 
   const wfAll = masterDB.widthFormulas || [];
@@ -868,78 +911,92 @@ function autoCalculateWindow(w, sh) {
   const blindAll = masterDB.blinds || [];
   const ruleAll = masterDB.fabricCalcRules || [];
 
-  // ต้องเลือกข้อมูล (เช่น รูปแบบผ้าม่าน ชั้นที่ 1) ก่อนจึงจะเริ่มคำนวณขนาดและปริมาณผ้าม่านชั้นที่ 1
+  // ต้องเลือกข้อมูล (เช่น รูปแบบผ้าม่าน ชั้นที่ 1) และต้องมีขนาดหน้าต่าง/ประตูของบานนี้ก่อน จึงจะเริ่มคำนวณ
   const style1 = String(w.curtainStyle1 || '').trim();
   const hasLayer1Selection = !!(style1 || w.widthFormulaId1 || w.heightFormulaId1 || w.fabricCol1);
 
-  if (!isAllManual && hasLayer1Selection && (rw > 0 || rh > 0)) {
-    const wf1 = (w.widthFormulaId1 && wfAll.find(f => f.id === w.widthFormulaId1))
-      || (style1 ? getWidthFormulasForStyle(style1, w.pieces1, effTracks, w.rodType, 'opaque')[0] : null);
-    const hf1 = (w.heightFormulaId1 && hfAll.find(f => f.id === w.heightFormulaId1))
-      || findAutoHeightFormulaForWindow(style1, w.rodType, w.hookSize, effTracks, w.pieces1);
-    const fab1 = resolveWindowFabricChoice(w, sh, 1);
-    if (fab1 && !canFabricUseSheerGrain(fab1.fabricWidth)) {
-      w.grainType1 = 'opaque';
-    }
-    const grain1 = w.grainType1 || 'opaque';
-    const rule1 = (w.fabricRuleId1 && ruleAll.find(r => r.id === w.fabricRuleId1))
-      || (style1 ? getFabricCalcRulesForStyle(style1, grain1)[0] : null);
-    const blind1 = (w.blindId1 && blindAll.find(b => b.id === w.blindId1))
-      || (isBlindOrRollerStyle(style1) ? getBlindsForStyle(style1)[0] : null);
+  if (!isAllManual) {
+    if (hasLayer1Selection && (rw > 0 || rh > 0)) {
+      const wf1 = (w.widthFormulaId1 && wfAll.find(f => f.id === w.widthFormulaId1))
+        || (style1 ? getWidthFormulasForStyle(style1, w.pieces1, effTracks, w.rodType, 'opaque')[0] : null);
+      const hf1 = (w.heightFormulaId1 && hfAll.find(f => f.id === w.heightFormulaId1))
+        || findAutoHeightFormulaForWindow(style1, w.rodType, w.hookSize, effTracks, w.pieces1);
+      const fab1 = resolveWindowFabricChoice(w, sh, 1);
+      if (fab1 && !canFabricUseSheerGrain(fab1.fabricWidth)) {
+        w.grainType1 = 'opaque';
+      }
+      const grain1 = w.grainType1 || 'opaque';
+      const rule1 = (w.fabricRuleId1 && ruleAll.find(r => r.id === w.fabricRuleId1))
+        || (style1 ? getFabricCalcRulesForStyle(style1, grain1)[0] : null);
+      const blind1 = (w.blindId1 && blindAll.find(b => b.id === w.blindId1))
+        || (isBlindOrRollerStyle(style1) ? getBlindsForStyle(style1)[0] : null);
 
-    const r1 = computeCurtainLayerByWidthHeight(w, wf1, hf1, {
-      curtainStyle: style1,
-      pieces: w.pieces1 || (wf1 && wf1.pieces) || '',
-      railTracks: effTracks,
-      fabric: fab1,
-      grainType: grain1,
-      fabricRule: rule1,
-      blindItem: blind1,
-      yardMode: w.yardMode1 || 'exact',
-      extraYards: w.extraYards1 || 0,
-      extraHeightDeduct: extraDeduct1,
-    });
-    if (r1.a && !mf.boA) w.blackout.a = r1.a;
-    if (r1.b && !mf.boB) w.blackout.b = r1.b;
-    if (r1.n && !mf.boN) w.blackout.n = r1.n;
-    if (r1.t && !mf.boT) w.blackout.t = r1.t;
+      const r1 = computeCurtainLayerByWidthHeight(w, wf1, hf1, {
+        curtainStyle: style1,
+        pieces: w.pieces1 || (wf1 && wf1.pieces) || '',
+        railTracks: effTracks,
+        fabric: fab1,
+        grainType: grain1,
+        fabricRule: rule1,
+        blindItem: blind1,
+        yardMode: w.yardMode1 || 'exact',
+        extraYards: w.extraYards1 || 0,
+        extraHeightDeduct: extraDeduct1,
+      });
+      if (!mf.boA) w.blackout.a = r1.a || '';
+      if (!mf.boB) w.blackout.b = r1.b || '';
+      if (!mf.boN) w.blackout.n = r1.n || '';
+      if (!mf.boT) w.blackout.t = r1.t || '';
+    } else if (rw <= 0 && rh <= 0) {
+      if (!mf.boA) w.blackout.a = '';
+      if (!mf.boB) w.blackout.b = '';
+      if (!mf.boN) w.blackout.n = '';
+      if (!mf.boT) w.blackout.t = '';
+    }
   }
 
-  // Layer 2 (ม่านโปร่ง) — ต้องเลือกรูปแบบผ้าม่านชั้นที่ 2 หรือเลือกผ้าชั้นที่ 2 ก่อนจึงจะเริ่มคำนวณ
+  // Layer 2 (ม่านโปร่ง) — ต้องเลือกรูปแบบผ้าม่านชั้นที่ 2 หรือเลือกผ้าชั้นที่ 2 และมีขนาดก่อนจึงจะเริ่มคำนวณ
   const style2 = String(w.curtainStyle2 || '').trim();
   const hasLayer2Selection = !!(style2 || w.widthFormulaId2 || w.heightFormulaId2 || w.fabricCol2);
-  if (!isAllManual && hasLayer2Selection && (rw > 0 || rh > 0)) {
-    const effStyle2 = style2 || style1;
-    const wf2 = (w.widthFormulaId2 && wfAll.find(f => f.id === w.widthFormulaId2))
-      || (effStyle2 ? getWidthFormulasForStyle(effStyle2, w.pieces2 || w.pieces1, effTracks, w.rodType, 'sheer')[0] : null);
-    const hf2 = (w.heightFormulaId2 && hfAll.find(f => f.id === w.heightFormulaId2))
-      || findAutoHeightFormulaForWindow(effStyle2, w.rodType, w.hookSize, effTracks, w.pieces2 || w.pieces1);
-    const fab2 = resolveWindowFabricChoice(w, sh, 2);
-    if (fab2 && !canFabricUseSheerGrain(fab2.fabricWidth)) {
-      w.grainType2 = 'opaque';
-    }
-    const grain2 = w.grainType2 || 'sheer';
-    const rule2 = (w.fabricRuleId2 && ruleAll.find(r => r.id === w.fabricRuleId2))
-      || (effStyle2 ? getFabricCalcRulesForStyle(effStyle2, grain2)[0] : null);
-    const blind2 = (w.blindId2 && blindAll.find(b => b.id === w.blindId2))
-      || (isBlindOrRollerStyle(effStyle2) ? getBlindsForStyle(effStyle2)[0] : null);
+  if (!isAllManual) {
+    if (hasLayer2Selection && (rw > 0 || rh > 0)) {
+      const effStyle2 = style2 || style1;
+      const wf2 = (w.widthFormulaId2 && wfAll.find(f => f.id === w.widthFormulaId2))
+        || (effStyle2 ? getWidthFormulasForStyle(effStyle2, w.pieces2 || w.pieces1, effTracks, w.rodType, 'sheer')[0] : null);
+      const hf2 = (w.heightFormulaId2 && hfAll.find(f => f.id === w.heightFormulaId2))
+        || findAutoHeightFormulaForWindow(effStyle2, w.rodType, w.hookSize, effTracks, w.pieces2 || w.pieces1);
+      const fab2 = resolveWindowFabricChoice(w, sh, 2);
+      if (fab2 && !canFabricUseSheerGrain(fab2.fabricWidth)) {
+        w.grainType2 = 'opaque';
+      }
+      const grain2 = w.grainType2 || 'sheer';
+      const rule2 = (w.fabricRuleId2 && ruleAll.find(r => r.id === w.fabricRuleId2))
+        || (effStyle2 ? getFabricCalcRulesForStyle(effStyle2, grain2)[0] : null);
+      const blind2 = (w.blindId2 && blindAll.find(b => b.id === w.blindId2))
+        || (isBlindOrRollerStyle(effStyle2) ? getBlindsForStyle(effStyle2)[0] : null);
 
-    const r2 = computeCurtainLayerByWidthHeight(w, wf2, hf2, {
-      curtainStyle: effStyle2,
-      pieces: w.pieces2 || w.pieces1 || (wf2 && wf2.pieces) || '',
-      railTracks: effTracks,
-      fabric: fab2,
-      grainType: grain2,
-      fabricRule: rule2,
-      blindItem: blind2,
-      yardMode: w.yardMode2 || 'exact',
-      extraYards: w.extraYards2 || 0,
-      extraHeightDeduct: extraDeduct2,
-    });
-    if (r2.a && !mf.shA) w.sheer.a = r2.a;
-    if (r2.b && !mf.shB) w.sheer.b = r2.b;
-    if (r2.n && !mf.shN) w.sheer.n = r2.n;
-    if (r2.t && !mf.shT) w.sheer.t = r2.t;
+      const r2 = computeCurtainLayerByWidthHeight(w, wf2, hf2, {
+        curtainStyle: effStyle2,
+        pieces: w.pieces2 || w.pieces1 || (wf2 && wf2.pieces) || '',
+        railTracks: effTracks,
+        fabric: fab2,
+        grainType: grain2,
+        fabricRule: rule2,
+        blindItem: blind2,
+        yardMode: w.yardMode2 || 'exact',
+        extraYards: w.extraYards2 || 0,
+        extraHeightDeduct: extraDeduct2,
+      });
+      if (!mf.shA) w.sheer.a = r2.a || '';
+      if (!mf.shB) w.sheer.b = r2.b || '';
+      if (!mf.shN) w.sheer.n = r2.n || '';
+      if (!mf.shT) w.sheer.t = r2.t || '';
+    } else if (rw <= 0 && rh <= 0) {
+      if (!mf.shA) w.sheer.a = '';
+      if (!mf.shB) w.sheer.b = '';
+      if (!mf.shN) w.sheer.n = '';
+      if (!mf.shT) w.sheer.t = '';
+    }
   }
 
   // ซิงค์รุ่นรางและอัปเดตผลรวมจำนวนหลาในตารางผ้าของหน้าห้อง
@@ -966,7 +1023,6 @@ function autoCalculateWindow(w, sh) {
     autoUpdateSheetFabricTableQty(sh);
   }
 }
-
 function windowEditorHTML(w, i, planOpenings) {
   const b = p => `data-sheet="windows.${i}.${p}"`;
   const isAdmin = isAdminUser();
@@ -1182,11 +1238,17 @@ function windowEditorHTML(w, i, planOpenings) {
       </div>
       ${w.noRail ? `
         <div class="grid2" style="margin-top:6px">
-          <label class="${w.noRailDeductPreset === 'custom' ? '' : 'full'}">เลือกรายละเอียดการลดขนาดความสูงผ้าม่าน (เมื่อไม่รับรางม่าน)
+          <label>ข้อความแสดงในช่องจำนวนราง (เมื่อไม่เอาราง)
+            <select ${b('noRailStatus')}>
+              <option value="ใช้รางเดิม">ใช้รางเดิม</option>
+              <option value="ไม่เอาราง">ไม่เอาราง</option>
+            </select>
+          </label>
+          <label>เลือกรายละเอียดการลดขนาดความสูงผ้าม่าน
             <select ${b('noRailDeductPreset')}>${noRailPresetOpts}</select>
           </label>
           ${w.noRailDeductPreset === 'custom' ? `
-            <label>ระบุระยะที่ต้องการลดความสูงผ้าม่านเอง (ซม.)
+            <label class="full">ระบุระยะที่ต้องการลดความสูงผ้าม่านเอง (ซม.)
               <input type="number" step="any" min="0" ${b('noRailDeductCustom')} placeholder="เช่น 2.5">
             </label>
           ` : ''}
@@ -1223,11 +1285,21 @@ function windowEditorHTML(w, i, planOpenings) {
             <label class="full">เลือกรูปแบบม่านจั่ว (1–5)
               <select ${b('gable.type')}>${gableTypeOpts}</select>
             </label>
-            <label>หัวข้อแปลนงานม่านจั่ว
-              <input ${b('gable.title')} placeholder="เช่น W1 ห้องนอนใหญ่">
+            <label>หัวข้อแปลนงานม่านจั่ว (ดึงชื่อห้อง+ตำแหน่งอัตโนมัติ)
+              <input ${b('gable.title')} placeholder="เช่น ห้องนอนใหญ่ W1">
             </label>
             <label>ระยะลดความสูงม่านจั่ว (ซม.)
               <input type="number" step="any" ${b('gable.heightDeduct')} placeholder="เช่น 2">
+            </label>
+            <label>ระยะชายม่านท้ายใบม่านจั่ว
+              <select ${b('gable.hemClearanceType')}>
+                <option value="float">ลอยจากพื้น</option>
+                <option value="touch">พอดีพื้น</option>
+                <option value="puddle">กองพื้น</option>
+              </select>
+            </label>
+            <label>ระบุระยะชายม่านที่ต้องการ (ซม.)
+              <input type="number" step="any" ${b('gable.hemClearanceVal')} placeholder="เช่น 1 หรือ 2">
             </label>
             ${isGableSingleSpan ? `
               <label class="full">ความกว้างที่วัดได้จริง (ซม.)
@@ -1664,7 +1736,7 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
               btn.classList.add('is-manual');
             }
           }
-        } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailDeductPreset|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit)$/.test(field)) {
+        } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit)$/.test(field)) {
           if (!curtainNeedsHook(w.curtainStyle1, w.curtainStyle2)) w.hookSize = '';
           w.paneStyle = String(getPaneCount(w));
           if (field === 'unequalSplit' && w.unequalSplit) {
@@ -2106,6 +2178,26 @@ const actions = {
     if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
   },
+  addBlindPiece(i) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    if (!Array.isArray(w.blindPieces)) w.blindPieces = [];
+    const defW = w.width || '';
+    const defH = w.height || '';
+    w.blindPieces.push({ w: defW, h: defH });
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
+  delBlindPiece(i, pi) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    if (!Array.isArray(w.blindPieces)) return;
+    w.blindPieces.splice(pi, 1);
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
   incPane(i) {
     const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
     const w = sh.windows[i];
@@ -2411,7 +2503,7 @@ function refreshActivePopover() {
 function refreshActivePopoverIfStructural(changedField) {
   const pop = document.getElementById('pdfQuickPopover');
   if (!pop || pop.hidden || !activePopoverCtx) return;
-  if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailDeductPreset|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|unequalSplit)$/.test(changedField)) {
+  if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|unequalSplit)$/.test(changedField)) {
     renderActivePopoverContent({ preserveScroll: true });
   }
 }
@@ -2662,11 +2754,17 @@ function renderActivePopoverContent(opts = {}) {
           </label>
           ${w.noRail ? `
             <div class="grid2" style="margin-top:4px">
-              <label class="${w.noRailDeductPreset === 'custom' ? '' : 'full'}">ตัวเลือกลดความสูงผ้าม่าน
+              <label>ข้อความในช่องจำนวนราง
+                <select ${b('noRailStatus')}>
+                  <option value="ใช้รางเดิม">ใช้รางเดิม</option>
+                  <option value="ไม่เอาราง">ไม่เอาราง</option>
+                </select>
+              </label>
+              <label>ตัวเลือกลดความสูงผ้าม่าน
                 <select ${b('noRailDeductPreset')}>${noRailPresetOpts}</select>
               </label>
               ${w.noRailDeductPreset === 'custom' ? `
-                <label>ระบุระยะลดความสูงเอง (ซม.)
+                <label class="full">ระบุระยะลดความสูงเอง (ซม.)
                   <input type="number" step="any" ${b('noRailDeductCustom')} placeholder="ซม.">
                 </label>
               ` : ''}
@@ -2824,10 +2922,57 @@ function renderActivePopoverContent(opts = {}) {
 
         <table class="calc-ed" style="margin-top:6px">
           <tr><th></th><th>ขนาดกว้าง</th><th></th><th>ขนาดสูง</th><th></th><th>จำนวน</th><th></th><th>รวม (หน้า/หลา)</th></tr>
-          ${calcRowEd('rail', 'rail', 'รางม่าน', 'ชั้น', 'เมตร')}
-          ${calcRowEd('blackout', 'bo', isBlind1 ? style1 : 'ผ้าม่านทึบ', 'ผืน', isBlind1 ? 'ตร.ม.' : 'หน้า/หลา')}
-          ${calcRowEd('sheer', 'sh', 'ผ้าม่านโปร่ง', 'ผืน', isBlind2 ? 'ตร.ม.' : 'หน้า/หลา')}
+          ${calcRowEd('rail', 'rail', (w.rowLabel1 || 'รางม่าน'), (w.railCountUnit || (isBlind1 && !w.curtainStyle2 ? 'ผืน' : 'ชั้น')), (w.noRail ? '' : (w.railUnit || 'เมตร')))}
+          ${calcRowEd('blackout', 'bo', (w.rowLabel2 || (isBlind1 ? style1 : 'ผ้าม่านทึบ')), 'ผืน', isBlind1 ? 'ตร.ม.' : 'หน้า/หลา')}
+          ${calcRowEd('sheer', 'sh', (w.rowLabel3 || 'ผ้าม่านโปร่ง'), 'ผืน', isBlind2 ? 'ตร.ม.' : 'หน้า/หลา')}
         </table>
+
+        <div class="subcard" style="margin-top:6px;background:#f8fafc;border:1px solid #dbe2ea">
+          <div class="grid2">
+            <label>หน่วยช่องชั้น/ผืน (รางม่าน)
+              <select ${b('railCountUnit')}>
+                <option value="">อัตโนมัติ (${isBlind1 && !w.curtainStyle2 ? 'ผืน' : 'ชั้น'})</option>
+                <option value="ชั้น">ชั้น</option>
+                <option value="ผืน">ผืน</option>
+                <option value="ชุด">ชุด</option>
+              </select>
+            </label>
+            <label>หน่วยช่องจำนวนราง
+              <select ${b('railUnit')}>
+                <option value="">อัตโนมัติตามรุ่นราง</option>
+                <option value="เมตร">เมตร (ขั้นต่ำ 1 เมตร/ราง)</option>
+                <option value="ชุด">ชุด (ตามช่วงความยาวชุดราง)</option>
+                <option value="ชุด/เมตร">ชุด/เมตร</option>
+                <option value="เมตร/ชุด">เมตร/ชุด</option>
+                <option value="ตร.ม.">ตร.ม.</option>
+              </select>
+            </label>
+            <label class="full">กำหนดชื่อแถวเอง (รางม่าน / ผ้าม่านทึบ / ผ้าม่านโปร่ง เช่น ผืนที่ 1 / ผืนที่ 2)
+              <span class="inline">
+                <input ${b('rowLabel1')} placeholder="รางม่าน">
+                <input ${b('rowLabel2')} placeholder="ผ้าม่านทึบ">
+                <input ${b('rowLabel3')} placeholder="ผ้าม่านโปร่ง">
+              </span>
+            </label>
+          </div>
+          ${(isBlind1 || isBlind2 || (Array.isArray(w.blindPieces) && w.blindPieces.length > 0)) ? `
+            <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">
+              <div class="inline" style="justify-content:space-between;margin-bottom:4px">
+                <b>🪟 ม่านม้วน/มู่ลี่ แบ่งหลายผืน (ขนาดเท่ากันจะรวมเป็น เช่น ผืนที่ 2/ผืนที่ 3 อัตโนมัติ)</b>
+                <button type="button" data-act="addBlindPiece" data-i="${i}">➕ เพิ่มผืน</button>
+              </div>
+              ${(w.blindPieces || []).map((bp, pi) => `
+                <div class="inline" style="margin-bottom:4px">
+                  <span class="layer-tag">ผืนที่ ${pi + 1}</span>
+                  <input type="number" step="any" data-sheet="windows.${i}.blindPieces.${pi}.w" value="${esc(bp.w || '')}" placeholder="กว้าง (ซม.)" style="width:95px">
+                  <span>x</span>
+                  <input type="number" step="any" data-sheet="windows.${i}.blindPieces.${pi}.h" value="${esc(bp.h || '')}" placeholder="สูง (ซม.)" style="width:95px">
+                  <button type="button" class="danger" data-act="delBlindPiece" data-i="${i}" data-li="${pi}">✕</button>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
       </section>
 
       <!-- ส่วนที่ 5: รายการพิเศษ (แปลนงานม่านจั่ว 5 รูปแบบ / ผ้าม่านเย็บต่อด้านข้าง แสดงแยกหน้าถัดไป) -->
@@ -2847,11 +2992,21 @@ function renderActivePopoverContent(opts = {}) {
               <label class="full">เลือกรูปแบบม่านจั่ว (ตามไฟล์แนบ 5 หน้า)
                 <select ${b('gable.type')}>${gableTypeOpts}</select>
               </label>
-              <label>หัวข้อแปลนงานม่านจั่ว
-                <input ${b('gable.title')} placeholder="เช่น W1 ห้องนอนใหญ่">
+              <label>หัวข้อแปลนงานม่านจั่ว (ดึงชื่อห้อง+ตำแหน่งอัตโนมัติ)
+                <input ${b('gable.title')} placeholder="เช่น ห้องนอนใหญ่ W1">
               </label>
               <label>ระยะลดความสูงม่านจั่ว (ซม.)
                 <input type="number" step="any" ${b('gable.heightDeduct')} placeholder="เช่น 2">
+              </label>
+              <label>ระยะชายม่านท้ายใบม่านจั่ว
+                <select ${b('gable.hemClearanceType')}>
+                  <option value="float">ลอยจากพื้น</option>
+                  <option value="touch">พอดีพื้น</option>
+                  <option value="puddle">กองพื้น</option>
+                </select>
+              </label>
+              <label>ระบุระยะชายม่านที่ต้องการ (ซม.)
+                <input type="number" step="any" ${b('gable.hemClearanceVal')} placeholder="เช่น 1 หรือ 2">
               </label>
               ${isGableSingleSpan ? `
                 <label class="full">ความกว้างที่วัดได้จริง (ซม.)

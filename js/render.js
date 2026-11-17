@@ -651,7 +651,7 @@ function windowSVG(w) {
 
   // ==================== 3) ความสูงเต็ม & ความกว้างเต็ม ====================
   const fullHPair = valWithNote(w.fullH, w.noteFullH);
-  const leftFullText = fullHPair.v ? `= สูงเต็ม ${fullHPair.v}` : (hasVal(w.drop) ? `= ${w.drop}` : '= สูงเต็ม');
+  const leftFullText = fullHPair.v ? `สูงเต็ม = ${fullHPair.v}` : (hasVal(w.drop) ? `สูงเต็ม = ${w.drop}` : 'สูงเต็ม =');
   s += `<text x="2" y="${cy + 3}" text-anchor="start" font-size="10.0" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
   if (fullHPair.n) {
     s += `<text x="2" y="${cy + 14}" text-anchor="start" font-size="9.0" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
@@ -659,8 +659,8 @@ function windowSVG(w) {
 
   const fullWPair = valWithNote(w.fullW, w.noteFullW);
   const botFullText = fullWPair.v
-    ? `= กว้างเต็ม ${fullWPair.v}${fullWPair.n ? ' (' + fullWPair.n + ')' : ''}`
-    : (fullWPair.n ? `= กว้างเต็ม (${fullWPair.n})` : '= กว้างเต็ม');
+    ? `กว้างเต็ม = ${fullWPair.v}${fullWPair.n ? ' (' + fullWPair.n + ')' : ''}`
+    : (fullWPair.n ? `กว้างเต็ม = (${fullWPair.n})` : 'กว้างเต็ม =');
   s += `<text x="${cx}" y="${botOuterY + 13}" text-anchor="middle" font-size="10.0" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
 
   // ==================== 4) วาดกรอบหน้าต่าง/ประตู (แบบ 1–9) ขนาดใหญ่ชัดเจน ====================
@@ -815,19 +815,65 @@ function rMap(sheet) {
 function rCalc(t, r, u1, u2, rowKey = '') {
   r = r || {};
   const tRaw = String(r.t ?? '').trim();
-  const showU2 = (tRaw && (tRaw.endsWith('หลา') || tRaw.endsWith('ตร.ม.') || tRaw.endsWith('เมตร'))) ? '' : u2;
+  const isTextOnlyT = !tRaw || tRaw === '-' || tRaw === 'ใช้รางเดิม' || tRaw === 'ไม่เอาราง' || tRaw === 'ไม่รับราง';
+  const showU2 = (isTextOnlyT || tRaw.endsWith('หลา') || tRaw.endsWith('ตร.ม.') || tRaw.endsWith('เมตร') || tRaw.endsWith('ชุด')) ? '' : u2;
   return `<div class="calc-row" data-calc-row="${esc(rowKey)}">
-    <span class="c-lbl">${t}</span>
+    <span class="c-lbl">${esc(t)}</span>
     <span class="fl" data-calc-col="a">${esc(r.a)}</span>
     <span class="c-op">X</span>
     <span class="fl" data-calc-col="b">${esc(r.b)}</span>
     <span class="c-op">=</span>
     <span class="fl" data-calc-col="n">${esc(r.n)}</span>
-    <span class="c-unit">${u1}</span>
+    <span class="c-unit">${esc(u1)}</span>
     <span class="c-op">=</span>
     <span class="fl" data-calc-col="t">${esc(r.t)}</span>
-    <span class="c-unit2">${showU2}</span>
+    <span class="c-unit2">${esc(showU2)}</span>
   </div>`;
+}
+
+function buildGroupedBlindCalcRows(w) {
+  const pieces = Array.isArray(w.blindPieces) ? w.blindPieces : [];
+  if (!pieces.length) return null;
+  const style = (w.curtainStyle1 || w.curtainStyle2 || '').trim();
+  const blindRule = (typeof masterDB !== 'undefined' && masterDB.blinds || []).find(bl => bl.curtainStyle === style)
+    || { minSqm: 1.5, roundMode: 'ceil_1dec' };
+  const minSqm = Math.max(1.5, parseFloat(blindRule.minSqm) || 1.5);
+
+  // จัดกลุ่มผืนที่ขนาดความกว้างและความสูงซ้ำกัน เช่น ผืนที่ 2/ผืนที่ 3
+  const groups = [];
+  const keyMap = new Map();
+  pieces.forEach((p, idx) => {
+    const pw = String(p && p.w !== undefined ? p.w : '').trim();
+    const ph = String(p && p.h !== undefined ? p.h : '').trim();
+    const key = (pw || ph) ? `${pw}x${ph}` : `__empty_${idx}`;
+    if (pw && ph && keyMap.has(key)) {
+      keyMap.get(key).indices.push(idx + 1);
+    } else {
+      const grp = { w: pw, h: ph, indices: [idx + 1] };
+      groups.push(grp);
+      if (pw && ph) keyMap.set(key, grp);
+    }
+  });
+
+  return groups.map((grp, gi) => {
+    const lbl = grp.indices.map(n => `ผืนที่ ${n}`).join('/');
+    const wn = parseFloat(grp.w) || 0;
+    const hn = parseFloat(grp.h) || 0;
+    const cnt = grp.indices.length;
+    let sqmStr = '';
+    if (wn > 0 && hn > 0) {
+      const sqmPerPiece = Math.max(minSqm, (wn / 100) * (hn / 100));
+      const totalSqm = sqmPerPiece * cnt;
+      sqmStr = (typeof applyRoundMode === 'function')
+        ? applyRoundMode(totalSqm, blindRule.roundMode || 'ceil_1dec')
+        : String(Math.ceil((totalSqm - 1e-9) * 10) / 10);
+    }
+    return {
+      label: lbl,
+      row: { a: grp.w, b: grp.h, n: (grp.w || grp.h) ? String(cnt) : '', t: sqmStr },
+      key: `blind_${gi}`,
+    };
+  });
 }
 
 function rWinCell(w, n, winIdx = 0) {
@@ -842,6 +888,26 @@ function rWinCell(w, n, winIdx = 0) {
   const numLabel = w.planNo || n;
   const isBlind1 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle1);
   const isBlind2 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle2);
+
+  const railInfo = (typeof computeWindowRailRow === 'function') ? computeWindowRailRow(w) : { countUnit: 'ชั้น', totalUnit: 'เมตร', isNoRail: !!w.noRail };
+  const railUnit1 = w.railCountUnit || railInfo.countUnit || ((isBlind1 && !w.curtainStyle2) ? 'ผืน' : 'ชั้น');
+  const railUnit2 = w.noRail ? '' : (w.railUnit || railInfo.totalUnit || (isBlind1 ? 'ตร.ม.' : 'เมตร'));
+
+  const lbl1 = (w.rowLabel1 && String(w.rowLabel1).trim()) || 'รางม่าน';
+  const lbl2 = (w.rowLabel2 && String(w.rowLabel2).trim()) || 'ผ้าม่านทึบ';
+  const lbl3 = (w.rowLabel3 && String(w.rowLabel3).trim()) || 'ผ้าม่านโปร่ง';
+
+  const blindRows = buildGroupedBlindCalcRows(w);
+  let calcHtml = '';
+  if (blindRows && blindRows.length) {
+    calcHtml = blindRows.map(item => rCalc(item.label, item.row, 'ผืน', 'ตร.ม.', item.key)).join('');
+  } else {
+    calcHtml = `
+      ${rCalc(lbl1, w.rail, railUnit1, railUnit2, 'rail')}
+      ${rCalc(lbl2, w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา', 'blackout')}
+      ${rCalc(lbl3, w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา', 'sheer')}
+    `;
+  }
 
   return `<div class="wc" data-preview-win="${winIdx}" title="คลิกที่ส่วนใดของจุดที่ ${esc(numLabel)} เพื่อแก้ไขตรงจุดนั้นทันที">
     <div class="r" data-win-part="header"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(w.label)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
@@ -859,9 +925,7 @@ function rWinCell(w, n, winIdx = 0) {
     </div>
     <div class="wdiag">${windowSVG(w)}</div>
     <div class="calc-group" data-win-part="calc">
-      ${rCalc('รางม่าน', w.rail, 'ชั้น', 'เมตร', 'rail')}
-      ${rCalc('ผ้าม่านทึบ', w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา', 'blackout')}
-      ${rCalc('ผ้าม่านโปร่ง', w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา', 'sheer')}
+      ${calcHtml}
     </div>
   </div>`;
 }
@@ -1161,14 +1225,16 @@ function gableDiagramSVG(w) {
   };
 
   let svgBody = '';
+  let polyPoints = '';
   const xL = 160, xM = 350, xR = 540;
   const yPeak = 38, yEave = 148, yBot = 285, yDimW = 324;
   const yMidSlope = Math.round((yPeak + yEave) / 2); // 93
 
   if (gType === '1') {
     // แบบที่ 1: จั่วสามเหลี่ยมสมมาตร แบ่งซ้าย-ขวา (A, B, C)
+    polyPoints = `${xL},${yEave} ${xM},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}`;
     svgBody = `
-      <polygon points="${xL},${yEave} ${xM},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <polygon points="${polyPoints}" fill="none" stroke="#000" stroke-width="1.4"/>
       <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
       <line x1="${xM}" y1="${yPeak}" x2="${xM}" y2="${yBot}" stroke="#000" stroke-width="1.3"/>
       ${drawVertDim(106, yEave, yBot, 'A', hA, 'fullA')}
@@ -1182,8 +1248,9 @@ function gableDiagramSVG(w) {
     `;
   } else if (gType === '2') {
     // แบบที่ 2: จั่วเฉียงลาดลงขวา แบ่งซ้าย-ขวา (สูงซ้าย A → กลาง B → ขวา C)
+    polyPoints = `${xL},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}`;
     svgBody = `
-      <polygon points="${xL},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <polygon points="${polyPoints}" fill="none" stroke="#000" stroke-width="1.4"/>
       <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
       <line x1="${xM}" y1="${yMidSlope}" x2="${xM}" y2="${yBot}" stroke="#000" stroke-width="1.3"/>
       ${drawVertDim(106, yPeak, yBot, 'A', hA, 'fullA')}
@@ -1197,8 +1264,9 @@ function gableDiagramSVG(w) {
     `;
   } else if (gType === '3') {
     // แบบที่ 3: จั่วเฉียงลาดลงขวา ช่วงเดียว (สูงซ้าย A → ขวา B, กว้างรวม)
+    polyPoints = `${xL},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}`;
     svgBody = `
-      <polygon points="${xL},${yPeak} ${xR},${yEave} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <polygon points="${polyPoints}" fill="none" stroke="#000" stroke-width="1.4"/>
       <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
       ${drawVertDim(106, yPeak, yBot, 'A', hA, 'fullA')}
       ${drawVertDim(594, yEave, yBot, 'B', hB, 'fullB')}
@@ -1208,8 +1276,9 @@ function gableDiagramSVG(w) {
     `;
   } else if (gType === '4') {
     // แบบที่ 4: จั่วเฉียงลาดขึ้นขวา แบ่งซ้าย-ขวา (ซ้าย A → กลาง B → สูงขวา C)
+    polyPoints = `${xL},${yEave} ${xR},${yPeak} ${xR},${yBot} ${xL},${yBot}`;
     svgBody = `
-      <polygon points="${xL},${yEave} ${xR},${yPeak} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <polygon points="${polyPoints}" fill="none" stroke="#000" stroke-width="1.4"/>
       <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
       <line x1="${xM}" y1="${yMidSlope}" x2="${xM}" y2="${yBot}" stroke="#000" stroke-width="1.3"/>
       ${drawVertDim(106, yEave, yBot, 'A', hA, 'fullA')}
@@ -1223,8 +1292,9 @@ function gableDiagramSVG(w) {
     `;
   } else {
     // แบบที่ 5: จั่วเฉียงลาดขึ้นขวา ช่วงเดียว (ซ้าย A → สูงขวา B, กว้างรวม)
+    polyPoints = `${xL},${yEave} ${xR},${yPeak} ${xR},${yBot} ${xL},${yBot}`;
     svgBody = `
-      <polygon points="${xL},${yEave} ${xR},${yPeak} ${xR},${yBot} ${xL},${yBot}" fill="none" stroke="#000" stroke-width="1.4"/>
+      <polygon points="${polyPoints}" fill="none" stroke="#000" stroke-width="1.4"/>
       <line x1="${xL}" y1="${yEave}" x2="${xR}" y2="${yEave}" stroke="#000" stroke-width="1.3"/>
       ${drawVertDim(106, yEave, yBot, 'A', hA, 'fullA')}
       ${drawVertDim(594, yPeak, yBot, 'B', hB, 'fullB')}
@@ -1234,14 +1304,35 @@ function gableDiagramSVG(w) {
     `;
   }
 
-  return `<svg viewBox="0 0 700 355" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:365px;display:block;margin:0 auto">${svgBody}</svg>`;
+  // หน้ากากแสดงการใช้งานผ้าม่านบนแปลนงานม่านจั่ว (ดึงข้อมูลจากแปลนงานหลัก w.layers มาแสดง)
+  const clipId = `gableClip_${String(w.planNo || 'x').replace(/\W/g, '')}_${gType}`;
+  const isRollerWindow = /ม่านม้วน/.test(String(w.curtainStyle1 || '')) || /ม่านม้วน/.test(String(w.curtainStyle2 || ''));
+  const gableSurfaces = {
+    center: [{ x: xL, y: yPeak }, { x: xR, y: yPeak }, { x: xR, y: yBot }, { x: xL, y: yBot }],
+    leftWing: null,
+    rightWing: null,
+  };
+  const maskSvg = renderAllCurtainLayers(w.layers, gableSurfaces, 2, isRollerWindow, 0.5);
+  const clippedMask = maskSvg
+    ? `<defs><clipPath id="${clipId}"><polygon points="${polyPoints}"/></clipPath></defs><g clip-path="url(#${clipId})">${maskSvg}</g>`
+    : '';
+
+  return `<svg viewBox="0 0 700 355" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-height:365px;display:block;margin:0 auto">${clippedMask}${svgBody}</svg>`;
 }
 
 function rGableSpecialPage(order, sheet, w, sIdx, wIdx, pageNo, totalPages) {
   const g = (w && w.gable) || {};
   const gType = String(g.type || '1');
   const isSingleSpan = gType === '3' || gType === '5';
-  const titleLabel = g.title || `${w.label || ('จุดที่ ' + (w.planNo || (wIdx + 1)))}${sheet.room && sheet.room.name ? ' (' + sheet.room.name + ')' : ''}`;
+  const roomName = (sheet && sheet.room && String(sheet.room.name || '').trim()) || '';
+  const autoTitle = [roomName, String(w.label || '').trim()].filter(Boolean).join(' ');
+  const titleLabel = g.title || autoTitle || ('จุดที่ ' + (w.planNo || (wIdx + 1)));
+
+  const clearanceLabelMap = { float: 'ลอยจากพื้น', puddle: 'กองพื้น', touch: 'พอดีพื้น' };
+  const clearanceText = clearanceLabelMap[g.hemClearanceType || 'float'] || 'ลอยจากพื้น';
+  const clearanceVal = (g.hemClearanceVal !== undefined && String(g.hemClearanceVal).trim() !== '')
+    ? String(g.hemClearanceVal).trim()
+    : (g.noteDeduct || '');
 
   const rowLine = (lbl, rowObj, unitTxt) => {
     const r = rowObj || {};
@@ -1315,7 +1406,7 @@ function rGableSpecialPage(order, sheet, w, sIdx, wIdx, pageNo, totalPages) {
         <span>[A] <span class="gn-fill">${esc(g.fullA || '')}</span></span>
         <span>[B] <span class="gn-fill">${esc(g.fullB || '')}</span></span>
         ${!isSingleSpan ? `<span>[C] <span class="gn-fill">${esc(g.fullC || '')}</span></span>` : ''}
-        <span style="margin-left:18px"><span class="gn-fill gn-wide">${esc(g.noteDeduct || (g.heightDeduct ? 'ลดความสูง ' + g.heightDeduct : ''))}</span> ซม.</span>
+        <span style="margin-left:18px">ระยะชายม่าน: <b>${esc(clearanceText)}</b> <span class="gn-fill gn-wide">${esc(clearanceVal)}</span> ซม.</span>
       </div>
     </div>
   `;
