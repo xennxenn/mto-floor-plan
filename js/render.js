@@ -1308,7 +1308,12 @@ function gableDiagramSVG(w) {
   const clipId = `gableClip_${String(w.planNo || 'x').replace(/\W/g, '')}_${gType}`;
   const isRollerWindow = /ม่านม้วน/.test(String(w.curtainStyle1 || '')) || /ม่านม้วน/.test(String(w.curtainStyle2 || ''));
   const gableSurfaces = {
-    center: [{ x: xL, y: yPeak }, { x: xR, y: yPeak }, { x: xR, y: yBot }, { x: xL, y: yBot }],
+    center: {
+      tl: { x: xL, y: yPeak },
+      tr: { x: xR, y: yPeak },
+      br: { x: xR, y: yBot },
+      bl: { x: xL, y: yBot },
+    },
     leftWing: null,
     rightWing: null,
   };
