@@ -400,16 +400,18 @@ const RealtimeSync = (() => {
     if (supabaseChannel) {
       supabaseChannel.send({ type: 'broadcast', event: 'mto_sync', payload }).catch(() => {});
     }
-    const res = await fetch(sbRestUrl('?on_conflict=room_key'), {
-      method: 'POST',
-      keepalive: true,
-      headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
-      body: JSON.stringify({
-        room_key: room,
-        updated_at: payload.updatedAt,
-        payload,
-      }),
+    const bodyStr = JSON.stringify({
+      room_key: room,
+      updated_at: payload.updatedAt,
+      payload,
     });
+    const fetchOpts = {
+      method: 'POST',
+      headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: bodyStr,
+    };
+    if (bodyStr.length <= 60000) fetchOpts.keepalive = true;
+    const res = await fetch(sbRestUrl('?on_conflict=room_key'), fetchOpts);
     if (!res.ok) throw new Error(`Supabase UPSERT HTTP ${res.status}`);
   }
 

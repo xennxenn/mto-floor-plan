@@ -1411,6 +1411,7 @@ function autoCalculateWindow(w, sh) {
 }
 function windowEditorHTML(w, i, planOpenings) {
   const b = p => `data-sheet="windows.${i}.${p}"`;
+  const sh = currentSheet();
   const isAdmin = isAdminUser();
   const dbBtnAttr = isAdmin ? 'class="admin-only-db"' : 'class="admin-only-db" hidden';
   const isManual = w.calcMode === 'manual';
@@ -1464,7 +1465,6 @@ function windowEditorHTML(w, i, planOpenings) {
   const hfOpts2 = `<option value="">-- อัตโนมัติตามเงื่อนไข (${hfList2.length} สูตร) --</option>` +
     hfList2.map(f => `<option value="${esc(f.id)}">${esc(f.curtainStyle ? `[${f.curtainStyle}] ` : '')}${esc(f.rodType ? `${f.rodType} ` : '')}${esc(f.hookSize ? `ตะขอ ${f.hookSize} ` : '')}${esc(f.label)} (${esc(f.heightExp)})</option>`).join('');
 
-  const sh = currentSheet();
   const sheetFabChoices = getSheetTableFabricChoices(sh);
   const sheetFabOpts = sheetFabChoices.length
     ? `<option value="">-- เลือกผ้าจากตารางผ้าของหน้านี้ (${sheetFabChoices.length} รายการ) --</option>` +
