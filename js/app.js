@@ -420,10 +420,51 @@ let previewMode = 'single'; // 'single' | 'all' — เริ่มต้นแ�
 let currentPreviewPageIdx = 0;
 let suppressPreviewScrollSync = false;
 
+let lastAutoSaveAt = null;
+let autoSaveIntervalId = null;
+
+function updateAutoSaveBadge(state = 'ready', msg = '') {
+  const badge = document.getElementById('autoSaveBadge');
+  if (!badge) return;
+  badge.classList.remove('is-saving', 'is-saved', 'is-error');
+  if (state === 'saving') {
+    badge.classList.add('is-saving');
+    badge.textContent = msg || '⏳ กำลังบันทึกอัตโนมัติ...';
+  } else if (state === 'saved') {
+    badge.classList.add('is-saved');
+    const tStr = lastAutoSaveAt
+      ? lastAutoSaveAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '';
+    badge.textContent = msg || `✅ บันทึกอัตโนมัติแล้ว${tStr ? ' (' + tStr + ')' : ''}`;
+  } else if (state === 'error') {
+    badge.classList.add('is-error');
+    badge.textContent = msg || '⚠️ บันทึกอัตโนมัติไม่สำเร็จ';
+  } else {
+    badge.textContent = msg || '💾 Auto Save: พร้อมใช้งาน';
+  }
+}
+
 function saveOrders() {
-  try { localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders)); }
-  catch (e) { console.warn('saveOrders failed', e); }
+  try {
+    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+    lastAutoSaveAt = new Date();
+    updateAutoSaveBadge('saved');
+  } catch (e) {
+    console.warn('saveOrders failed', e);
+    updateAutoSaveBadge('error');
+  }
   if (typeof RealtimeSync !== 'undefined') RealtimeSync.schedulePush();
+}
+
+function flushAutoSaveNow() {
+  const ord = currentOrder();
+  if (ord) {
+    ord.updatedAt = new Date().toISOString();
+  }
+  saveOrders();
+  if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
+    RealtimeSync.flushNow();
+  }
 }
 
 function currentOrder() {
@@ -2294,6 +2335,7 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
     }
   }
 
+  updateAutoSaveBadge('saving');
   clearTimeout(renderTimer);
   renderTimer = setTimeout(() => { renderPreview(); touchAndSave(); }, 100);
 }
@@ -3006,27 +3048,16 @@ function ensureQuickPopoverEl() {
     if (pickFabBtn) {
       const col = pickFabBtn.dataset.popPickFab;
       const selEl = pop.querySelector('#popFabDbPicker');
-      const sh = currentSheet();
-      if (sh && selEl && selEl.value) {
-        if (col === 'roller' || col === 'blinds') {
-          const bl = (masterDB.blinds || []).find(x => x.id === selEl.value);
-          if (bl) sh.fabrics[col].name = bl.name || '';
-        } else {
-          const fb = (masterDB.fabrics || []).find(x => x.id === selEl.value);
-          if (fb) {
-            sh.fabrics[col].name = fb.name || '';
-            sh.fabrics[col].design = fb.design || '';
-            if (typeof canFabricUseSheerGrain === 'function' && !canFabricUseSheerGrain(fb.fabricWidth)) {
-              sh.fabrics[col].grain = 'opaque';
-              sh.fabrics[col].isOpaque = true;
-              sh.fabrics[col].isSheer = false;
-            }
-          }
-        }
-        renderActivePopoverContent({ preserveScroll: true });
-        syncSheetInputs();
-        changed(`fabrics.${col}.name`, null, true);
+      let pickedVal = selEl ? selEl.value : '';
+      // หากผู้ใช้พิมพ์ค้นหาไว้แต่ยังไม่ได้คลิกเลือกใน Dropdown ให้ดึงรายการแรกที่พบให้อัตโนมัติเมื่อกดปุ่มดึงค่า
+      if (!pickedVal && selEl && selEl.options && selEl.options.length > 1) {
+        pickedVal = selEl.options[1].value;
       }
+      if (!pickedVal) {
+        alert('กรุณาเลือกรายการผ้าจากฐานข้อมูลก่อนกดดึงค่า');
+        return;
+      }
+      applyFabricPickFromDb(pop, col, pickedVal);
       return;
     }
     const clearLogoBtn = e.target.closest('[data-pop-logo-clear]');
@@ -3118,27 +3149,7 @@ function ensureQuickPopoverEl() {
     }
     if (e.target.id === 'popFabDbPicker' && e.target.value) {
       const col = (activePopoverCtx && activePopoverCtx.fabCol) || 'blackout';
-      const sh = currentSheet();
-      if (sh && sh.fabrics && sh.fabrics[col]) {
-        if (col === 'roller' || col === 'blinds') {
-          const bl = (masterDB.blinds || []).find(x => x.id === e.target.value);
-          if (bl) sh.fabrics[col].name = bl.name || '';
-        } else {
-          const fb = (masterDB.fabrics || []).find(x => x.id === e.target.value);
-          if (fb) {
-            sh.fabrics[col].name = fb.name || '';
-            sh.fabrics[col].design = fb.design || '';
-            if (typeof canFabricUseSheerGrain === 'function' && !canFabricUseSheerGrain(fb.fabricWidth)) {
-              sh.fabrics[col].grain = 'opaque';
-              sh.fabrics[col].isOpaque = true;
-              sh.fabrics[col].isSheer = false;
-            }
-          }
-        }
-        renderActivePopoverContent({ preserveScroll: true });
-        syncSheetInputs();
-        changed(`fabrics.${col}.name`, null, true);
-      }
+      applyFabricPickFromDb(pop, col, e.target.value);
       return;
     }
   });
@@ -3146,6 +3157,7 @@ function ensureQuickPopoverEl() {
   // Req #7: พิมพ์ค้นหารายการผ้าใน Dropdown ได้ทันทีไม่ต้องเลื่อนหาอย่างเดียว
   pop.addEventListener('input', e => {
     if (e.target.id === 'popFabSearchInput') {
+      if (activePopoverCtx) activePopoverCtx.fabSearchQuery = e.target.value || '';
       const q = String(e.target.value || '').trim().toLowerCase();
       const selEl = pop.querySelector('#popFabDbPicker');
       if (!selEl) return;
@@ -3158,10 +3170,10 @@ function ensureQuickPopoverEl() {
       });
       selEl.innerHTML = `<option value="">-- พบ ${filtered.length} รายการ (เลือกเพื่อดึงค่าทันที) --</option>` +
         (isBlindCol
-          ? filtered.map(x => `<option value="${esc(x.id)}">${esc(x.name)} [${esc(x.curtainStyle)}]</option>`).join('')
-          : filtered.map(x => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.design || '-')}) หน้าผ้า ${esc(x.fabricWidth)} ซม.</option>`).join(''));
+          ? filtered.map((x, idx) => `<option value="${esc(x.id || ('__idx_' + idx))}">${esc(x.name)} [${esc(x.curtainStyle)}]</option>`).join('')
+          : filtered.map((x, idx) => `<option value="${esc(x.id || ('__idx_' + idx))}">${esc(x.name)} (${esc(x.design || '-')}) หน้าผ้า ${esc(x.fabricWidth)} ซม.</option>`).join(''));
       if (filtered.length === 1) {
-        selEl.value = filtered[0].id;
+        selEl.value = filtered[0].id || '__idx_0';
       }
     }
   });
@@ -3185,6 +3197,47 @@ function ensureQuickPopoverEl() {
   document.addEventListener('pointerup', () => { popDrag = null; });
 
   return pop;
+}
+
+function applyFabricPickFromDb(pop, col, pickedId) {
+  const ord = currentOrder();
+  const sIdx = (activePopoverCtx && activePopoverCtx.sIdx !== undefined) ? activePopoverCtx.sIdx : activeSheetIdx;
+  const sh = (ord && ord.sheets && ord.sheets[sIdx]) ? ord.sheets[sIdx] : currentSheet();
+  if (!sh || !sh.fabrics || !sh.fabrics[col] || !pickedId) return false;
+
+  const isBlindCol = col === 'roller' || col === 'blinds';
+  const list = isBlindCol ? (masterDB.blinds || []) : (masterDB.fabrics || []);
+  let item = list.find(x => String(x.id) === String(pickedId));
+  if (!item && String(pickedId).startsWith('__idx_')) {
+    const idx = parseInt(String(pickedId).replace('__idx_', ''), 10);
+    if (!isNaN(idx)) item = list[idx];
+  }
+  if (!item) return false;
+
+  if (isBlindCol) {
+    sh.fabrics[col].name = item.name || '';
+  } else {
+    sh.fabrics[col].name = item.name || '';
+    sh.fabrics[col].design = item.design || '';
+    if (typeof canFabricUseSheerGrain === 'function' && !canFabricUseSheerGrain(item.fabricWidth)) {
+      sh.fabrics[col].grain = 'opaque';
+      sh.fabrics[col].isOpaque = true;
+      sh.fabrics[col].isSheer = false;
+    }
+  }
+  sh.fabrics[col]._pickedDbId = String(pickedId);
+  if (activePopoverCtx) activePopoverCtx.lastPickedMsg = `✔ ดึงค่า "${item.name}" แสดงบนตารางผ้าในแปลนแล้ว`;
+
+  (sh.windows || []).forEach(w => {
+    if (w && w.calcMode !== 'manual') autoCalculateWindow(w, sh);
+  });
+  autoUpdateSheetFabricTableQty(sh);
+  renderWindowsEditor();
+  syncSheetInputs();
+  renderPreview();
+  touchAndSave();
+  renderActivePopoverContent({ preserveScroll: true });
+  return true;
 }
 
 function closePdfQuickPopover() {
@@ -4049,9 +4102,28 @@ function renderActivePopoverContent(opts = {}) {
     };
     title = `🧵 แก้ไขตารางผ้าและสินค้า — ${colTitles[col] || ''}`;
     const isBlindCol = col === 'roller' || col === 'blinds';
+    const fabSheet = (ord.sheets && ctx.sIdx !== undefined && ord.sheets[ctx.sIdx]) ? ord.sheets[ctx.sIdx] : sh;
+    const curFabCell = (fabSheet && fabSheet.fabrics && fabSheet.fabrics[col]) || {};
+    const searchQ = (ctx.fabSearchQuery || '').trim().toLowerCase();
+    const rawList = isBlindCol ? (masterDB.blinds || []) : (masterDB.fabrics || []);
+    const filteredList = !searchQ ? rawList : rawList.filter(x => {
+      const hay = `${x.name || ''} ${x.design || ''} ${x.fabricWidth || ''} ${x.curtainStyle || ''}`.toLowerCase();
+      return hay.includes(searchQ);
+    });
+    const selectedDbId = curFabCell._pickedDbId || (() => {
+      if (!curFabCell.name) return '';
+      const m = rawList.find(x => String(x.name || '').trim() === String(curFabCell.name || '').trim());
+      return m ? String(m.id || '') : '';
+    })();
     const dbOptions = isBlindCol
-      ? (masterDB.blinds || []).map(x => `<option value="${esc(x.id)}">${esc(x.name)} [${esc(x.curtainStyle)}]</option>`).join('')
-      : (masterDB.fabrics || []).map(x => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.design || '-')}) หน้าผ้า ${esc(x.fabricWidth)} ซม.</option>`).join('');
+      ? filteredList.map((x, idx) => {
+          const val = String(x.id || ('__idx_' + idx));
+          return `<option value="${esc(val)}" ${selectedDbId === val ? 'selected' : ''}>${esc(x.name)} [${esc(x.curtainStyle)}]</option>`;
+        }).join('')
+      : filteredList.map((x, idx) => {
+          const val = String(x.id || ('__idx_' + idx));
+          return `<option value="${esc(val)}" ${selectedDbId === val ? 'selected' : ''}>${esc(x.name)} (${esc(x.design || '-')}) หน้าผ้า ${esc(x.fabricWidth)} ซม.</option>`;
+        }).join('');
 
     stickyNavHTML = `
       <div class="pop-tabs">
@@ -4062,13 +4134,14 @@ function renderActivePopoverContent(opts = {}) {
       <section class="pop-sec-card">
         <div class="pop-sec-title"><span class="pop-sec-badge">${colTitles[col] || ''}</span><b>พิมพ์ค้นหาหรือเลือกจากฐานข้อมูล</b></div>
         <div class="inline" style="margin:6px 0;gap:6px;flex-wrap:wrap">
-          <input type="search" id="popFabSearchInput" placeholder="🔍 พิมพ์ค้นหาชื่อผ้า / รหัสดีไซน์ / หน้าผ้า..." style="flex:1;min-width:190px">
+          <input type="search" id="popFabSearchInput" value="${esc(ctx.fabSearchQuery || '')}" placeholder="🔍 พิมพ์ค้นหาชื่อผ้า / รหัสดีไซน์ / หน้าผ้า..." style="flex:1;min-width:190px">
           <select id="popFabDbPicker" style="flex:1.4;min-width:230px">
-            <option value="">-- เลือกจากฐานข้อมูล${isBlindCol ? 'มู่ลี่/ม่านม้วน' : 'ผ้า'} (เลือกเพื่อดึงค่าทันที) --</option>
+            <option value="">-- เลือกจากฐานข้อมูล${isBlindCol ? 'มู่ลี่/ม่านม้วน' : 'ผ้า'} (${filteredList.length} รายการ) --</option>
             ${dbOptions}
           </select>
           <button type="button" class="primary" data-pop-pick-fab="${col}">↘ ดึงค่า</button>
         </div>
+        ${ctx.lastPickedMsg ? `<div style="margin-bottom:6px;padding:4px 8px;background:#dcfce7;border:1px solid #86efac;border-radius:6px;color:#166534;font-size:12px;font-weight:600">${esc(ctx.lastPickedMsg)}</div>` : ''}
         ${(col === 'blackout' || col === 'sheer' || col === 'other') ? `
           <div class="opts" style="padding:6px 8px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:6px;margin-bottom:6px">
             <span class="olbl" style="font-weight:700;color:#0b3a8c">เลือกเกรนคำนวณผ้า (1 รายการผ้าเลือกได้เกรนเดียว):</span>
@@ -4967,3 +5040,23 @@ if (document.fonts && document.fonts.ready) {
     if (activeOrderId && isUserLoggedIn()) renderPreview();
   });
 }
+
+// Auto Save: บันทึกอัตโนมัติทุก 15 วินาทีเมื่อเปิดหน้าออเดอร์ + บันทึกทันทีเมื่อสลับแท็บหรือปิดหน้าเว็บ
+if (autoSaveIntervalId) clearInterval(autoSaveIntervalId);
+autoSaveIntervalId = setInterval(() => {
+  if (activeOrderId && isUserLoggedIn()) {
+    flushAutoSaveNow();
+  }
+}, 15000);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && isUserLoggedIn() && activeOrderId) {
+    flushAutoSaveNow();
+  }
+});
+window.addEventListener('pagehide', () => {
+  if (isUserLoggedIn() && activeOrderId) flushAutoSaveNow();
+});
+window.addEventListener('beforeunload', () => {
+  if (isUserLoggedIn() && activeOrderId) flushAutoSaveNow();
+});

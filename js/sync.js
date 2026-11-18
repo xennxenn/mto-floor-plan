@@ -105,6 +105,7 @@ const RealtimeSync = (() => {
     if (!data || typeof data !== 'object') return;
     if (data.rev && data.rev === lastRev) return;
     if (data.clientId && data.clientId === CLIENT_ID) return;
+    if (pushTimer) return; // ป้องกันข้อมูลเก่าจาก Cloud มาทับการแก้ไขที่กำลังรอซิงค์ในเครื่อง
 
     lastRev = data.rev || String(Date.now());
     isApplyingRemote = true;
@@ -401,6 +402,7 @@ const RealtimeSync = (() => {
     }
     const res = await fetch(sbRestUrl('?on_conflict=room_key'), {
       method: 'POST',
+      keepalive: true,
       headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify({
         room_key: room,
@@ -471,7 +473,16 @@ const RealtimeSync = (() => {
     }
     if (!cfg || !cfg.provider) return;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(() => { pushToCloudNow(); }, 350);
+    pushTimer = setTimeout(() => { pushTimer = null; pushToCloudNow(); }, 350);
+  }
+
+  function flushNow() {
+    if (isApplyingRemote) return;
+    if (pushTimer) {
+      clearTimeout(pushTimer);
+      pushTimer = null;
+      pushToCloudNow();
+    }
   }
 
   /* =========================================================
@@ -571,6 +582,7 @@ const RealtimeSync = (() => {
     init,
     schedulePush,
     pushToCloudNow,
+    flushNow,
     openModal,
     get status() { return status; },
   };
