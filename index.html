@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=16">
+  <link rel="stylesheet" href="css/style.css?v=18">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -55,6 +55,9 @@
     <div id="sheetTabs" class="sheet-tabs-scroll"></div>
     <button type="button" id="btnNextSheet" class="nav-arrow" title="หน้าถัดไป">▶</button>
     <div class="sheet-nav-actions">
+      <button type="button" id="btnMoveSheetLeft" title="เลื่อนใบแปลนหน้านี้ไปทางซ้าย">⬅ ย้ายซ้าย</button>
+      <button type="button" id="btnMoveSheetRight" title="เลื่อนใบแปลนหน้านี้ไปทางขวา">ย้ายขวา ➡</button>
+      <button type="button" id="btnReorderSheets" title="จัดลำดับใบแปลนงาน (หน้าต่อกันจะถูกล็อกต่อจากหน้าเริ่มต้นเสมอ)">📑 จัดลำดับใบแปลน</button>
       <button type="button" id="btnAddSheet" class="primary" title="เพิ่มหน้าห้องใหม่ในออเดอร์นี้">➕ เพิ่มหน้า</button>
       <button type="button" id="btnDupSheet" title="คัดลอกหน้าห้องปัจจุบัน">⧉ คัดลอก</button>
       <button type="button" id="btnDelSheet" class="danger" title="ลบหน้าห้องปัจจุบัน">🗑️ ลบหน้า</button>
@@ -435,7 +438,7 @@
         <button type="button" data-dbtab="fabricCalcRules">🧮 คำนวณปริมาณผ้า (เกรนทึบ/โปร่ง)</button>
         <button type="button" data-dbtab="rails">🛤️ รางและอุปกรณ์</button>
         <button type="button" data-dbtab="blinds">🪟 มู่ลี่และม่านม้วน (ตร.ม.)</button>
-        <button type="button" data-dbtab="curtains">🎀 รูปแบบผ้าม่าน</button>
+        <button type="button" data-dbtab="curtains">🎀 รูปแบบผ้าม่าน (ค่ามาตรฐานกลาง)</button>
         <button type="button" data-dbtab="hooks">🪝 ขนาดตะขอ</button>
         <button type="button" data-dbtab="remarks">🏷️ ข้อความหมายเหตุรอบบาน</button>
       </div>
@@ -505,6 +508,21 @@
     </div>
   </div>
 
+  <!-- ================= SHEET REORDER MODAL ================= -->
+  <div id="sheetOrderModal" class="modal no-print" hidden>
+    <div class="modal-box" style="max-width:760px">
+      <div class="dash-head" style="margin-bottom:8px">
+        <h3>📑 จัดลำดับใบแปลนงาน (ล็อกหน้าต่อให้อยู่ต่อจากหน้าเริ่มต้นเสมอ)</h3>
+        <button type="button" id="sheetOrderClose" class="primary">✔ เสร็จสิ้น</button>
+      </div>
+      <div class="pane-banner" style="margin-bottom:10px">
+        <b>หลักการจัดลำดับ:</b>
+        <p class="hint">สามารถเลื่อนจัดลำดับชุดใบแปลนงานของแต่ละห้องขึ้น/ลงได้อิสระ — ส่วนหน้าที่เป็น <b>หน้าต่อกัน</b> (กรณีมีหน้าต่าง/ประตูมากกว่า 4 ตำแหน่ง หรือหน้าม่านจั่ว/เย็บต่อข้าง) จะถูกล็อกให้อยู่ต่อจากหน้าเริ่มต้นเสมอ <b>ไม่สามารถเลื่อนหน้าต่อขึ้นไปไว้ก่อนหน้าเริ่มต้นได้</b></p>
+      </div>
+      <div id="sheetOrderBody"></div>
+    </div>
+  </div>
+
   <datalist id="dlRemarks"></datalist>
   <datalist id="dlFabrics"></datalist>
   <datalist id="dlBlinds"></datalist>
@@ -514,10 +532,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=17"></script>
-  <script src="js/plan.js?v=17"></script>
-  <script src="js/render.js?v=17"></script>
-  <script src="js/sync.js?v=17"></script>
-  <script src="js/app.js?v=17"></script>
+  <script src="js/db.js?v=18"></script>
+  <script src="js/plan.js?v=18"></script>
+  <script src="js/render.js?v=18"></script>
+  <script src="js/sync.js?v=18"></script>
+  <script src="js/app.js?v=18"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@
    10. fabricCalcRules: ฐานข้อมูลคำนวณปริมาณผ้า แยกเกรนม่านทึบ / เกรนม่านโปร่ง
        (ขนาดความกว้างผ้าม่าน, จำนวนหน้าผ้า, ขนาดหน้าผ้า, Y-Repeat, จำนวน Y-Repeat, ระยะเผื่อพับริมผ้า, ระยะย่นผ้าม่านแต่ละแบบ, ระยะพับขอบบนล่างผ้าม่านแต่ละแบบ, จำนวนผืน, การปัดเศษ)
    ========================================================= */
-const DB_KEY = 'mto-master-db-v8';
+const DB_KEY = 'mto-master-db-v9';
 
 const ROD_TYPES_LIST = [
   'รางม่านจีบ',
@@ -106,6 +106,41 @@ const BACK_LAYER_DEDUCT_OPTIONS = [
   ['0.5', 'ลดความสูงม่านชั้นด้านหลังเพิ่ม 0.5 ซม.'],
   ['1', 'ลดความสูงม่านชั้นด้านหลังเพิ่ม 1 ซม.'],
 ];
+
+const FLOOR_CLEARANCE_MODES = [
+  ['std', 'มาตรฐานฐานข้อมูล (ลอยจากพื้น 1 ซม.)'],
+  ['float', 'ลอยจากพื้นมากขึ้น (+เพิ่ม ซม. -> ยิ่งลอยจากพื้น)'],
+  ['touch', 'พอดีพื้น (0 ซม. -> คืนค่าระยะลอย +1 ซม.)'],
+  ['puddle', 'กองพื้น (-เพิ่ม ซม. -> ยิ่งกองพื้น)'],
+];
+
+/**
+ * คำนวณค่าปรับความสูงผ้าม่านตามระยะลอย/กองพื้นบนแปลนงาน:
+ * - ฐานข้อมูลขนาดความสูงกำหนดมาตรฐานลอยจากพื้น = baseFloat (1 ซม.)
+ * - ไม่ดูเครื่องหมาย (+ หรือ -) ดูที่ตัวเลข (Math.abs) เสมอ แล้วอิงตามตัวเลือก:
+ *   - 'std': ใช้ค่าฐานข้อมูล (ลอยจากพื้น 1 ซม.) -> delta = 0
+ *   - 'float': บวกเพิ่มคือยิ่งลอยจากพื้น -> delta = -Math.abs(val) (ลดความสูงผ้าม่านลงอีก)
+ *   - 'touch': พอดีพื้น (0 ซม.) -> delta = +baseFloat (คืนค่าลอย +1 ซม.)
+ *   - 'puddle': ลบเพิ่มยิ่งกองพื้น -> delta = +baseFloat + Math.abs(val) (คืน 1 ซม. + เพิ่มกองพื้น)
+ */
+function parseUnsignedFloat(v) {
+  const s = String(v ?? '').trim().replace(/[^\d.,-]/g, '').replace(/,/g, '.');
+  const n = parseFloat(s);
+  return (!isNaN(n) && Number.isFinite(n)) ? Math.abs(n) : 0;
+}
+
+function getWindowFloorDelta(w, baseFloat = 1) {
+  if (!w) return 0;
+  const base = (baseFloat !== undefined && baseFloat !== null && !isNaN(parseFloat(baseFloat)))
+    ? parseFloat(baseFloat)
+    : 1;
+  const mode = String(w.floorMode || 'std');
+  const mag = parseUnsignedFloat(w.floorAdjust);
+  if (mode === 'float') return -mag;
+  if (mode === 'touch') return base;
+  if (mode === 'puddle') return base + mag;
+  return 0;
+}
 
 const SPECIAL_WIN_TYPES = [
   ['', 'บานปกติ (ไม่มีหน้าขยายแยก)'],
@@ -249,11 +284,12 @@ function canFabricUseSheerGrain(fabricWidth) {
 
 function defaultMasterDB() {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     stdParams: {
       stdSideHem: 10,     // เผื่อเย็บริมผ้ามาตรฐาน = 10 ซม.
       stdOverlap: 8,      // เกยมาตรฐาน = 8 ซม.
       stdSideReturn: 8,   // อ้อมข้างมาตรฐาน = 8 ซม.
+      stdFloorFloat: 1,   // ระยะลอยจากพื้นมาตรฐาน = 1 ซม.
     },
     staff: [
       {
@@ -350,9 +386,9 @@ function defaultMasterDB() {
       { id: 'bl4', name: 'มู่ลี่ไม้ Basswood 50 มม.', curtainStyle: 'มู่ลี่ไม้', minSqm: 1.5, roundMode: 'ceil_1dec' },
       { id: 'bl5', name: 'มู่ลี่อลูมิเนียม 25 มม.', curtainStyle: 'มู่ลี่อลูมิเนียม', minSqm: 1.5, roundMode: 'ceil_1dec' },
     ],
-    // ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (WC):
+    // ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (WC) — ไม่ต้องระบุจำนวนผืนในฐานข้อมูล ระบบจะดึงจำนวนผืน (P) จากบานนั้นๆ อัตโนมัติ
     // 1. แบบย่นสำเร็จ (ม่านจีบ, ม่านลอน): WC = (RW / P) + OV + SR
-    // 2. แบบขึงตึง (ม่านตาไก่ ฯลฯ): WC = (RW * G) / P
+    // 2. แบบขึงตึง (ม่านตาไก่ ฯลฯ): WC = (RW * G) / P  (ดึง G จากฐานข้อมูลรูปแบบผ้าม่านกลางอัตโนมัติ)
     widthFormulas: [
       {
         id: 'wf1',
@@ -361,26 +397,9 @@ function defaultMasterDB() {
         layerType: 'both',
         rodType: '*',
         railTracks: '*',
-        pieces: 2,
-        label: 'ม่านจีบ 2 ผืน แยกกลาง — แบบย่นสำเร็จ: (ราง ÷ 2) + เกย 8 + อ้อมข้าง 8',
+        pieces: '*',
+        label: 'ม่านจีบ — แบบย่นสำเร็จ: (ราง ÷ ผืน P ของบาน) + เกย OV + อ้อมข้าง SR',
         railWidth: 'RW',
-        gatherRatio: 2.5,
-        overlap: 8,
-        sideReturn: 8,
-        widthExp: '((RW / P) + OV + SR)',
-        roundMode: 'ceil_int',
-      },
-      {
-        id: 'wf2',
-        curtainStyle: 'ม่านจีบ',
-        subCalcType: 'gathered',
-        layerType: 'both',
-        rodType: '*',
-        railTracks: '*',
-        pieces: 1,
-        label: 'ม่านจีบ 1 ผืน รวบข้าง — แบบย่นสำเร็จ: (ราง ÷ 1) + เกย 8 + อ้อมข้าง 8',
-        railWidth: 'RW',
-        gatherRatio: 2.5,
         overlap: 8,
         sideReturn: 8,
         widthExp: '((RW / P) + OV + SR)',
@@ -393,26 +412,9 @@ function defaultMasterDB() {
         layerType: 'both',
         rodType: '*',
         railTracks: '*',
-        pieces: 2,
-        label: 'ม่านลอน 2 ผืน แยกกลาง — แบบย่นสำเร็จ: (ราง ÷ 2) + เกย 8 + อ้อมข้าง 8',
+        pieces: '*',
+        label: 'ม่านลอน — แบบย่นสำเร็จ: (ราง ÷ ผืน P ของบาน) + เกย OV + อ้อมข้าง SR',
         railWidth: 'RW',
-        gatherRatio: 2.2,
-        overlap: 8,
-        sideReturn: 8,
-        widthExp: '((RW / P) + OV + SR)',
-        roundMode: 'ceil_int',
-      },
-      {
-        id: 'wf4',
-        curtainStyle: 'ม่านลอน',
-        subCalcType: 'gathered',
-        layerType: 'both',
-        rodType: '*',
-        railTracks: '*',
-        pieces: 1,
-        label: 'ม่านลอน 1 ผืน รวบข้าง — แบบย่นสำเร็จ: (ราง ÷ 1) + เกย 8 + อ้อมข้าง 8',
-        railWidth: 'RW',
-        gatherRatio: 2.2,
         overlap: 8,
         sideReturn: 8,
         widthExp: '((RW / P) + OV + SR)',
@@ -425,26 +427,9 @@ function defaultMasterDB() {
         layerType: 'both',
         rodType: '*',
         railTracks: '*',
-        pieces: 2,
-        label: 'ม่านตาไก่ 2 ผืน แยกกลาง — แบบขึงตึง: (ราง × ย่น 2.2) ÷ 2',
+        pieces: '*',
+        label: 'ม่านตาไก่ — แบบขึงตึง: (ราง × ระยะย่น G) ÷ ผืน P ของบาน',
         railWidth: 'RW',
-        gatherRatio: 2.2,
-        overlap: 0,
-        sideReturn: 0,
-        widthExp: '((RW * G) / P)',
-        roundMode: 'ceil_int',
-      },
-      {
-        id: 'wf6',
-        curtainStyle: 'ม่านตาไก่',
-        subCalcType: 'stretched',
-        layerType: 'both',
-        rodType: '*',
-        railTracks: '*',
-        pieces: 1,
-        label: 'ม่านตาไก่ 1 ผืน รวบข้าง — แบบขึงตึง: (ราง × ย่น 2.2) ÷ 1',
-        railWidth: 'RW',
-        gatherRatio: 2.2,
         overlap: 0,
         sideReturn: 0,
         widthExp: '((RW * G) / P)',
@@ -457,10 +442,9 @@ function defaultMasterDB() {
         layerType: 'both',
         rodType: '*',
         railTracks: '*',
-        pieces: 1,
-        label: 'ม่านพับ 1 ผืน — แบบขึงตึง: (ราง × 1.0) ÷ 1',
+        pieces: '*',
+        label: 'ม่านพับ — แบบขึงตึง: (ราง × ระยะย่น G) ÷ ผืน P ของบาน',
         railWidth: 'RW',
-        gatherRatio: 1.0,
         overlap: 0,
         sideReturn: 0,
         widthExp: '((RW * G) / P)',
@@ -473,17 +457,17 @@ function defaultMasterDB() {
         layerType: 'both',
         rodType: '*',
         railTracks: '*',
-        pieces: 1,
-        label: 'ม่านม้วน 1 ผืน (กว้างเท่ากับราง RW)',
+        pieces: '*',
+        label: 'ม่านม้วน (กว้างเท่ากับราง RW ÷ ผืน P)',
         railWidth: 'RW',
-        gatherRatio: 1.0,
         overlap: 0,
         sideReturn: 0,
-        widthExp: 'RW',
+        widthExp: '(RW / P)',
         roundMode: 'none',
       },
     ],
-    // ฐานข้อมูลขนาดความสูงผ้าม่านตามเงื่อนไข: รูปแบบผ้าม่าน + ประเภทรางม่าน + จำนวนราง(ชั้น) + จำนวนผืน + ขนาดตะขอ
+    // ฐานข้อมูลขนาดความสูงผ้าม่าน — กำหนดมาตรฐานเป็นระยะลอยจากพื้น FL_BASE = 1 ซม.
+    // (หากบานใดต้องการลอยมากกว่า กองพื้นมากกว่า หรือพอดีพื้น ให้เลือกที่แปลนงาน ระบบจะปรับให้อัตโนมัติ)
     heightFormulas: [
       {
         id: 'hf1',
@@ -492,8 +476,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: 'No.5',
-        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.5 (หัก 1.5 ซม.)',
-        heightExp: 'RH - 1.5',
+        floorFloat: 1,
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.5 (หักตะขอ 1.5 + ลอยพื้น 1 ซม.)',
+        heightExp: 'RH - 1.5 - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -503,8 +488,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: 'No.6',
-        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.6 (หัก 2 ซม.)',
-        heightExp: 'RH - 2',
+        floorFloat: 1,
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.6 (หักตะขอ 2 + ลอยพื้น 1 ซม.)',
+        heightExp: 'RH - 2 - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -514,8 +500,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: 'No.8',
-        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.8 (หัก 1 ซม.)',
-        heightExp: 'RH - 1',
+        floorFloat: 1,
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.8 (หักตะขอ 1 + ลอยพื้น 1 ซม.)',
+        heightExp: 'RH - 1 - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -525,8 +512,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: 'No.9',
-        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.9 (เท่าความสูงราง RH)',
-        heightExp: 'RH',
+        floorFloat: 1,
+        label: 'ม่านจีบ + รางม่านจีบ + ตะขอ No.9 (ลอยพื้นมาตรฐาน 1 ซม.)',
+        heightExp: 'RH - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -536,8 +524,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: '*',
-        label: 'ม่านจีบ + รางโชว์ (หักหัวรางโชว์ 4 ซม.)',
-        heightExp: 'RH - 4',
+        floorFloat: 1,
+        label: 'ม่านจีบ + รางโชว์ (หักหัวรางโชว์ 4 + ลอยพื้น 1 ซม.)',
+        heightExp: 'RH - 4 - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -547,8 +536,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: '*',
-        label: 'ม่านลอน + รางม่านลอน (หักราง 2.5 ซม.)',
-        heightExp: 'RH - 2.5',
+        floorFloat: 1,
+        label: 'ม่านลอน + รางม่านลอน (หักราง 2.5 + ลอยพื้น 1 ซม.)',
+        heightExp: 'RH - 2.5 - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -558,8 +548,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: '*',
-        label: 'ม่านตาไก่ + รางโชว์ (บวกหัวม่านเหนือราง +3 ซม.)',
-        heightExp: 'RH + 3',
+        floorFloat: 1,
+        label: 'ม่านตาไก่ + รางโชว์ (หัวม่าน +3 - ลอยพื้น 1 ซม.)',
+        heightExp: 'RH + 3 - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -569,8 +560,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: '*',
-        label: 'ม่านพับ + รางม่านพับ (เท่าความสูงราง RH)',
-        heightExp: 'RH',
+        floorFloat: 1,
+        label: 'ม่านพับ + รางม่านพับ (ลอยพื้นมาตรฐาน 1 ซม.)',
+        heightExp: 'RH - FL_BASE',
         roundMode: 'none',
       },
       {
@@ -580,8 +572,9 @@ function defaultMasterDB() {
         railTracks: '*',
         pieces: '*',
         hookSize: '*',
-        label: 'ทั่วไป: เท่ากับความสูงราง (RH = สูงเฟรม + เผื่อบน + เผื่อล่าง)',
-        heightExp: 'RH',
+        floorFloat: 1,
+        label: 'ทั่วไป: ลอยจากพื้นมาตรฐาน 1 ซม. (RH - 1)',
+        heightExp: 'RH - FL_BASE',
         roundMode: 'none',
       },
     ],
@@ -827,22 +820,21 @@ function normalizeWidthFormulaItem(wf, idx) {
     layerType: 'both',
     rodType: '*',
     railTracks: '*',
-    pieces: 2,
+    pieces: '*',
     label: '',
     railWidth: 'RW',
-    gatherRatio: 2.5,
     overlap: defSubType === 'gathered' ? 8 : 0,
     sideReturn: defSubType === 'gathered' ? 8 : 0,
     widthExp: defSubType === 'gathered' ? '((RW / P) + OV + SR)' : '((RW * G) / P)',
     roundMode: 'ceil_int',
   }, def, wf || {});
+  item.pieces = '*'; // จำนวนผืนดึงจากบานหน้าต่าง/ประตูนั้นๆ เสมอ ไม่กำหนดในฐานข้อมูลความกว้าง
   if (!item.rodType) item.rodType = '*';
   if (!item.railTracks) item.railTracks = '*';
   if (!item.layerType || !['opaque', 'sheer', 'both'].includes(item.layerType)) item.layerType = 'both';
   if (!item.subCalcType || !['gathered', 'stretched'].includes(item.subCalcType)) {
     item.subCalcType = getDefaultSubCalcType(item.curtainStyle);
   }
-  // อัปเกรดสูตรเดิมให้ตรงตามเกณฑ์การคำนวณแบบย่นสำเร็จ vs ขึงตึง
   if (item.subCalcType === 'gathered' && (item.widthExp === '((RW + OV + SR) / P)' || item.widthExp === '(RW + OV + SR)')) {
     item.widthExp = '((RW / P) + OV + SR)';
   } else if (item.subCalcType === 'stretched' && item.curtainStyle === 'ม่านตาไก่' && item.widthExp === '((RW + OV + SR) / P)') {
@@ -859,8 +851,9 @@ function normalizeHeightFormulaItem(hf, idx) {
     railTracks: '*',
     pieces: '*',
     hookSize: '*',
+    floorFloat: 1,
     label: '',
-    heightExp: 'RH',
+    heightExp: 'RH - FL_BASE',
     roundMode: 'none',
   }, hf || {});
 }
@@ -944,10 +937,11 @@ function normalizeRailItem(rl, idx) {
 function normalizeMasterDBObject(raw) {
   const def = defaultMasterDB();
   if (!raw || typeof raw !== 'object') return def;
-  // ข้อมูลเวอร์ชันเก่า (ก่อน v8) ให้ใช้สูตรความกว้างผ้าม่านและสูตรปริมาณผ้าชุดใหม่ (2 เกรนหลัก × 2 การคิดย่อย)
-  const isLegacy = !(Number(raw.schemaVersion) >= 8);
+  // ข้อมูลเวอร์ชันเก่า (ก่อน v9) อัปเดตสูตรความกว้าง (ไม่ผูกจำนวนผืน), ความสูง (FL_BASE = 1 ซม.), และสูตรปริมาณผ้าให้เป็นปัจจุบัน
+  const isLegacy8 = !(Number(raw.schemaVersion) >= 8);
+  const isLegacy9 = !(Number(raw.schemaVersion) >= 9);
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     stdParams: Object.assign({}, def.stdParams, raw.stdParams || {}),
     staff: ensureDefaultAdmin(Array.isArray(raw.staff) ? raw.staff : def.staff),
     curtains: Array.isArray(raw.curtains) && raw.curtains.length
@@ -962,13 +956,13 @@ function normalizeMasterDBObject(raw) {
       ? raw.rails.map((rl, i) => normalizeRailItem(rl, i))
       : def.rails,
     blinds: Array.isArray(raw.blinds) && raw.blinds.length ? raw.blinds : def.blinds,
-    widthFormulas: !isLegacy && Array.isArray(raw.widthFormulas) && raw.widthFormulas.length
+    widthFormulas: !isLegacy9 && Array.isArray(raw.widthFormulas) && raw.widthFormulas.length
       ? raw.widthFormulas.map((w, i) => normalizeWidthFormulaItem(w, i))
       : def.widthFormulas,
-    heightFormulas: Array.isArray(raw.heightFormulas) && raw.heightFormulas.length
+    heightFormulas: !isLegacy9 && Array.isArray(raw.heightFormulas) && raw.heightFormulas.length
       ? raw.heightFormulas.map((h, i) => normalizeHeightFormulaItem(h, i))
       : def.heightFormulas,
-    fabricCalcRules: !isLegacy && Array.isArray(raw.fabricCalcRules) && raw.fabricCalcRules.length
+    fabricCalcRules: !isLegacy8 && Array.isArray(raw.fabricCalcRules) && raw.fabricCalcRules.length
       ? raw.fabricCalcRules.map((r, i) => normalizeFabricCalcRuleItem(r, i))
       : def.fabricCalcRules,
   };
@@ -978,6 +972,7 @@ let masterDB = (() => {
   try {
     const raw = JSON.parse(
       localStorage.getItem(DB_KEY) ||
+      localStorage.getItem('mto-master-db-v8') ||
       localStorage.getItem('mto-master-db-v7') ||
       localStorage.getItem('mto-master-db-v6') ||
       localStorage.getItem('mto-master-db-v5') ||
@@ -1048,11 +1043,12 @@ function evalFormulaExpr(expr, vars = {}, roundMode = 'none') {
 
     const fn = new Function(
       'W', 'H', 'EL', 'ER', 'ET', 'EB', 'RW', 'RH', 'FW', 'FH',
-      'WC', 'HC', 'P', 'RT', 'G', 'OV', 'SR',
+      'WC', 'HC', 'P', 'RT', 'G', 'OV', 'SR', 'FL_BASE',
       'FW_FAB', 'YR', 'HEM_SIDE', 'HEM_TB', 'HEM_TB_ECON', 'HEM_TB_SHEER_PANEL', 'PANELS', 'YR_CNT',
       'ceil', 'floor', 'round', 'ceil1', 'CEIL', 'FLOOR', 'ROUND', 'CEIL1', 'PANEL_ROUND', 'panel_round', 'max', 'min',
       `"use strict"; return (${expr});`
     );
+    const flBase = vars.FL_BASE !== undefined ? vars.FL_BASE : 1;
     const hemTb = vars.HEM_TB || 0;
     const hemTbEcon = vars.HEM_TB_ECON || 0;
     const hemTbSheerPanel = vars.HEM_TB_SHEER_PANEL !== undefined
@@ -1061,7 +1057,7 @@ function evalFormulaExpr(expr, vars = {}, roundMode = 'none') {
     const res = fn(
       vars.W || 0, vars.H || 0, vars.EL || 0, vars.ER || 0, vars.ET || 0, vars.EB || 0,
       vars.RW || 0, vars.RH || 0, vars.FW || 0, vars.FH || 0,
-      vars.WC || 0, vars.HC || 0, vars.P || 1, vars.RT || 1, vars.G || 1, vars.OV || 0, vars.SR || 0,
+      vars.WC || 0, vars.HC || 0, vars.P || 1, vars.RT || 1, vars.G || 1, vars.OV || 0, vars.SR || 0, flBase,
       vars.FW_FAB || 140, vars.YR || 0, vars.HEM_SIDE || 0, hemTb, hemTbEcon, hemTbSheerPanel,
       vars.PANELS || 1, vars.YR_CNT || 0,
       ceilInt, floorInt, roundStd, ceil1Dec, ceilInt, floorInt, roundStd, ceil1Dec, panelRoundFn, panelRoundFn, Math.max, Math.min
@@ -1076,11 +1072,12 @@ function evalFormulaExpr(expr, vars = {}, roundMode = 'none') {
 
 /**
  * ค้นหาสูตรความกว้างผ้าม่านตามเงื่อนไข:
- * รูปแบบผ้าม่าน (curtainStyle), จำนวนผืน (pieces), จำนวนรางม่าน(ชั้น) (railTracks), ประเภทรางม่าน (rodType), และแยกม่านทึบ/ม่านโปร่ง/ทั้งคู่ (layerType: 'opaque' | 'sheer' | 'both')
+ * รูปแบบผ้าม่าน (curtainStyle), จำนวนรางม่าน(ชั้น) (railTracks), ประเภทรางม่าน (rodType), และแยกม่านทึบ/ม่านโปร่ง/ทั้งคู่ (layerType)
+ * (ไม่ระบุจำนวนผืนในฐานข้อมูลขนาดความกว้าง — ดึงจำนวนผืน P จากบานที่เลือกโดยตรง)
  */
 function getWidthFormulasForStyle(curtainStyle, pieces = '', railTracks = '', rodType = '', layerType = '') {
   const all = masterDB.widthFormulas || [];
-  if (!curtainStyle && !pieces && !railTracks && !rodType && !layerType) return all;
+  if (!curtainStyle && !railTracks && !rodType && !layerType) return all;
   const matchLayerFn = f => {
     if (!layerType) return true;
     const lt = f.layerType || 'both';
@@ -1088,18 +1085,11 @@ function getWidthFormulasForStyle(curtainStyle, pieces = '', railTracks = '', ro
   };
   const matched = all.filter(f => {
     const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
-    const matchPieces = !pieces || !f.pieces || String(f.pieces) === '*' || String(f.pieces) === String(pieces);
     const matchTracks = !railTracks || !f.railTracks || String(f.railTracks) === '*' || String(f.railTracks) === String(railTracks);
     const matchRod = !rodType || !f.rodType || f.rodType === '*' || f.rodType === rodType;
-    return matchStyle && matchPieces && matchTracks && matchRod && matchLayerFn(f);
+    return matchStyle && matchTracks && matchRod && matchLayerFn(f);
   });
   if (matched.length) return matched;
-  const byStyleLayerPieces = all.filter(f => {
-    const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
-    const matchPieces = !pieces || !f.pieces || String(f.pieces) === '*' || String(f.pieces) === String(pieces);
-    return matchStyle && matchPieces && matchLayerFn(f);
-  });
-  if (byStyleLayerPieces.length) return byStyleLayerPieces;
   const byStyleLayer = all.filter(f => {
     const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
     return matchStyle && matchLayerFn(f);
@@ -1261,15 +1251,18 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
   const stdP = getStdCurtainParams(styleName);
   const subCalcType = (wf && wf.subCalcType) || stdP.subCalcType || getDefaultSubCalcType(styleName);
 
-  const P = num(opts.pieces) || num(wf && wf.pieces) || (isBlindOrRollerStyle(styleName) ? 1 : 2);
+  // จำนวนผืนดึงจากบานหน้าต่าง/ประตูนั้นๆ แทน (ไม่ดึงจากฐานข้อมูลความกว้าง)
+  const P = num(opts.pieces) || num(w.pieces1) || (isBlindOrRollerStyle(styleName) ? 1 : 2);
   const RT = num(opts.railTracks) || num(w.railTracks) || ((w.curtainStyle1 && w.curtainStyle2) ? 2 : 1);
-  const G = num(opts.gatherRatio) || num(wf && wf.gatherRatio) || stdP.gatherRatio || 2.5;
+  // ระยะย่น, เผื่อพับริม, เผื่อพับขอบบนล่างมาตรฐาน/ประหยัด ใช้จากฐานข้อมูลกลาง (curtains) เพียงแหล่งเดียวทั้งหมด
+  const G = (opts.gatherRatio !== undefined && opts.gatherRatio !== '') ? num(opts.gatherRatio) : (stdP.gatherRatio || 2.5);
   const OV = (wf && wf.overlap !== undefined && wf.overlap !== '') ? num(wf.overlap) : stdP.overlap;
   const SR = (wf && wf.sideReturn !== undefined && wf.sideReturn !== '') ? num(wf.sideReturn) : stdP.sideReturn;
+  const baseFloorFloat = (hf && hf.floorFloat !== undefined && hf.floorFloat !== '') ? num(hf.floorFloat) : 1;
 
   const vars = {
     W, H, EL, ER, ET, EB, RW, RH, FW, FH,
-    WC: RW > 0 ? RW : 0, HC: RH > 0 ? RH : 0, P, RT, G, OV, SR,
+    WC: RW > 0 ? RW : 0, HC: RH > 0 ? RH : 0, P, RT, G, OV, SR, FL_BASE: baseFloorFloat,
     FW_FAB: 140, YR: 0,
     HEM_SIDE: stdP.sideHem,
     HEM_TB: stdP.topBottomHem,
@@ -1303,12 +1296,13 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     vars.WC = 0;
   }
 
-  // 2) คำนวณขนาดความสูงผ้าม่าน (b) — เฉพาะเมื่อมีความสูงราง (RH > 0)
+  // 2) คำนวณขนาดความสูงผ้าม่าน (b) — รวมระยะลอย/กองพื้นตามที่เลือกบนแปลน (บวกเพิ่มยิ่งลอย, ลบเพิ่มยิ่งกองพื้น — ไม่ดูเครื่องหมาย)
   let b = '';
   let hcNum = 0;
   const noRailDeduct = getNoRailHeightDeduction(w);
   const extraHeightDeduct = num(opts.extraHeightDeduct);
   const totalHeightDeduct = noRailDeduct + extraHeightDeduct;
+  const floorDelta = opts.skipFloorAdjust ? 0 : getWindowFloorDelta(w, baseFloorFloat);
   if (RH > 0) {
     if (hf && hf.heightExp) {
       b = evalFormulaExpr(hf.heightExp, vars, hf.roundMode || 'none');
@@ -1316,8 +1310,8 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
       b = String(RH);
     }
     hcNum = num(b);
-    if (totalHeightDeduct > 0 && hcNum > 0) {
-      hcNum = Math.max(0, Math.round((hcNum - totalHeightDeduct) * 100) / 100);
+    if ((totalHeightDeduct !== 0 || floorDelta !== 0) && hcNum > 0) {
+      hcNum = Math.max(0, Math.round((hcNum - totalHeightDeduct + floorDelta) * 100) / 100);
       b = String(hcNum);
     }
     if (hcNum <= 0) {
@@ -1348,12 +1342,36 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     return {
       a, b, n: (RW > 0 || RH > 0 || hasUnequalSplit) ? String(effPieces) : '', t,
       RW, RH, unit1: 'ผืน', unit2: 'ตร.ม.',
-      details: { mode: 'blind_sqm', minSqm },
+      details: { mode: 'blind_sqm', minSqm, floorDelta },
     };
   }
 
   // 4) คำนวณปริมาณผ้า แยก 2 เกรนหลัก ('opaque' / 'sheer') และ 2 การคิดย่อย ('gathered' / 'stretched')
+  // หากยังไม่ได้เลือกผ้า ระบบจะยังไม่คำนวณจำนวนหน้าผ้าและปริมาณผ้าให้
   const fabricItem = opts.fabric || opts.fabricItem || null;
+  const hasSelectedFabric = !!(fabricItem && (num(fabricItem.fabricWidth) > 0 || String(fabricItem.name || '').trim()));
+  if (!hasSelectedFabric && !opts.allowDefaultFabric) {
+    return {
+      a,
+      b,
+      n: (RW > 0 || RH > 0 || hasUnequalSplit) ? String(effPieces) : '',
+      t: '',
+      RW,
+      RH,
+      unit1: 'ผืน',
+      unit2: 'หลา',
+      details: {
+        mode: opts.grainType || 'opaque',
+        subCalcType,
+        fabricMissing: true,
+        panelCount: 0,
+        yardsOnly: '',
+        noRailDeduct,
+        floorDelta,
+      },
+    };
+  }
+
   let grainType = opts.grainType || 'opaque';
   const fabW = num(fabricItem && fabricItem.fabricWidth) || (grainType === 'sheer' ? 300 : 140);
   // บังคับกฎ: เฉพาะผ้าที่มีขนาดหน้าผ้าเกิน 270 ซม. ขึ้นไปถึงใช้เกรนม่านโปร่งได้
@@ -1365,18 +1383,16 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
     || getFabricCalcRulesForWindow(styleName, grainType)[0]
     || defaultMasterDB().fabricCalcRules[0];
 
-  const ruleSubCalc = (fRule && fRule.subCalcType) || subCalcType;
+  const ruleSubCalc = stdP.subCalcType || (fRule && fRule.subCalcType) || subCalcType;
   vars.FW_FAB = fabW;
   vars.YR = (fabricItem && fabricItem.yRepeat !== undefined && fabricItem.yRepeat !== '')
     ? num(fabricItem.yRepeat)
     : 0;
-  vars.G = num(fRule && fRule.gatherRatio) || G;
-  vars.HEM_SIDE = (fRule && fRule.sideHem !== undefined && fRule.sideHem !== '') ? num(fRule.sideHem) : stdP.sideHem;
-  vars.HEM_TB = (fRule && fRule.topBottomHem !== undefined && fRule.topBottomHem !== '') ? num(fRule.topBottomHem) : stdP.topBottomHem;
-  vars.HEM_TB_ECON = (fRule && fRule.econTopBottomHem !== undefined && fRule.econTopBottomHem !== '')
-    ? num(fRule.econTopBottomHem)
-    : (stdP.econTopBottomHem || 0);
-  // แบบประหยัดใช้เฉพาะสำหรับการคำนวณจำนวนหน้าผ้าของเกรนม่านโปร่งที่มีกำหนดค่าแบบประหยัดไว้เท่านั้น นอกนั้นใช้แบบมาตรฐานทั้งหมด
+  // ใช้ค่า ระยะย่น, พับริม, พับขอบบนล่างมาตรฐาน, พับขอบบนล่างประหยัด จากฐานข้อมูลกลาง (curtains) แหล่งเดียว
+  vars.G = G;
+  vars.HEM_SIDE = stdP.sideHem;
+  vars.HEM_TB = stdP.topBottomHem;
+  vars.HEM_TB_ECON = stdP.econTopBottomHem || 0;
   vars.HEM_TB_SHEER_PANEL = (grainType === 'sheer' && vars.HEM_TB_ECON > 0) ? vars.HEM_TB_ECON : vars.HEM_TB;
 
   const pRoundMode = (fRule && fRule.panelRoundMode) || (grainType === 'sheer' ? 'ceil' : 'ceil_plus1_if_frac_ge');
@@ -1688,14 +1704,14 @@ const DB_IMPORT_SCHEMAS = {
     },
   },
   widthFormulas: {
-    title: 'ฐานข้อมูลขนาดความกว้างผ้าม่าน (แยกการคิดย่อย: ย่นสำเร็จ gathered / ขึงตึง stretched)',
-    pattern: 'curtainStyle, subCalcType, layerType, rodType, railTracks, pieces, label, railWidth, gatherRatio, overlap, sideReturn, widthExp, roundMode',
-    desc: 'คอลัมน์: รูปแบบผ้าม่าน, การคิดย่อย(gathered=ย่นสำเร็จ / stretched=ขึงตึง), ประเภทม่าน(both/opaque/sheer), ประเภทรางม่าน(*), จำนวนชั้นราง(* หรือ 1/2), จำนวนผืน(P: 1 หรือ 2), ชื่อเงื่อนไข, ขนาดราง(RW), ระยะย่น(G), เผื่อเกย(OV), เผื่ออ้อมข้าง(SR), สูตรความกว้างผ้าต่อผืน, การปัดเศษ',
+    title: 'ฐานข้อมูลขนาดความกว้างผ้าม่าน (ไม่ต้องระบุจำนวนผืน — ดึงจำนวนผืนจากบานที่เลือกอัตโนมัติ)',
+    pattern: 'curtainStyle, subCalcType, layerType, rodType, railTracks, label, overlap, sideReturn, widthExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบผ้าม่าน, การคิดย่อย(gathered=ย่นสำเร็จ / stretched=ขึงตึง), ประเภทม่าน(both/opaque/sheer), ประเภทรางม่าน(*), จำนวนชั้นราง(* หรือ 1/2), ชื่อเงื่อนไข, เผื่อเกย(OV), เผื่ออ้อมข้าง(SR), สูตรความกว้างผ้าต่อผืน, การปัดเศษ (จำนวนผืน P และระยะย่น G ดึงจากบาน/ฐานข้อมูลกลางอัตโนมัติ)',
     example: [
-      'curtainStyle, subCalcType, layerType, rodType, railTracks, pieces, label, railWidth, gatherRatio, overlap, sideReturn, widthExp, roundMode',
-      'ม่านจีบ, gathered, both, *, *, 2, ม่านจีบ 2 ผืน แบบย่นสำเร็จ (เกย 8 อ้อมข้าง 8), RW, 2.5, 8, 8, ((RW / P) + OV + SR), ceil_int',
-      'ม่านลอน, gathered, both, *, *, 2, ม่านลอน 2 ผืน แบบย่นสำเร็จ (เกย 8 อ้อมข้าง 8), RW, 2.2, 8, 8, ((RW / P) + OV + SR), ceil_int',
-      'ม่านตาไก่, stretched, both, *, *, 2, ม่านตาไก่ 2 ผืน แบบขึงตึง, RW, 2.2, 0, 0, ((RW * G) / P), ceil_int',
+      'curtainStyle, subCalcType, layerType, rodType, railTracks, label, overlap, sideReturn, widthExp, roundMode',
+      'ม่านจีบ, gathered, both, *, *, ม่านจีบ — แบบย่นสำเร็จ (เกย 8 อ้อมข้าง 8), 8, 8, ((RW / P) + OV + SR), ceil_int',
+      'ม่านลอน, gathered, both, *, *, ม่านลอน — แบบย่นสำเร็จ (เกย 8 อ้อมข้าง 8), 8, 8, ((RW / P) + OV + SR), ceil_int',
+      'ม่านตาไก่, stretched, both, *, *, ม่านตาไก่ — แบบขึงตึง, 0, 0, ((RW * G) / P), ceil_int',
     ].join('\n'),
     headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
     parseRow(cols, idx) {
@@ -1706,7 +1722,7 @@ const DB_IMPORT_SCHEMAS = {
         if (s === 'sheer' || s === 'ม่านโปร่ง' || s === 'โปร่ง') return 'sheer';
         return 'both';
       };
-      if (cols.length >= 13) {
+      if (cols.length >= 10) {
         const subCalc = cols[1] === 'stretched' || cols[1] === 'gathered' ? cols[1] : getDefaultSubCalcType(cols[0]);
         return {
           id: 'wf_imp_' + Date.now() + '_' + idx,
@@ -1715,33 +1731,13 @@ const DB_IMPORT_SCHEMAS = {
           layerType: parseLayer(cols[2]),
           rodType: cols[3] || '*',
           railTracks: cols[4] || '*',
-          pieces: parseInt(cols[5], 10) || 2,
-          label: cols[6] || cols[0] || 'เงื่อนไขความกว้าง',
-          railWidth: cols[7] || 'RW',
-          gatherRatio: parseFloat(cols[8]) || 2.5,
-          overlap: cols[9] !== undefined && cols[9] !== '' ? parseFloat(cols[9]) : 8,
-          sideReturn: cols[10] !== undefined && cols[10] !== '' ? parseFloat(cols[10]) : 8,
-          widthExp: cols[11] || (subCalc === 'stretched' ? '((RW * G) / P)' : '((RW / P) + OV + SR)'),
-          roundMode: cols[12] || 'ceil_int',
-        };
-      }
-      if (cols.length >= 12) {
-        const subCalc = getDefaultSubCalcType(cols[0]);
-        return {
-          id: 'wf_imp_' + Date.now() + '_' + idx,
-          curtainStyle: cols[0] || '*',
-          subCalcType: subCalc,
-          layerType: parseLayer(cols[1]),
-          rodType: cols[2] || '*',
-          railTracks: cols[3] || '*',
-          pieces: parseInt(cols[4], 10) || 2,
+          pieces: '*',
           label: cols[5] || cols[0] || 'เงื่อนไขความกว้าง',
-          railWidth: cols[6] || 'RW',
-          gatherRatio: parseFloat(cols[7]) || 2.5,
-          overlap: cols[8] !== undefined && cols[8] !== '' ? parseFloat(cols[8]) : 8,
-          sideReturn: cols[9] !== undefined && cols[9] !== '' ? parseFloat(cols[9]) : 8,
-          widthExp: cols[10] || (subCalc === 'stretched' ? '((RW * G) / P)' : '((RW / P) + OV + SR)'),
-          roundMode: cols[11] || 'ceil_int',
+          railWidth: 'RW',
+          overlap: cols[6] !== undefined && cols[6] !== '' ? parseFloat(cols[6]) : 8,
+          sideReturn: cols[7] !== undefined && cols[7] !== '' ? parseFloat(cols[7]) : 8,
+          widthExp: cols[8] || (subCalc === 'stretched' ? '((RW * G) / P)' : '((RW / P) + OV + SR)'),
+          roundMode: cols[9] || 'ceil_int',
         };
       }
       const subCalc = getDefaultSubCalcType(cols[0]);
@@ -1752,29 +1748,42 @@ const DB_IMPORT_SCHEMAS = {
         layerType: 'both',
         rodType: '*',
         railTracks: '*',
+        pieces: '*',
         label: cols[1] || cols[0] || 'เงื่อนไขความกว้าง',
-        railWidth: cols[2] || 'RW',
-        pieces: parseInt(cols[3], 10) || 2,
-        gatherRatio: parseFloat(cols[4]) || 2.5,
-        overlap: cols[5] !== undefined && cols[5] !== '' ? parseFloat(cols[5]) : 8,
-        sideReturn: cols[6] !== undefined && cols[6] !== '' ? parseFloat(cols[6]) : 8,
-        widthExp: cols[7] || (subCalc === 'stretched' ? '((RW * G) / P)' : '((RW / P) + OV + SR)'),
-        roundMode: cols[8] || 'ceil_int',
+        railWidth: 'RW',
+        overlap: cols[4] !== undefined && cols[4] !== '' ? parseFloat(cols[4]) : 8,
+        sideReturn: cols[5] !== undefined && cols[5] !== '' ? parseFloat(cols[5]) : 8,
+        widthExp: cols[6] || (subCalc === 'stretched' ? '((RW * G) / P)' : '((RW / P) + OV + SR)'),
+        roundMode: cols[7] || 'ceil_int',
       };
     },
   },
   heightFormulas: {
-    title: 'ฐานข้อมูลขนาดความสูงผ้าม่าน (ตามรูปแบบม่าน / ประเภทราง / ชั้นราง / จำนวนผืน / ตะขอ)',
-    pattern: 'curtainStyle, rodType, railTracks, pieces, hookSize, label, heightExp, roundMode',
-    desc: 'คอลัมน์: รูปแบบผ้าม่าน, ประเภทรางม่าน, จำนวนชั้นราง(* หรือ 1/2), จำนวนผืน(* หรือ 1/2), ขนาดตะขอ(หรือ *), ชื่อเงื่อนไขความสูง, สูตรความสูงผ้า (RH = สูงเฟรม+เผื่อบน+เผื่อล่าง), การปัดเศษ',
+    title: 'ฐานข้อมูลขนาดความสูงผ้าม่าน (กำหนดระยะลอยจากพื้นมาตรฐาน FL_BASE = 1 ซม.)',
+    pattern: 'curtainStyle, rodType, railTracks, pieces, hookSize, floorFloat, label, heightExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบผ้าม่าน, ประเภทรางม่าน, จำนวนชั้นราง(*), จำนวนผืน(*), ขนาดตะขอ(*), ระยะลอยจากพื้นมาตรฐาน(ซม. ค่าเริ่มต้น 1), ชื่อเงื่อนไขความสูง, สูตรความสูงผ้า, การปัดเศษ',
     example: [
-      'curtainStyle, rodType, railTracks, pieces, hookSize, label, heightExp, roundMode',
-      'ม่านจีบ, รางม่านจีบ, *, *, No.5, ม่านจีบ + รางม่านจีบ + ตะขอ No.5 (หัก 1.5 ซม.), RH - 1.5, none',
-      'ม่านลอน, รางม่านลอน, *, *, *, ม่านลอน + รางม่านลอน (หัก 2.5 ซม.), RH - 2.5, none',
+      'curtainStyle, rodType, railTracks, pieces, hookSize, floorFloat, label, heightExp, roundMode',
+      'ม่านจีบ, รางม่านจีบ, *, *, No.5, 1, ม่านจีบ + รางม่านจีบ + ตะขอ No.5 (หักตะขอ 1.5 + ลอยพื้น 1 ซม.), RH - 1.5 - FL_BASE, none',
+      'ม่านลอน, รางม่านลอน, *, *, *, 1, ม่านลอน + รางม่านลอน (หักราง 2.5 + ลอยพื้น 1 ซม.), RH - 2.5 - FL_BASE, none',
     ].join('\n'),
     headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
     parseRow(cols, idx) {
       if (!cols[0] && !cols[3]) return null;
+      if (cols.length >= 9) {
+        return {
+          id: 'hf_imp_' + Date.now() + '_' + idx,
+          curtainStyle: cols[0] || '*',
+          rodType: cols[1] || '*',
+          railTracks: cols[2] || '*',
+          pieces: cols[3] || '*',
+          hookSize: cols[4] || '*',
+          floorFloat: cols[5] !== undefined && cols[5] !== '' ? parseFloat(cols[5]) : 1,
+          label: cols[6] || 'เงื่อนไขความสูง',
+          heightExp: cols[7] || 'RH - FL_BASE',
+          roundMode: cols[8] || 'none',
+        };
+      }
       if (cols.length >= 8) {
         return {
           id: 'hf_imp_' + Date.now() + '_' + idx,
@@ -1783,8 +1792,9 @@ const DB_IMPORT_SCHEMAS = {
           railTracks: cols[2] || '*',
           pieces: cols[3] || '*',
           hookSize: cols[4] || '*',
+          floorFloat: 1,
           label: cols[5] || 'เงื่อนไขความสูง',
-          heightExp: cols[6] || 'RH',
+          heightExp: cols[6] || 'RH - FL_BASE',
           roundMode: cols[7] || 'none',
         };
       }
@@ -1795,64 +1805,56 @@ const DB_IMPORT_SCHEMAS = {
         railTracks: '*',
         pieces: '*',
         hookSize: cols[2] || '*',
+        floorFloat: 1,
         label: cols[3] || 'เงื่อนไขความสูง',
-        heightExp: cols[4] || 'RH',
+        heightExp: cols[4] || 'RH - FL_BASE',
         roundMode: cols[5] || 'none',
       };
     },
   },
   fabricCalcRules: {
-    title: 'ฐานข้อมูลคำนวณปริมาณผ้า (2 เกรนหลัก × 2 การคิดย่อย พร้อมเผื่อพับขอบบนล่างมาตรฐานและประหยัด)',
-    pattern: 'curtainStyle, grainType, subCalcType, label, gatherRatio, sideHem, topBottomHem, econTopBottomHem, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
-    desc: 'คอลัมน์: รูปแบบม่าน, เกรนหลัก(opaque/sheer), การคิดย่อย(gathered/stretched), ชื่อสูตร, ระยะย่น(G), เผื่อพับริม(HEM_SIDE=10), เผื่อพับขอบบนล่างมาตรฐาน(HEM_TB), เผื่อพับขอบบนล่างประหยัด(HEM_TB_ECON), โหมดปัดหน้าผ้า, เศษทศนิยม(0.9), +เพิ่มหน้า(1), สูตรจำนวนหน้า(PANELS), สูตร Repeat(YR_CNT), สูตรปริมาณผ้า(หลา), การปัดเศษ',
+    title: 'ฐานข้อมูลคำนวณปริมาณผ้า (ดึงระยะย่น, พับริม, พับบนล่างมาตรฐาน/ประหยัด จากฐานข้อมูลกลางรูปแบบผ้าม่านแหล่งเดียว)',
+    pattern: 'curtainStyle, grainType, subCalcType, label, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
+    desc: 'คอลัมน์: รูปแบบม่าน, เกรนหลัก(opaque/sheer), การคิดย่อย(gathered/stretched), ชื่อสูตร, โหมดปัดหน้าผ้า, เศษทศนิยม(0.9), +เพิ่มหน้า(1), สูตรจำนวนหน้า(PANELS), สูตร Repeat(YR_CNT), สูตรปริมาณผ้า(หลา), การปัดเศษ',
     example: [
-      'curtainStyle, grainType, subCalcType, label, gatherRatio, sideHem, topBottomHem, econTopBottomHem, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
-      'ม่านจีบ, opaque, gathered, เกรนม่านทึบ (แบบย่นสำเร็จ) - ม่านจีบ, 2.5, 10, 35, 25, ceil_plus1_if_frac_ge, 0.9, 1, PANEL_ROUND((((WC * G) + HEM_SIDE) * P) / FW_FAB), YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0, ((YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44, ceil_1dec',
-      'ม่านจีบ, sheer, gathered, เกรนม่านโปร่ง (แบบย่นสำเร็จ) - ม่านจีบ, 2.5, 10, 35, 25, ceil, 0.9, 0, CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB), 0, (((WC * G) + HEM_SIDE) * P * 1.05) / 91.44, ceil_1dec',
+      'curtainStyle, grainType, subCalcType, label, panelRoundMode, panelFracThreshold, panelExtraAdd, panelCountExp, yRepeatCountExp, qtyExp, roundMode',
+      'ม่านจีบ, opaque, gathered, เกรนม่านทึบ (แบบย่นสำเร็จ) - ม่านจีบ, ceil_plus1_if_frac_ge, 0.9, 1, PANEL_ROUND((((WC * G) + HEM_SIDE) * P) / FW_FAB), YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0, ((YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44, ceil_1dec',
+      'ม่านจีบ, sheer, gathered, เกรนม่านโปร่ง (แบบย่นสำเร็จ) - ม่านจีบ, ceil, 0.9, 0, CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB), 0, (((WC * G) + HEM_SIDE) * P * 1.05) / 91.44, ceil_1dec',
     ].join('\n'),
     headers: ['curtainstyle', 'รูปแบบผ้าม่าน', 'รูปแบบม่าน'],
     parseRow(cols, idx) {
       if (!cols[0] && !cols[2]) return null;
       const isSheer = String(cols[1] || '').toLowerCase() === 'sheer' || String(cols[1] || '').includes('โปร่ง');
-      if (cols.length >= 15) {
-        const subCalc = cols[2] === 'stretched' || cols[2] === 'gathered' ? cols[2] : getDefaultSubCalcType(cols[0]);
+      const subCalc = cols[2] === 'stretched' || cols[2] === 'gathered' ? cols[2] : getDefaultSubCalcType(cols[0]);
+      if (cols.length >= 11) {
         return {
           id: 'fcr_imp_' + Date.now() + '_' + idx,
           curtainStyle: cols[0] || '*',
           grainType: isSheer ? 'sheer' : 'opaque',
           subCalcType: subCalc,
           label: cols[3] || 'สูตรคำนวณปริมาณผ้า',
-          gatherRatio: parseFloat(cols[4]) || 2.5,
-          sideHem: cols[5] !== undefined && cols[5] !== '' ? parseFloat(cols[5]) : 10,
-          topBottomHem: parseFloat(cols[6]) || 35,
-          econTopBottomHem: cols[7] !== undefined && cols[7] !== '' ? parseFloat(cols[7]) : 0,
-          panelRoundMode: cols[8] || (isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge'),
-          panelFracThreshold: cols[9] !== undefined && cols[9] !== '' ? parseFloat(cols[9]) : 0.9,
-          panelExtraAdd: cols[10] !== undefined && cols[10] !== '' ? parseInt(cols[10], 10) : (isSheer ? 0 : 1),
-          panelCountExp: cols[11] || (isSheer ? 'CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB)' : (subCalc === 'gathered' ? 'PANEL_ROUND((((WC * G) + HEM_SIDE) * P) / FW_FAB)' : 'PANEL_ROUND(((WC + HEM_SIDE) * P) / FW_FAB)')),
-          yRepeatCountExp: cols[12] || (isSheer ? '0' : 'YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0'),
-          qtyExp: cols[13] || (isSheer ? (subCalc === 'gathered' ? '(((WC * G) + HEM_SIDE) * P * 1.05) / 91.44' : '((WC + HEM_SIDE) * P * 1.05) / 91.44') : '((YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44'),
-          roundMode: cols[14] || 'ceil_1dec',
+          panelRoundMode: cols[4] || (isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge'),
+          panelFracThreshold: cols[5] !== undefined && cols[5] !== '' ? parseFloat(cols[5]) : 0.9,
+          panelExtraAdd: cols[6] !== undefined && cols[6] !== '' ? parseInt(cols[6], 10) : (isSheer ? 0 : 1),
+          panelCountExp: cols[7] || (isSheer ? 'CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB)' : (subCalc === 'gathered' ? 'PANEL_ROUND((((WC * G) + HEM_SIDE) * P) / FW_FAB)' : 'PANEL_ROUND(((WC + HEM_SIDE) * P) / FW_FAB)')),
+          yRepeatCountExp: cols[8] || (isSheer ? '0' : 'YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0'),
+          qtyExp: cols[9] || (isSheer ? (subCalc === 'gathered' ? '(((WC * G) + HEM_SIDE) * P * 1.05) / 91.44' : '((WC + HEM_SIDE) * P * 1.05) / 91.44') : '((YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44'),
+          roundMode: cols[10] || 'ceil_1dec',
         };
       }
-      const subCalc = getDefaultSubCalcType(cols[0]);
       return {
         id: 'fcr_imp_' + Date.now() + '_' + idx,
         curtainStyle: cols[0] || '*',
         grainType: isSheer ? 'sheer' : 'opaque',
         subCalcType: subCalc,
         label: cols[2] || 'สูตรคำนวณปริมาณผ้า',
-        gatherRatio: parseFloat(cols[3]) || 2.5,
-        sideHem: cols[4] !== undefined && cols[4] !== '' ? parseFloat(cols[4]) : 10,
-        topBottomHem: parseFloat(cols[5]) || 35,
-        econTopBottomHem: 0,
-        panelRoundMode: cols[6] || (isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge'),
-        panelFracThreshold: cols[7] !== undefined && cols[7] !== '' ? parseFloat(cols[7]) : 0.9,
-        panelExtraAdd: cols[8] !== undefined && cols[8] !== '' ? parseInt(cols[8], 10) : (isSheer ? 0 : 1),
-        panelCountExp: cols[9] || (isSheer ? 'CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB)' : (subCalc === 'gathered' ? 'PANEL_ROUND((((WC * G) + HEM_SIDE) * P) / FW_FAB)' : 'PANEL_ROUND(((WC + HEM_SIDE) * P) / FW_FAB)')),
-        yRepeatCountExp: cols[10] || 'YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0',
-        qtyExp: cols[11] || '((YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44',
-        roundMode: cols[12] || 'ceil_1dec',
+        panelRoundMode: isSheer ? 'ceil' : 'ceil_plus1_if_frac_ge',
+        panelFracThreshold: 0.9,
+        panelExtraAdd: isSheer ? 0 : 1,
+        panelCountExp: isSheer ? 'CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB)' : (subCalc === 'gathered' ? 'PANEL_ROUND((((WC * G) + HEM_SIDE) * P) / FW_FAB)' : 'PANEL_ROUND(((WC + HEM_SIDE) * P) / FW_FAB)'),
+        yRepeatCountExp: isSheer ? '0' : 'YR > 0 ? CEIL((HC + HEM_TB) / YR) : 0',
+        qtyExp: '((YR > 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44',
+        roundMode: 'ceil_1dec',
       };
     },
   },
@@ -2239,17 +2241,18 @@ const MasterDBModal = (() => {
     if (mode === 'height') {
       return `
         <details class="subcard" open style="margin-bottom:8px;background:#f8fafc;border:1px solid #cbd5e1;font-size:11.5px">
-          <summary style="cursor:pointer;font-weight:700;color:#0f172a">📘 ตารางอธิบายตัวแปรสำหรับตรวจสอบและแก้ไขสูตรความสูงผ้าม่าน (ชื่อตัวแปร / ขนาดและหน่วย / หน้าที่การทำงาน)</summary>
+          <summary style="cursor:pointer;font-weight:700;color:#0f172a">📘 ตารางอธิบายตัวแปรสำหรับตรวจสอบและแก้ไขสูตรความสูงผ้าม่าน (มาตรฐานลอยจากพื้น 1 ซม.)</summary>
           <table class="ed-tbl" style="margin-top:6px;background:#fff">
             <thead>
               <tr>
                 <th style="width:120px">ชื่อตัวแปร</th>
-                <th style="width:180px">ขนาด / ค่ามาตรฐาน (หน่วย)</th>
+                <th style="width:195px">ขนาด / ค่ามาตรฐาน (หน่วย)</th>
                 <th>หน้าที่และการทำงานในสูตรคำนวณ</th>
               </tr>
             </thead>
             <tbody>
               <tr><td><code>RH</code></td><td><code>H + ET + EB</code> (ซม.)</td><td>ขนาดความสูงรางม่าน (สูงเฟรม <code>H</code> + เผื่อบน <code>ET</code> + เผื่อล่าง <code>EB</code>; ม่านจั่วใช้ความสูงที่สูงที่สุดของช่วงบานนั้นๆ)</td></tr>
+              <tr><td><code>FL_BASE</code></td><td>มาตรฐาน <code>1</code> ซม. (ลอยจากพื้น 1 ซม.)</td><td>ระยะลอยจากพื้นมาตรฐานในฐานข้อมูล (หากบนแปลนเลือกให้ลอยเพิ่ม กองพื้น หรือพอดีพื้น ระบบจะบวก/ลบปรับจากค่านี้ให้อัตโนมัติ)</td></tr>
               <tr><td><code>H</code>, <code>ET</code>, <code>EB</code></td><td>หน่วยเป็น เซนติเมตร (ซม.)</td><td><code>H</code> = สูงเฟรมหน้าต่าง/ประตู, <code>ET</code> = ระยะเผื่อขึ้นด้านบน, <code>EB</code> = ระยะเผื่อลงด้านล่าง</td></tr>
               <tr><td><code>FH</code></td><td>หน่วยเป็น เซนติเมตร (ซม.)</td><td>ความสูงเต็มจากพื้นถึงฝ้าเพดาน (ใช้ตรวจสอบกรณีติดฝ้าเพดานหรือหักลดจากความสูงเต็ม)</td></tr>
             </tbody>
@@ -2376,32 +2379,32 @@ const MasterDBModal = (() => {
       body.innerHTML = renderStdParamsBanner() + renderVariableReferenceCard('width') + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-            <b>📐 ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (แยกการคิดย่อย: แบบย่นสำเร็จ <code>(RW / P) + OV + SR</code> / แบบขึงตึง <code>(RW * G) / P</code>):</b>
+            <b>📐 ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (ไม่ต้องระบุจำนวนผืน — ดึงจำนวนผืน <code>P</code> จากบานนั้นๆ และดึงระยะย่น <code>G</code> จากฐานข้อมูลกลางอัตโนมัติ):</b>
             <div class="inline">
+              <button type="button" data-db-goto="curtains">🎀 แก้ไขค่ามาตรฐานกลาง (ระยะย่น G)</button>
               <button type="button" class="${widthLayerFilter === 'all' ? 'primary' : ''}" data-db-wlayer-filter="all">ทั้งหมด (${wfAll.length})</button>
               <button type="button" class="${widthLayerFilter === 'opaque' ? 'primary' : ''}" data-db-wlayer-filter="opaque">เฉพาะม่านทึบ</button>
               <button type="button" class="${widthLayerFilter === 'sheer' ? 'primary' : ''}" data-db-wlayer-filter="sheer">เฉพาะม่านโปร่ง</button>
               <button type="button" class="${widthLayerFilter === 'both' ? 'primary' : ''}" data-db-wlayer-filter="both">ทั้งม่านทึบและม่านโปร่ง</button>
             </div>
           </div>
-          • <b>แบบย่นสำเร็จ (ม่านจีบ / ม่านลอน)</b>: ขนาดรางม่านหารด้วยจำนวนผืนแล้วบวกเผื่อเกยและเผื่ออ้อมข้าง <code>((RW / P) + OV + SR)</code> (หากต้องการบวกแค่เผื่อเกยอย่างเดียว ให้ตั้งช่องอ้อมข้าง <code>SR = 0</code>)<br>
-          • <b>แบบขึงตึง (รูปแบบม่านที่เหลือ)</b>: ขนาดรางม่านคูณด้วยระยะย่นแล้วหารด้วยจำนวนผืน <code>((RW * G) / P)</code>
+          • <b>แบบย่นสำเร็จ (ม่านจีบ / ม่านลอน)</b>: <code>((RW / P) + OV + SR)</code> | <b>แบบขึงตึง (รูปแบบม่านที่เหลือ)</b>: <code>((RW * G) / P)</code><br>
+          • <b>จำนวนผืน (<code>P</code>)</b> ดึงจากบานที่กำหนดจริงในใบงาน และ <b>ระยะย่น (<code>G</code>)</b> ดึงจากฐานข้อมูลกลาง <button type="button" data-db-goto="curtains" style="padding:1px 6px;font-size:11px">🎀 รูปแบบผ้าม่าน &amp; ค่ามาตรฐาน</button> อัตโนมัติ
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1520px">
+          <table class="ed-tbl" style="min-width:1420px">
             <thead>
               <tr>
-                <th style="width:110px">รูปแบบผ้าม่าน</th>
-                <th style="width:175px">การคิดย่อย</th>
-                <th style="width:155px">ใช้คำนวณกับ</th>
+                <th style="width:115px">รูปแบบผ้าม่าน</th>
+                <th style="width:180px">การคิดย่อย</th>
+                <th style="width:150px">ใช้คำนวณกับ</th>
                 <th style="width:115px">ประเภทรางม่าน</th>
                 <th style="width:95px">ชั้นราง (RT)</th>
-                <th style="width:72px">จำนวนผืน (P)</th>
-                <th style="min-width:280px">ชื่อเงื่อนไขการคำนวณความกว้าง</th>
-                <th style="width:78px">ระยะย่น (G)</th>
+                <th style="min-width:290px">ชื่อเงื่อนไขการคำนวณความกว้าง</th>
+                <th style="width:120px">ระยะย่น G (ฐานกลาง)</th>
                 <th style="width:78px">เผื่อเกย (OV)</th>
                 <th style="width:82px">อ้อมข้าง (SR)</th>
-                <th style="width:185px">สูตรความกว้างต่อผืน (WC)</th>
+                <th style="width:190px">สูตรความกว้างต่อผืน (WC)</th>
                 <th style="width:155px">การปัดเศษ</th>
                 <th style="width:42px">ลบ</th>
               </tr>
@@ -2411,6 +2414,7 @@ const MasterDBModal = (() => {
                 const lt = wf.layerType || 'both';
                 if (widthLayerFilter !== 'all' && lt !== widthLayerFilter) return '';
                 const subCalc = wf.subCalcType || getDefaultSubCalcType(wf.curtainStyle);
+                const stdP = getStdCurtainParams(wf.curtainStyle);
                 return `
                 <tr>
                   <td><select data-db-edit="widthFormulas.${i}.curtainStyle">${curtainSelectOpts(wf.curtainStyle)}</select></td>
@@ -2418,9 +2422,8 @@ const MasterDBModal = (() => {
                   <td><select data-db-edit="widthFormulas.${i}.layerType">${widthLayerSelectOpts(lt)}</select></td>
                   <td><select data-db-edit="widthFormulas.${i}.rodType">${rodSelectOpts(wf.rodType || '*')}</select></td>
                   <td><select data-db-edit="widthFormulas.${i}.railTracks">${railTrackSelectOpts(wf.railTracks || '*')}</select></td>
-                  <td><input type="number" step="1" min="1" max="2" data-db-edit="widthFormulas.${i}.pieces" value="${escH(wf.pieces ?? 2)}"></td>
                   <td><input data-db-edit="widthFormulas.${i}.label" value="${escH(wf.label || '')}" placeholder="ชื่อเงื่อนไข"></td>
-                  <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.gatherRatio" value="${escH(wf.gatherRatio ?? 2.5)}"></td>
+                  <td class="c" style="background:#f8fafc;font-weight:700;color:#0b3a8c" title="ดึงจากฐานข้อมูลกลาง (รูปแบบผ้าม่าน)">${escH(stdP.gatherRatio)} เท่า</td>
                   <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.overlap" value="${escH(wf.overlap ?? 8)}"></td>
                   <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.sideReturn" value="${escH(wf.sideReturn ?? 8)}"></td>
                   <td><input data-db-edit="widthFormulas.${i}.widthExp" value="${escH(wf.widthExp || '((RW / P) + OV + SR)')}"></td>
@@ -2440,21 +2443,22 @@ const MasterDBModal = (() => {
     } else if (activeTab === 'heightFormulas') {
       body.innerHTML = renderVariableReferenceCard('height') + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>📏 ฐานข้อมูลการคำนวณขนาดความสูงผ้าม่าน (ตามรูปแบบผ้าม่าน + ประเภทรางม่าน + จำนวนชั้นราง + จำนวนผืน + ขนาดตะขอ):</b><br>
-          <b>การคำนวณความสูงราง (<code>RH</code>) = สูงเฟรม (<code>H</code>) + เผื่อบน (<code>ET</code>) + เผื่อล่าง (<code>EB</code>)</b><br>
-          * ระบบจะเริ่มคำนวณลดความสูงเฉพาะบานที่เลือกเงื่อนไขครบแล้วเท่านั้น และไม่ลามไปคำนวณบานอื่น
+          <b>📏 ฐานข้อมูลการคำนวณขนาดความสูงผ้าม่าน (มาตรฐานลอยจากพื้น <code>FL_BASE = 1</code> ซม.):</b><br>
+          • <b>ความสูงราง (<code>RH</code>) = สูงเฟรม (<code>H</code>) + เผื่อบน (<code>ET</code>) + เผื่อล่าง (<code>EB</code>)</b><br>
+          • สูตรในฐานข้อมูลนี้คิดความสูงที่ระยะ <b>ลอยจากพื้นมาตรฐาน 1 ซม.</b> (หากบานใดต้องการลอยมากว่า 1 ซม., กองพื้น, หรือพอดีพื้น สามารถเลือกปรับที่แปลนงานได้ทันที)
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1180px">
+          <table class="ed-tbl" style="min-width:1300px">
             <thead>
               <tr>
-                <th style="width:115px">รูปแบบผ้าม่าน</th>
-                <th style="width:125px">ประเภทรางม่าน</th>
-                <th style="width:105px">ชั้นราง (RT)</th>
-                <th style="width:90px">จำนวนผืน (P)</th>
-                <th style="width:105px">ขนาดตะขอ</th>
+                <th style="width:110px">รูปแบบผ้าม่าน</th>
+                <th style="width:120px">ประเภทรางม่าน</th>
+                <th style="width:100px">ชั้นราง (RT)</th>
+                <th style="width:85px">จำนวนผืน (P)</th>
+                <th style="width:100px">ขนาดตะขอ</th>
+                <th style="width:105px">ลอยพื้นมาตรฐาน (FL_BASE ซม.)</th>
                 <th style="min-width:280px">ชื่อเงื่อนไขความสูง</th>
-                <th style="width:140px">สูตรความสูงผ้า (HC)</th>
+                <th style="width:165px">สูตรความสูงผ้า (HC)</th>
                 <th style="width:165px">การปัดเศษ</th>
                 <th style="width:42px">ลบ</th>
               </tr>
@@ -2467,8 +2471,9 @@ const MasterDBModal = (() => {
                   <td><select data-db-edit="heightFormulas.${i}.railTracks">${railTrackSelectOpts(hf.railTracks || '*')}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.pieces">${piecesSelectOpts(hf.pieces || '*')}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.hookSize">${hookSelectOpts(hf.hookSize)}</select></td>
+                  <td><input type="number" step="any" min="0" data-db-edit="heightFormulas.${i}.floorFloat" value="${escH(hf.floorFloat ?? 1)}" title="ค่ามาตรฐานลอยจากพื้น (ซม.) เช่น 1"></td>
                   <td><input data-db-edit="heightFormulas.${i}.label" value="${escH(hf.label || '')}"></td>
-                  <td><input data-db-edit="heightFormulas.${i}.heightExp" value="${escH(hf.heightExp || 'RH')}"></td>
+                  <td><input data-db-edit="heightFormulas.${i}.heightExp" value="${escH(hf.heightExp || 'RH - FL_BASE')}"></td>
                   <td><select data-db-edit="heightFormulas.${i}.roundMode">${roundModeSelectOpts(hf.roundMode || 'none')}</select></td>
                   <td class="c"><button type="button" class="danger" data-db-del="heightFormulas.${i}">✕</button></td>
                 </tr>`).join('')}
@@ -2484,30 +2489,26 @@ const MasterDBModal = (() => {
       body.innerHTML = renderStdParamsBanner() + renderVariableReferenceCard('fabric') + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-            <b>🧮 ฐานข้อมูลการคำนวณปริมาณผ้า (แบ่งเป็น 2 เกรนหลัก × 2 การคิดย่อย — เลื่อนดูตารางซ้าย-ขวา และ บน-ล่าง ได้):</b>
+            <b>🧮 ฐานข้อมูลการคำนวณปริมาณผ้า (ดึง ระยะย่น, พับริม, พับบนล่างมาตรฐาน/ประหยัด จากฐานข้อมูลกลางแหล่งเดียว):</b>
             <div class="inline">
+              <button type="button" data-db-goto="curtains">🎀 แก้ไขค่ามาตรฐานกลาง (ย่น/พับริม/พับบนล่าง)</button>
               <button type="button" class="${fabricGrainFilter === 'all' ? 'primary' : ''}" data-db-grain-filter="all">ทั้งหมด (${rules.length})</button>
               <button type="button" class="${fabricGrainFilter === 'opaque' ? 'primary' : ''}" data-db-grain-filter="opaque">⬛ เกรนม่านทึบ (${opaqueCount})</button>
               <button type="button" class="${fabricGrainFilter === 'sheer' ? 'primary' : ''}" data-db-grain-filter="sheer">⬜ เกรนม่านโปร่ง (${sheerCount})</button>
             </div>
           </div>
-          • <b>เกรนม่านทึบ (ย่นสำเร็จ)</b>: หน้าผ้า = <code>PANEL_ROUND((((WC * G) + HEM_SIDE) * P) / FW_FAB)</code> | ปริมาณผ้า = <code>((YR &gt; 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44</code><br>
-          • <b>เกรนม่านทึบ (ขึงตึง)</b>: หน้าผ้า = <code>PANEL_ROUND(((WC + HEM_SIDE) * P) / FW_FAB)</code> | ปริมาณผ้า = <code>((YR &gt; 0 ? (YR_CNT * YR) : (HC + HEM_TB)) * PANELS * 1.05) / 91.44</code><br>
-          • <b>เกรนม่านโปร่ง (ย่นสำเร็จ)</b>: หน้าผ้า = <code>CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB)</code> | ปริมาณผ้า = <code>(((WC * G) + HEM_SIDE) * P * 1.05) / 91.44</code><br>
-          • <b>เกรนม่านโปร่ง (ขึงตึง)</b>: หน้าผ้า = <code>CEIL((HC + HEM_TB_SHEER_PANEL) / FW_FAB)</code> | ปริมาณผ้า = <code>((WC + HEM_SIDE) * P * 1.05) / 91.44</code>
+          • ค่า <b>ระยะย่น (<code>G</code>)</b>, <b>เผื่อพับริม (<code>HEM_SIDE</code>)</b>, <b>เผื่อพับบนล่างมาตรฐาน (<code>HEM_TB</code>)</b> และ <b>ประหยัด (<code>HEM_TB_ECON</code>)</b> ทุกสูตรดึงจากฐานข้อมูลกลาง <button type="button" data-db-goto="curtains" style="padding:1px 6px;font-size:11px">🎀 รูปแบบผ้าม่าน &amp; ค่ามาตรฐาน</button> เพียงแหล่งเดียวทั้งหมด!<br>
+          • <b>หมายเหตุ</b>: หากบานใดยังไม่ได้เลือกผ้า ระบบจะยังไม่คำนวณจำนวนหน้าผ้าและปริมาณผ้าให้
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1980px">
+          <table class="ed-tbl" style="min-width:1760px">
             <thead>
               <tr>
                 <th style="width:110px">รูปแบบม่าน</th>
                 <th style="width:125px">เกรนหลัก</th>
                 <th style="width:170px">การคิดย่อย</th>
                 <th style="min-width:290px">ชื่อสูตรการคำนวณปริมาณผ้า</th>
-                <th style="width:76px">ระยะย่น (G)</th>
-                <th style="width:82px">พับริม (HEM_SIDE)</th>
-                <th style="width:92px">พับบนล่างมาตรฐาน (HEM_TB)</th>
-                <th style="width:98px">พับบนล่างประหยัด (HEM_TB_ECON)</th>
+                <th style="min-width:230px">ค่าตัดเย็บที่ใช้ (จากฐานข้อมูลกลาง)</th>
                 <th style="width:205px">เงื่อนไขปัดจำนวนหน้าผ้า</th>
                 <th style="width:66px">เศษ ≥</th>
                 <th style="width:66px">+เพิ่มหน้า</th>
@@ -2522,7 +2523,8 @@ const MasterDBModal = (() => {
               ${rules.map((r, i) => {
                 if (fabricGrainFilter === 'opaque' && r.grainType === 'sheer') return '';
                 if (fabricGrainFilter === 'sheer' && r.grainType !== 'sheer') return '';
-                const subCalc = r.subCalcType || getDefaultSubCalcType(r.curtainStyle);
+                const stdP = getStdCurtainParams(r.curtainStyle);
+                const subCalc = stdP.subCalcType || r.subCalcType || getDefaultSubCalcType(r.curtainStyle);
                 return `
                 <tr>
                   <td><select data-db-edit="fabricCalcRules.${i}.curtainStyle">${curtainSelectOpts(r.curtainStyle)}</select></td>
@@ -2534,10 +2536,9 @@ const MasterDBModal = (() => {
                   </td>
                   <td><select data-db-edit="fabricCalcRules.${i}.subCalcType">${subCalcSelectOpts(subCalc)}</select></td>
                   <td><input data-db-edit="fabricCalcRules.${i}.label" value="${escH(r.label || '')}" title="${escH(r.label || '')}"></td>
-                  <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.gatherRatio" value="${escH(r.gatherRatio ?? 2.5)}"></td>
-                  <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.sideHem" value="${escH(r.sideHem ?? 10)}"></td>
-                  <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.topBottomHem" value="${escH(r.topBottomHem ?? 35)}"></td>
-                  <td><input type="number" step="any" data-db-edit="fabricCalcRules.${i}.econTopBottomHem" value="${escH(r.econTopBottomHem ?? 0)}" title="ใช้เฉพาะหาจำนวนหน้าผ้าของเกรนม่านโปร่ง (ถ้าตั้ง 0 จะใช้ค่ามาตรฐาน)"></td>
+                  <td style="background:#f8fafc;font-size:11.5px;color:#0b3a8c;font-weight:600;white-space:nowrap">
+                    ย่น <b>${escH(stdP.gatherRatio)}</b> • ริม <b>${escH(stdP.sideHem)}</b> • มาตรฐาน <b>${escH(stdP.topBottomHem)}</b> • ประหยัด <b>${escH(stdP.econTopBottomHem || 0)}</b>
+                  </td>
                   <td><select data-db-edit="fabricCalcRules.${i}.panelRoundMode">${panelRoundModeSelectOpts(r.panelRoundMode || (r.grainType === 'sheer' ? 'ceil' : 'ceil_plus1_if_frac_ge'))}</select></td>
                   <td><input type="number" step="0.05" min="0.05" max="0.99" data-db-edit="fabricCalcRules.${i}.panelFracThreshold" value="${escH(r.panelFracThreshold ?? 0.9)}"></td>
                   <td><input type="number" step="1" min="0" data-db-edit="fabricCalcRules.${i}.panelExtraAdd" value="${escH(r.panelExtraAdd ?? (r.grainType === 'sheer' ? 0 : 1))}"></td>
@@ -2647,10 +2648,10 @@ const MasterDBModal = (() => {
       `;
     } else if (activeTab === 'curtains') {
       body.innerHTML = renderStdParamsBanner() + `
-        <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>🎀 ฐานข้อมูลรูปแบบผ้าม่าน & ค่ามาตรฐานประจำแต่ละรูปแบบผ้าม่าน:</b><br>
-          • <b>การคิดย่อยแบบย่นสำเร็จ (<code>gathered</code>)</b>: มีเฉพาะ <b>ม่านจีบ</b> และ <b>ม่านลอน</b> | ที่เหลือใช้ <b>การคิดย่อยแบบขึงตึง (<code>stretched</code>)</b><br>
-          • กำหนด <b>เผื่อพับขอบบนล่างแบบมาตรฐาน (<code>HEM_TB</code>)</b> และ <b>เผื่อพับขอบบนล่างแบบประหยัด (<code>HEM_TB_ECON</code>)</b> (แบบประหยัดใช้เฉพาะสำหรับการคำนวณจำนวนหน้าผ้าของเกรนม่านโปร่งที่มีกำหนดค่าไว้เท่านั้น นอกนั้นใช้แบบมาตรฐานทั้งหมด)
+        <div class="subcard" style="margin-bottom:8px;font-size:12px;background:#eef6ff;border:1px solid #93c5fd">
+          <b>🎀 ฐานข้อมูลกลาง (แหล่งเดียวที่ใช้คำนวณทั้งระบบ): ระยะย่น • เผื่อพับริม • เผื่อพับขอบบนล่างแบบมาตรฐาน • เผื่อพับขอบบนล่างแบบประหยัด</b><br>
+          • <b>แก้ไขค่าที่นี่ที่เดียว</b> แล้วระบบจะนำไปใช้ทั้ง <b>สูตรขนาดความกว้างผ้าม่าน</b> และ <b>สูตรคำนวณปริมาณผ้า (ทั้งเกรนม่านทึบและเกรนม่านโปร่ง)</b> อัตโนมัติ<br>
+          • <b>การคิดย่อยแบบย่นสำเร็จ (<code>gathered</code>)</b>: มีเฉพาะ <b>ม่านจีบ</b> และ <b>ม่านลอน</b> | ที่เหลือใช้ <b>แบบขึงตึง (<code>stretched</code>)</b>
         </div>
         <div class="db-tbl-scroll">
           <table class="ed-tbl" style="min-width:1180px">
@@ -2790,6 +2791,14 @@ const MasterDBModal = (() => {
     modal.addEventListener('input', onEditChange);
     modal.addEventListener('change', onEditChange);
     modal.addEventListener('click', e => {
+      const gotoBtn = e.target.closest('[data-db-goto]');
+      if (gotoBtn) {
+        activeTab = gotoBtn.dataset.dbGoto || 'curtains';
+        importStatusMsg = '';
+        showPasteBox = false;
+        render();
+        return;
+      }
       const sortBtn = e.target.closest('[data-db-sort]');
       if (sortBtn) {
         sortTabByName(activeTab, sortBtn.dataset.dbSort || 'asc');
@@ -2908,16 +2917,16 @@ const MasterDBModal = (() => {
         } else if (t === 'widthFormulas') {
           const wLayer = add.dataset.wlayer || (widthLayerFilter !== 'all' ? widthLayerFilter : 'both');
           masterDB.widthFormulas.push({
-            id, curtainStyle: 'ม่านจีบ', subCalcType: 'gathered', layerType: wLayer, rodType: '*', railTracks: '*', pieces: 2,
+            id, curtainStyle: 'ม่านจีบ', subCalcType: 'gathered', layerType: wLayer, rodType: '*', railTracks: '*', pieces: '*',
             label: wLayer === 'opaque' ? 'เงื่อนไขความกว้างม่านทึบใหม่' : (wLayer === 'sheer' ? 'เงื่อนไขความกว้างม่านโปร่งใหม่' : 'เงื่อนไขความกว้างใหม่'),
             railWidth: 'RW',
-            gatherRatio: 2.5, overlap: sp.stdOverlap ?? 8, sideReturn: sp.stdSideReturn ?? 8,
+            overlap: sp.stdOverlap ?? 8, sideReturn: sp.stdSideReturn ?? 8,
             widthExp: '((RW / P) + OV + SR)', roundMode: 'ceil_int',
           });
         } else if (t === 'heightFormulas') {
           masterDB.heightFormulas.push({
-            id, curtainStyle: 'ม่านจีบ', rodType: 'รางม่านจีบ', railTracks: '*', pieces: '*', hookSize: '*',
-            label: 'เงื่อนไขความสูงใหม่', heightExp: 'RH - 2', roundMode: 'none',
+            id, curtainStyle: 'ม่านจีบ', rodType: 'รางม่านจีบ', railTracks: '*', pieces: '*', hookSize: '*', floorFloat: 1,
+            label: 'เงื่อนไขความสูงใหม่ (ลอยพื้น 1 ซม.)', heightExp: 'RH - FL_BASE', roundMode: 'none',
           });
         } else if (t === 'fabricCalcRules') {
           const gType = add.dataset.grain || (fabricGrainFilter === 'sheer' ? 'sheer' : 'opaque');

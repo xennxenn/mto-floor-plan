@@ -32,6 +32,8 @@ function newWindow(planNo = '') {
     railCountUnit: '', // หน่วยช่องชั้น: '' = อัตโนมัติ, 'ชั้น', 'ผืน', 'ชุด'
     railUnit: '',      // หน่วยช่องจำนวนราง: '' = อัตโนมัติตามฐานข้อมูลราง, 'เมตร', 'ชุด', 'ชุด/เมตร', 'เมตร/ชุด', 'ตร.ม.'
     railSetRanges: '', // กำหนดช่วงแบ่งชุดเฉพาะบาน (ถ้าว่างใช้จากฐานข้อมูลราง)
+    floorMode: 'std',  // ระยะลอย/กองพื้นบนแปลน: 'std' (ลอย 1 ซม. ตามฐานข้อมูล) | 'float' (ลอยมากขึ้น) | 'touch' (พอดีพื้น) | 'puddle' (กองพื้น)
+    floorAdjust: '',   // ตัวเลขระยะปรับ ซม. (ไม่ดูเครื่องหมาย +/- ดูตัวเลขแล้วคำนวณตาม floorMode)
     rowLabel1: '',     // ชื่อแถวที่ 1 (ค่าเริ่มต้น "รางม่าน" หรือ "ผืนที่ 1" สำหรับม่านม้วน/มู่ลี่)
     rowLabel2: '',     // ชื่อแถวที่ 2 (ค่าเริ่มต้น "ผ้าม่านทึบ")
     rowLabel3: '',     // ชื่อแถวที่ 3 (ค่าเริ่มต้น "ผ้าม่านโปร่ง")
@@ -529,6 +531,7 @@ function openOrder(orderId, mode = 'sheet', sheetIdx = 0) {
   document.getElementById('btnHome').hidden = false;
   document.getElementById('topOrderBadge').hidden = false;
   document.getElementById('orderActions').hidden = false;
+  setRightOnlyMode(true);
   renderAllWorkspace();
   fitZoomWidth();
 }
@@ -567,6 +570,11 @@ function renderTopSheetNav() {
   // Toggle Customer pane vs Room pane (Req #1: แยกหน้ากรอกข้อมูลลูกค้า/พนักงาน ไม่แสดงซ้ำกับหน้าต่าง/ประตู)
   document.getElementById('customerEditorPane').hidden = (activeTabMode !== 'customer');
   document.getElementById('roomEditorPane').hidden = (activeTabMode !== 'sheet');
+
+  const btnMoveL = document.getElementById('btnMoveSheetLeft');
+  const btnMoveR = document.getElementById('btnMoveSheetRight');
+  if (btnMoveL) btnMoveL.disabled = (activeTabMode !== 'sheet' || activeSheetIdx <= 0);
+  if (btnMoveR) btnMoveR.disabled = (activeTabMode !== 'sheet' || activeSheetIdx >= ord.sheets.length - 1);
 }
 
 function applySectionFilter(secId) {
@@ -743,17 +751,35 @@ function autoUpdateSheetFabricTableQty(sh) {
   });
 }
 
+function formatFloorStatusSummary(w) {
+  const mode = String((w && w.floorMode) || 'std');
+  const mag = (typeof parseUnsignedFloat === 'function') ? parseUnsignedFloat(w && w.floorAdjust) : Math.abs(parseFloat(w && w.floorAdjust) || 0);
+  if (mode === 'float') {
+    const total = Math.round((1 + mag) * 100) / 100;
+    return `ลอยจากพื้นมากขึ้น +${mag} ซม. → รวมลอยจากพื้น ${total} ซม. (ลดความสูงผ้าลง -${mag} ซม. จากมาตรฐาน 1 ซม.)`;
+  }
+  if (mode === 'touch') {
+    return 'พอดีพื้น 0 ซม. (บวกคืนความสูงผ้า +1 ซม. จากมาตรฐานลอย 1 ซม.)';
+  }
+  if (mode === 'puddle') {
+    return `กองพื้น ${mag} ซม. (บวกเพิ่มความสูงผ้า +${Math.round((1 + mag) * 100) / 100} ซม. จากมาตรฐานลอย 1 ซม.)`;
+  }
+  return 'มาตรฐานฐานข้อมูล (ลอยจากพื้น 1 ซม.)';
+}
+
 /**
  * คำนวณแปลนงานม่านจั่ว
- * 1) ขนาดรางม่านจั่ว = ความยาวด้านเอียงของสามเหลี่ยม (พีทาโกรัส X² + Y² = Z²) ปัดเศษลงเป็นจำนวนเต็ม
- *    X = ความกว้างช่วงนั้นๆ, Y = ผลต่างความสูงของช่วงนั้นๆ
- * 2) ความสูงม่านจั่ว = ความสูงที่สูงที่สุดของช่วงนั้นๆ แล้วลดขนาดตามที่กำหนด (heightDeduct)
- * 3) ความกว้างผ้าม่าน = คำนวณตามสูตรของแต่ละรูปแบบม่านที่กำหนดไว้ในฐานข้อมูล (ใช้ขนาดรางเอียง Z เป็น RW)
+ * 1) ขนาดรางม่านจั่ว (Z): พีทาโกรัส X² + Y² = Z² (ปัดเศษลงเป็นจำนวนเต็ม Math.floor)
+ *    โดย X = ความสูงที่สูงสุดของบานนั้นๆ ลบด้วย ความสูงที่เตี้ยสุดของบานนั้นๆ (เฉพาะบานผ้าม่านผืนนั้น)
+ *        Y = ความกว้างของบานผ้าม่านผืนนั้นๆ (ไม่ใช่ทั้งหมด)
+ * 2) ความสูงม่านจั่ว = ความสูงที่สูงที่สุดของบาน/ช่วงนั้นๆ แล้วลดขนาดตามที่กำหนด (heightDeduct)
+ * 3) ความกว้างผ้าม่าน = คำนวณตามสูตรของแต่ละรูปแบบม่าน (ใช้ขนาดรางเอียง Z เป็น RW)
+ *    และปริมาณผ้าจะคำนวณเฉพาะเมื่อเลือกผ้าแล้วเท่านั้น
  */
 function calcGableSlopeLength(spanWidth, hLow, hHigh) {
-  const X = parseFloat(spanWidth) || 0;
-  const Y = Math.abs((parseFloat(hHigh) || 0) - (parseFloat(hLow) || 0));
-  if (X <= 0) return 0;
+  const X = Math.abs((parseFloat(hHigh) || 0) - (parseFloat(hLow) || 0));
+  const Y = parseFloat(spanWidth) || 0;
+  if (Y <= 0) return 0;
   return Math.floor(Math.sqrt((X * X) + (Y * Y)) + 1e-9);
 }
 
@@ -802,7 +828,7 @@ function autoCalculateGable(w, sh) {
   const ruleAll = masterDB.fabricCalcRules || [];
   const fab1 = resolveWindowFabricChoice(w, sh, 1);
   const fab2 = resolveWindowFabricChoice(w, sh, 2);
-  // บานจำลองสำหรับคำนวณ (ไม่หักลดซ้ำ เพราะความสูงม่านจั่วหักลดตาม heightDeduct แล้ว)
+  // บานจำลองสำหรับคำนวณม่านจั่ว (หักลดเฉพาะ heightDeduct ของจั่ว)
   const calcWin = Object.assign({}, w, { noRail: false, unequalSplit: false, calcMode: 'auto', manualFields: {} });
 
   const calcLayer = (layerNo, railZ, curtainH, piecesForSpan) => {
@@ -829,6 +855,7 @@ function autoCalculateGable(w, sh) {
       extraYards: w[`extraYards${layerNo}`] || 0,
       overrideRW: railZ,
       overrideRH: curtainH,
+      skipFloorAdjust: true,
     });
   };
 
@@ -856,16 +883,19 @@ function autoCalculateGable(w, sh) {
   };
 
   if (isSingleSpan) {
-    // ช่วงเดียว (แบบที่ 3 / 5): X = ความกว้างรวม, Y = |B - A|
-    fillSpan('Left', wTotal, fullA, fullB, Math.max(redANum, redBNum), String(w.pieces1 || 1));
+    // ช่วงเดียว (แบบที่ 3 / 5): X = |สูงสุด - เตี้ยสุด| ของบาน, Y = ความกว้างของบานนั้น
+    const pieces1 = Math.max(1, parseInt(w.pieces1, 10) || 1);
+    fillSpan('Left', wTotal, fullA, fullB, Math.max(redANum, redBNum), String(pieces1));
     g.slopeRight = '';
   } else {
-    // แบ่งซ้าย-ขวา (แบบที่ 1 / 2 / 4): ซ้าย X = กว้างซ้าย, Y = |B - A| | ขวา X = กว้างขวา, Y = |C - B|
+    // แบ่งซ้าย-ขวา (แบบที่ 1 / 2 / 4):
+    // บานซ้าย: X = |max(A,B) - min(A,B)|, Y = กว้างบานซ้ายเท่านั้น
+    // บานขวา: X = |max(B,C) - min(B,C)|, Y = กว้างบานขวาเท่านั้น
     fillSpan('Left', wLeft, fullA, fullB, Math.max(redANum, redBNum), '1');
     fillSpan('Right', wRight, fullB, fullC, Math.max(redBNum, redCNum), '1');
   }
 
-  // รวมจำนวนหลาของม่านจั่ว (ซ้าย + ขวา) เพื่อแสดงในตารางสินค้าม่านจั่ว
+  // รวมจำนวนหลาของม่านจั่ว (ซ้าย + ขวา) — ว่างเปล่าหากยังไม่ได้เลือกผ้า
   const sumYards = (...rows) => {
     const total = rows.reduce((s, r) => s + (r && r.t ? extractYardsFromCalcText(r.t) : 0), 0);
     return total > 0 ? String(Math.round(total * 10) / 10) : '';
@@ -873,7 +903,7 @@ function autoCalculateGable(w, sh) {
   if (!g.boQtyManual) g.boQty = sumYards(g.boLeft, g.boRight);
   if (!g.shQtyManual) g.shQty = sumYards(g.shLeft, g.shRight);
 
-  // ซิงค์ข้อมูลเข้ากับขนาดหลักของบานเพื่อให้แปลนหลักแสดงขนาดได้
+  // ซิงค์ความกว้าง/สูงวัดจริงเข้าบานหลักกรณีบานหลักยังว่าง
   const totalMeasW = isSingleSpan ? wTotal : (wLeft + wRight);
   const maxFullH = isSingleSpan ? Math.max(fullA, fullB) : Math.max(fullA, fullB, fullC);
   if (totalMeasW > 0 && !w.width) w.width = String(totalMeasW);
@@ -888,6 +918,68 @@ function autoCalculateWindow(w, sh) {
 
   if (w.specialType === 'gable') {
     autoCalculateGable(w, sh);
+    if (!isAllManual && w.gable) {
+      const g = w.gable;
+      const gType = String(g.type || '1');
+      const isSingleSpan = gType === '3' || gType === '5';
+      const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+      if (w.noRail) {
+        const railRes = computeWindowRailRow(w, sh);
+        if (!mf.railA) w.rail.a = railRes.a;
+        if (!mf.railB) w.rail.b = railRes.b;
+        if (!mf.railN) w.rail.n = railRes.n;
+        if (!mf.railT) w.rail.t = railRes.t;
+      } else if (isSingleSpan) {
+        if (!mf.railA) w.rail.a = g.railLeft.a || '';
+        if (!mf.railB) w.rail.b = g.railLeft.b || '';
+        if (!mf.railN) w.rail.n = g.railLeft.n || '';
+        if (!mf.railT) w.rail.t = g.railLeft.t || '';
+      } else {
+        const rL = num(g.railLeft.a), rR = num(g.railRight.a);
+        const effTracks = +w.railTracks || ((w.curtainStyle1 && w.curtainStyle2) ? 2 : 1);
+        const maxRailH = Math.max(num(g.railLeft.b), num(g.railRight.b));
+        const totalRailM = (rL > 0 ? Math.max(1, rL / 100) * effTracks : 0) + (rR > 0 ? Math.max(1, rR / 100) * effTracks : 0);
+        if (!mf.railA) w.rail.a = (rL && rR) ? `${rL}/${rR}` : String(rL || rR || '');
+        if (!mf.railB) w.rail.b = maxRailH > 0 ? String(maxRailH) : '';
+        if (!mf.railN) w.rail.n = (rL || rR) ? String(effTracks) : '';
+        if (!mf.railT) w.rail.t = totalRailM > 0 ? String(Math.round(totalRailM * 100) / 100) : '';
+      }
+
+      const syncMainLayerFromGable = (prefix, leftRow, rightRow) => {
+        const aF = prefix + 'A', bF = prefix + 'B', nF = prefix + 'N', tF = prefix + 'T';
+        const targetObj = prefix === 'bo' ? w.blackout : w.sheer;
+        const sumPanels = rowStr => {
+          const s = String(rowStr || '');
+          if (!s.includes('/')) return 0;
+          return parseInt(s.split('/')[0], 10) || 0;
+        };
+        if (isSingleSpan) {
+          if (!mf[aF]) targetObj.a = leftRow.a || '';
+          if (!mf[bF]) targetObj.b = leftRow.b || '';
+          if (!mf[nF]) targetObj.n = leftRow.n || '';
+          if (!mf[tF]) targetObj.t = leftRow.t || '';
+        } else {
+          const la = leftRow.a || '', ra = rightRow.a || '';
+          const lb = num(leftRow.b), rb = num(rightRow.b);
+          const ln = num(leftRow.n), rn = num(rightRow.n);
+          const totalPanels = sumPanels(leftRow.t) + sumPanels(rightRow.t);
+          const totalYards = (leftRow.t ? extractYardsFromCalcText(leftRow.t) : 0) + (rightRow.t ? extractYardsFromCalcText(rightRow.t) : 0);
+          if (!mf[aF]) targetObj.a = (la && ra) ? (la === ra ? la : `${la}/${ra}`) : (la || ra);
+          if (!mf[bF]) targetObj.b = Math.max(lb, rb) > 0 ? String(Math.max(lb, rb)) : '';
+          if (!mf[nF]) targetObj.n = (ln + rn) > 0 ? String(ln + rn) : '';
+          if (!mf[tF]) {
+            targetObj.t = totalYards > 0
+              ? (totalPanels > 0 ? `${totalPanels}/${Math.round(totalYards * 10) / 10}` : String(Math.round(totalYards * 10) / 10))
+              : '';
+          }
+        }
+      };
+      syncMainLayerFromGable('bo', g.boLeft, g.boRight);
+      syncMainLayerFromGable('sh', g.shLeft, g.shRight);
+
+      if (sh) autoUpdateSheetFabricTableQty(sh);
+      return;
+    }
   }
 
   const rw = +calcRailWidth(w) || +w.width || 0;
@@ -1565,6 +1657,19 @@ function windowEditorHTML(w, i, planOpenings) {
         ${calc('blackout', 'bo', isBlind1 ? style1 : 'ผ้าม่านทึบ', 'ผืน', unit1)}
         ${calc('sheer', 'sh', 'ผ้าม่านโปร่ง', 'ผืน', unit2)}
       </table>
+      <div style="margin-top:6px;padding:7px 9px;background:#eef6ff;border:1px dashed #60a5fa;border-radius:6px">
+        <div class="grid2">
+          <label>ระยะลอย / กองพื้น (ฐานข้อมูลกำหนดมาตรฐานลอยจากพื้น 1 ซม.)
+            <select ${b('floorMode')}>${FLOOR_CLEARANCE_MODES.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('')}</select>
+          </label>
+          ${(w.floorMode === 'float' || w.floorMode === 'puddle') ? `
+            <label>${w.floorMode === 'float' ? 'ระบุระยะลอยเพิ่ม (ซม. — ไม่ดูเครื่องหมาย +/-)' : 'ระบุระยะกองพื้น (ซม. — ไม่ดูเครื่องหมาย +/-)'}
+              <input type="text" inputmode="decimal" ${b('floorAdjust')} placeholder="${w.floorMode === 'float' ? 'เช่น 2 (ยิ่งลอยเพิ่ม)' : 'เช่น 3 (ยิ่งกองพื้น)'}">
+            </label>
+          ` : `<div></div>`}
+        </div>
+        <div style="font-size:11.5px;color:#1e3a8a;margin-top:3px">ผลปรับอัตโนมัติ: <b>${esc(formatFloorStatusSummary(w))}</b></div>
+      </div>
     </div>
   </div>`;
 }
@@ -1736,7 +1841,7 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
               btn.classList.add('is-manual');
             }
           }
-        } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit)$/.test(field)) {
+        } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|floorMode|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit)$/.test(field)) {
           if (!curtainNeedsHook(w.curtainStyle1, w.curtainStyle2)) w.hookSize = '';
           w.paneStyle = String(getPaneCount(w));
           if (field === 'unequalSplit' && w.unequalSplit) {
@@ -1791,7 +1896,10 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
           if (winCard) syncSheetInputs(winCard);
           const popEl = document.getElementById('pdfQuickPopover');
           if (popEl && !popEl.hidden) syncSheetInputs(popEl);
-        } else if (/^(width|height|extL|extR|extT|extB|customRailW|customRailH|noRailDeductCustom|extraYards1|extraYards2|gable\..+|sideJoin\..+)$/.test(field)) {
+        } else if (/^(width|height|extL|extR|extT|extB|customRailW|customRailH|floorAdjust|noRailDeductCustom|extraYards1|extraYards2|gable\..+|sideJoin\..+)$/.test(field)) {
+          if (field === 'gable.title' && w.gable) {
+            w.gable.titleManual = !!String(w.gable.title || '').trim();
+          }
           if (field === 'customRailW') w.manualFields.railW = true;
           if (field === 'customRailH') w.manualFields.railH = true;
           if (w.calcMode !== 'manual') {
@@ -1996,6 +2104,7 @@ function onFieldInput(e) {
       const inferred = inferCornerShapeFromPlanItem(op);
       if (inferred !== '1') w.cornerShape = inferred;
       renderWindowsEditor();
+      if (el.closest('#pdfQuickPopover') && typeof refreshActivePopover === 'function') refreshActivePopover();
       changed();
     }
     return;
@@ -2061,26 +2170,75 @@ const actions = {
   addWin() {
     const sh = currentSheet(); if (!sh) return;
     sh.windows.push(newWindow(sh.windows.length + 1));
-    renderWindowsEditor(); renderTopSheetNav(); changed();
+    const newIdx = sh.windows.length - 1;
+    renderWindowsEditor(); renderTopSheetNav();
+    if (activePopoverCtx && activePopoverCtx.type === 'win') {
+      activePopoverCtx.wIdx = newIdx;
+      refreshActivePopover();
+    } else {
+      refreshActivePopover();
+    }
+    syncPreviewToSheet(activeSheetIdx, Math.floor(newIdx / 4));
+    changed();
   },
   delWin(i) {
     const sh = currentSheet(); if (!sh) return;
     if (sh.windows.length <= 1) { alert('ต้องมีอย่างน้อย 1 บานในหน้านี้'); return; }
     if (!confirm(`ลบหน้าต่าง/ประตู จุดที่ ${i + 1}?`)) return;
     sh.windows.splice(i, 1);
-    renderWindowsEditor(); renderTopSheetNav(); changed();
+    renderWindowsEditor(); renderTopSheetNav();
+    if (activePopoverCtx && activePopoverCtx.type === 'win') {
+      activePopoverCtx.wIdx = Math.max(0, Math.min(activePopoverCtx.wIdx, sh.windows.length - 1));
+    }
+    refreshActivePopover();
+    changed();
   },
   dupWin(i) {
     const sh = currentSheet(); if (!sh) return;
     const copy = JSON.parse(JSON.stringify(sh.windows[i]));
     copy.planNo = String(sh.windows.length + 1);
     sh.windows.splice(i + 1, 0, copy);
-    renderWindowsEditor(); renderTopSheetNav(); changed();
+    renderWindowsEditor(); renderTopSheetNav();
+    if (activePopoverCtx && activePopoverCtx.type === 'win') {
+      activePopoverCtx.wIdx = i + 1;
+    }
+    refreshActivePopover();
+    changed();
   },
   upWin(i) {
     const sh = currentSheet(); if (!sh || i <= 0) return;
     const w = sh.windows; [w[i - 1], w[i]] = [w[i], w[i - 1]];
-    renderWindowsEditor(); changed();
+    renderWindowsEditor();
+    if (activePopoverCtx && activePopoverCtx.type === 'win') {
+      if (activePopoverCtx.wIdx === i) activePopoverCtx.wIdx = i - 1;
+      else if (activePopoverCtx.wIdx === i - 1) activePopoverCtx.wIdx = i;
+    }
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
+  downWin(i) {
+    const sh = currentSheet(); if (!sh || i >= sh.windows.length - 1) return;
+    const w = sh.windows; [w[i + 1], w[i]] = [w[i], w[i + 1]];
+    renderWindowsEditor();
+    if (activePopoverCtx && activePopoverCtx.type === 'win') {
+      if (activePopoverCtx.wIdx === i) activePopoverCtx.wIdx = i + 1;
+      else if (activePopoverCtx.wIdx === i + 1) activePopoverCtx.wIdx = i;
+    }
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
+  moveSheet(fromIdx, dir) {
+    const ord = currentOrder(); if (!ord || !Array.isArray(ord.sheets)) return;
+    const toIdx = fromIdx + dir;
+    if (fromIdx < 0 || fromIdx >= ord.sheets.length || toIdx < 0 || toIdx >= ord.sheets.length) return;
+    const [moved] = ord.sheets.splice(fromIdx, 1);
+    ord.sheets.splice(toIdx, 0, moved);
+    if (activeSheetIdx === fromIdx) activeSheetIdx = toIdx;
+    else if (activeSheetIdx === toIdx) activeSheetIdx = fromIdx;
+    activeTabMode = 'sheet';
+    renderAllWorkspace();
+    syncPreviewToSheet(activeSheetIdx, 0);
+    touchAndSave();
   },
   setAllAuto(i) {
     const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
@@ -2245,10 +2403,12 @@ const actions = {
     syncWindowsFromPlan(sh);
     renderWindowsEditor();
     renderTopSheetNav();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
   },
   openPlan() {
     const sh = currentSheet(); if (!sh) return;
+    const prevCtx = activePopoverCtx ? Object.assign({}, activePopoverCtx) : null;
     closePdfQuickPopover();
     PlanEditor.open(sh.plan.items, items => {
       sh.plan.items = items;
@@ -2257,6 +2417,9 @@ const actions = {
       renderWindowsEditor();
       renderTopSheetNav();
       changed();
+      if (prevCtx && prevCtx.type === 'map') {
+        openPdfQuickPopover(prevCtx);
+      }
     });
   },
   clearLogo() {
@@ -2347,9 +2510,9 @@ document.addEventListener('click', e => {
 });
 
 /* =========================================================
-   Right-Only Mode (ซ่อนแผงซ้ายได้) + Pinpoint Floating Popover Editor บนใบงานด้านขวา
+   Right-Only Mode (ซ่อนแผงซ้ายอัตโนมัติ) + Pinpoint Floating Popover Editor บนใบงานด้านขวา
    ========================================================= */
-let rightOnlyMode = false;
+let rightOnlyMode = true;
 let activePopoverCtx = null;
 
 function setRightOnlyMode(on) {
@@ -2383,6 +2546,45 @@ function ensureQuickPopoverEl() {
     e.stopPropagation();
     if (e.target.closest('[data-pop-close]')) {
       closePdfQuickPopover();
+      return;
+    }
+    // อนุญาตให้ทุกปุ่ม [data-act] ภายใน Popover (เช่น openPlan, syncFromPlan, addWin, delWin, addLayer, setAllAuto ฯลฯ) ทำงานได้ครบเหมือนแผงซ้าย
+    const actBtn = e.target.closest('[data-act]');
+    if (actBtn) {
+      const fn = actions[actBtn.dataset.act];
+      if (fn) {
+        fn(
+          actBtn.dataset.i !== undefined ? +actBtn.dataset.i : undefined,
+          actBtn.dataset.li !== undefined ? +actBtn.dataset.li : undefined,
+          actBtn
+        );
+      }
+      return;
+    }
+    const jumpWinBtn = e.target.closest('[data-pop-win-jump]');
+    if (jumpWinBtn) {
+      const targetIdx = +jumpWinBtn.dataset.popWinJump;
+      activePopoverCtx = { type: 'win', sIdx: activeSheetIdx, wIdx: targetIdx, subTab: 'dims' };
+      renderActivePopoverContent({ initialOpen: true });
+      positionPopoverNear(pop);
+      syncPreviewToSheet(activeSheetIdx, Math.floor(targetIdx / 4));
+      return;
+    }
+    const newPlanCustBtn = e.target.closest('[data-pop-newplan]');
+    if (newPlanCustBtn) {
+      const ord = currentOrder();
+      if (!ord || !ord.customer || !String(ord.customer.name || '').trim()) {
+        alert('กรุณาระบุชื่อลูกค้าก่อนสร้างแปลนงานเพิ่ม');
+        return;
+      }
+      closePdfQuickPopover();
+      createNewPlanForCustomer(ord);
+      return;
+    }
+    const reorderBtn = e.target.closest('[data-pop-reorder-sheets]');
+    if (reorderBtn) {
+      closePdfQuickPopover();
+      if (typeof openSheetOrderModal === 'function') openSheetOrderModal();
       return;
     }
     const tabBtn = e.target.closest('[data-pop-wintab]');
@@ -2436,6 +2638,22 @@ function ensureQuickPopoverEl() {
       }
       return;
     }
+    const clearLogoBtn = e.target.closest('[data-pop-logo-clear]');
+    if (clearLogoBtn) {
+      const ord = currentOrder();
+      if (ord && ord.company) {
+        ord.company.logo = '';
+        renderActivePopoverContent({ preserveScroll: true });
+        syncSharedInputs();
+        changed();
+      }
+      return;
+    }
+    const planMiniEl = e.target.closest('#popPlanMini');
+    if (planMiniEl) {
+      actions.openPlan();
+      return;
+    }
     const pickRailBtn = e.target.closest('[data-pop-pick-rail]');
     if (pickRailBtn) {
       const rKey = pickRailBtn.dataset.popPickRail;
@@ -2451,6 +2669,60 @@ function ensureQuickPopoverEl() {
           changed();
         }
       }
+      return;
+    }
+  });
+
+  pop.addEventListener('change', e => {
+    if (e.target.id === 'popExistingCustPick') {
+      const srcId = e.target.value;
+      if (!srcId) return;
+      const srcOrd = orders.find(o => o.id === srcId);
+      const ord = currentOrder();
+      if (srcOrd && ord) {
+        ord.customer.name = srcOrd.customer.name || '';
+        ord.customer.mobile = srcOrd.customer.mobile || '';
+        ord.customer.tel = srcOrd.customer.tel || '';
+        ord.customer.email = srcOrd.customer.email || '';
+        if (!ord.customer.houseNo && !ord.customer.building) {
+          ['houseNo', 'floor', 'moo', 'road', 'building', 'soi', 'subdistrict', 'district', 'province', 'zipcode'].forEach(k => {
+            ord.customer[k] = srcOrd.customer[k] || '';
+          });
+        }
+        renderActivePopoverContent({ preserveScroll: true });
+        syncSharedInputs();
+        changed(null, 'customer.name');
+      }
+      e.target.value = '';
+      return;
+    }
+    if (e.target.id === 'popStaffPick') {
+      const idx = e.target.value;
+      if (idx === '') return;
+      const st = masterDB.staff[+idx];
+      const ord = currentOrder();
+      if (st && ord) {
+        ord.staff.name = st.name || '';
+        ord.staff.dept = st.dept || '';
+        ord.staff.branch = st.branch || '';
+        renderActivePopoverContent({ preserveScroll: true });
+        syncSharedInputs();
+        changed(null, 'staff.name');
+      }
+      e.target.value = '';
+      return;
+    }
+    if (e.target.id === 'popLogoFile') {
+      const f = e.target.files[0]; if (!f) return;
+      const ord = currentOrder(); if (!ord) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        ord.company.logo = rd.result;
+        renderActivePopoverContent({ preserveScroll: true });
+        syncSharedInputs();
+        changed();
+      };
+      rd.readAsDataURL(f);
       return;
     }
   });
@@ -2503,7 +2775,7 @@ function refreshActivePopover() {
 function refreshActivePopoverIfStructural(changedField) {
   const pop = document.getElementById('pdfQuickPopover');
   if (!pop || pop.hidden || !activePopoverCtx) return;
-  if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|unequalSplit)$/.test(changedField)) {
+  if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|unequalSplit|floorMode)$/.test(changedField)) {
     renderActivePopoverContent({ preserveScroll: true });
   }
 }
@@ -2625,6 +2897,16 @@ function renderActivePopoverContent(opts = {}) {
       <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'T', rowTitle + ' รวม')}<input ${b(key + '.t')} placeholder="${u2}"></div></td></tr>`;
 
     stickyNavHTML = `
+      <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:5px;padding-bottom:4px;border-bottom:1px dashed #cbd5e1">
+        <div class="inline" style="flex-wrap:wrap;gap:3px">
+          <span style="font-size:11px;font-weight:700;color:#475569">บานในหน้านี้:</span>
+          ${(sh.windows || []).map((ww, wi) => `<button type="button" class="${wi === i ? 'primary' : ''}" data-pop-win-jump="${wi}" style="padding:2px 7px;font-size:11px">${esc(ww.planNo || (wi + 1))}. ${esc(ww.label || 'บาน ' + (wi + 1))}</button>`).join('')}
+        </div>
+        <div class="inline" style="gap:3px">
+          <button type="button" data-act="openPlan" style="padding:2px 7px;font-size:11px" title="เปิดหน้าต่างวาดแปลนห้อง">🗺️ แปลนห้อง</button>
+          <button type="button" data-pop-reorder-sheets="1" style="padding:2px 7px;font-size:11px" title="จัดลำดับใบแปลนงาน">📑 จัดลำดับใบ</button>
+        </div>
+      </div>
       <div class="pop-tabs">
         <button type="button" class="${subTab === 'dims' ? 'active' : ''}" data-pop-wintab="dims">1. ขนาดรอบบาน</button>
         <button type="button" class="${subTab === 'style' ? 'active' : ''}" data-pop-wintab="style">2. รูปแบบม่าน & ลดความสูง</button>
@@ -2927,6 +3209,20 @@ function renderActivePopoverContent(opts = {}) {
           ${calcRowEd('sheer', 'sh', (w.rowLabel3 || 'ผ้าม่านโปร่ง'), 'ผืน', isBlind2 ? 'ตร.ม.' : 'หน้า/หลา')}
         </table>
 
+        <div style="margin-top:6px;padding:7px 9px;background:#eef6ff;border:1px dashed #60a5fa;border-radius:6px">
+          <div class="grid2">
+            <label>ระยะลอย / กองพื้น (ฐานข้อมูลกำหนดมาตรฐานลอยจากพื้น 1 ซม.)
+              <select ${b('floorMode')}>${FLOOR_CLEARANCE_MODES.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('')}</select>
+            </label>
+            ${(w.floorMode === 'float' || w.floorMode === 'puddle') ? `
+              <label>${w.floorMode === 'float' ? 'ระบุระยะลอยเพิ่ม (ซม. — ไม่ดูเครื่องหมาย +/-)' : 'ระบุระยะกองพื้น (ซม. — ไม่ดูเครื่องหมาย +/-)'}
+                <input type="text" inputmode="decimal" ${b('floorAdjust')} placeholder="${w.floorMode === 'float' ? 'เช่น 2 (ยิ่งลอยเพิ่ม)' : 'เช่น 3 (ยิ่งกองพื้น)'}">
+              </label>
+            ` : `<div></div>`}
+          </div>
+          <div style="font-size:11.5px;color:#1e3a8a;margin-top:3px">ผลปรับอัตโนมัติ: <b>${esc(formatFloorStatusSummary(w))}</b></div>
+        </div>
+
         <div class="subcard" style="margin-top:6px;background:#f8fafc;border:1px solid #dbe2ea">
           <div class="grid2">
             <label>หน่วยช่องชั้น/ผืน (รางม่าน)
@@ -3088,10 +3384,12 @@ function renderActivePopoverContent(opts = {}) {
         ` : ''}
       </section>
 
-      <div class="inline" style="justify-content:space-between;margin-top:8px;padding-top:6px;border-top:1px solid #e1e6ef">
-        <div class="inline">
+      <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:4px;margin-top:8px;padding-top:6px;border-top:1px solid #e1e6ef">
+        <div class="inline" style="flex-wrap:wrap;gap:4px">
           <button type="button" data-act="addWin">➕ เพิ่มบานใหม่</button>
           <button type="button" data-act="dupWin" data-i="${i}">⧉ คัดลอกบานนี้</button>
+          <button type="button" data-act="upWin" data-i="${i}" ${i === 0 ? 'disabled' : ''}>▲ ย้ายขึ้น</button>
+          <button type="button" data-act="downWin" data-i="${i}" ${i >= (sh.windows || []).length - 1 ? 'disabled' : ''}>▼ ย้ายลง</button>
           <button type="button" class="danger" data-act="delWin" data-i="${i}">🗑️ ลบบานนี้</button>
         </div>
         <button type="button" class="primary" data-pop-close="1">✔ เสร็จสิ้น</button>
@@ -3099,7 +3397,23 @@ function renderActivePopoverContent(opts = {}) {
     `;
   } else if (ctx.type === 'customer') {
     title = '👤 แก้ไขข้อมูลลูกค้า และสถานที่ติดตั้ง';
+    const accessibleCusts = orders.filter(o => canAccessOrder(o) && o.customer && String(o.customer.name || '').trim());
+    const custMap = new Map();
+    accessibleCusts.forEach(o => {
+      const nk = String(o.customer.name).trim().toLowerCase();
+      if (!custMap.has(nk)) custMap.set(nk, { order: o, count: 1 });
+      else custMap.get(nk).count++;
+    });
+    const custList = Array.from(custMap.values());
+    const custPickOpts = `<option value="">-- เลือกชื่อลูกค้าที่มีอยู่แล้ว เพื่อดึงข้อมูล (${custList.length} รายชื่อ) --</option>` +
+      custList.map(({ order: co, count }) => `<option value="${esc(co.id)}">${esc(co.customer.name)} (${esc(co.customer.mobile || '-')} • มี ${count} แปลนงาน)</option>`).join('');
     bodyHTML = `
+      <section class="pop-sec-card" style="background:#f0f7ff;border:1px solid #bfdbfe">
+        <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <select id="popExistingCustPick" style="flex:1;min-width:220px">${custPickOpts}</select>
+          <button type="button" data-pop-newplan="1" title="สร้างแปลนงานเพิ่มให้ลูกค้ารายนี้">🏠+ สร้างแปลนใหม่ให้ลูกค้ารายนี้</button>
+        </div>
+      </section>
       <section class="pop-sec-card">
         <div class="pop-sec-title"><span class="pop-sec-badge">ข้อมูลลูกค้า</span><b>ชื่อลูกค้าและการติดต่อ</b></div>
         <div class="grid2">
@@ -3131,7 +3445,18 @@ function renderActivePopoverContent(opts = {}) {
     `;
   } else if (ctx.type === 'staff') {
     title = '🧑‍💼 แก้ไขข้อมูลพนักงาน และส่วนลด';
+    const curUser = getCurrentUser();
+    const visibleStaff = (curUser && curUser.role !== 'admin')
+      ? masterDB.staff.map((s, si) => ({ s, si })).filter(({ s }) => String(s.username || '').toLowerCase() === String(curUser.username || '').toLowerCase())
+      : masterDB.staff.map((s, si) => ({ s, si }));
+    const staffPickOpts = `<option value="">-- เลือกพนักงานจากฐานข้อมูล (${visibleStaff.length} คน) --</option>` +
+      visibleStaff.map(({ s, si }) => `<option value="${si}">${esc(s.name)} (${esc(s.dept || '-')} / ${esc(s.branch || '-')})</option>`).join('');
     bodyHTML = `
+      <section class="pop-sec-card" style="background:#f0f7ff;border:1px solid #bfdbfe">
+        <label>เลือกพนักงานจากฐานข้อมูล
+          <select id="popStaffPick">${staffPickOpts}</select>
+        </label>
+      </section>
       <section class="pop-sec-card">
         <div class="pop-sec-title"><span class="pop-sec-badge">พนักงาน</span><b>ข้อมูลผู้รับผิดชอบ</b></div>
         <div class="grid2">
@@ -3152,15 +3477,37 @@ function renderActivePopoverContent(opts = {}) {
       </section>
     `;
   } else if (ctx.type === 'map') {
-    title = '🗺️ แก้ไขชื่อห้อง แปลนห้อง และหมายเหตุห้อง';
+    title = '🗺️ แก้ไขชื่อห้อง แปลนห้อง จุดหน้าต่าง และหมายเหตุห้อง';
+    const popPlanSvg = (typeof planPreviewSVG === 'function') ? planPreviewSVG((sh.plan && sh.plan.items) || []) : '';
+    const winRowsHtml = (sh.windows || []).map((ww, wi) => `
+      <div class="inline" style="justify-content:space-between;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;margin-bottom:4px">
+        <div style="font-size:12px">
+          <b>จุดที่ ${esc(ww.planNo || (wi + 1))}</b> (${esc(ww.label || '-')})
+          <span style="color:#64748b;margin-left:4px">${esc(ww.width || '-')} × ${esc(ww.height || '-')} ซม.</span>
+        </div>
+        <div class="inline" style="gap:3px">
+          <button type="button" data-pop-win-jump="${wi}" title="แก้ไขจุดนี้">✏️ แก้ไข</button>
+          <button type="button" data-act="upWin" data-i="${wi}" ${wi === 0 ? 'disabled' : ''} title="ย้ายขึ้น">▲</button>
+          <button type="button" data-act="downWin" data-i="${wi}" ${wi >= (sh.windows || []).length - 1 ? 'disabled' : ''} title="ย้ายลง">▼</button>
+          <button type="button" class="danger" data-act="delWin" data-i="${wi}" title="ลบบานนี้">✕</button>
+        </div>
+      </div>
+    `).join('');
     bodyHTML = `
       <section class="pop-sec-card">
         <div class="pop-sec-title"><span class="pop-sec-badge">ข้อมูลห้อง</span><b>ชื่อห้องและสภาพหน้างาน</b></div>
-        <div class="inline" style="justify-content:space-between;margin-bottom:6px">
-          <label style="flex:1">ชื่อห้อง
+        <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+          <label style="flex:1;min-width:180px">ชื่อห้อง
             <input data-sheet="room.name" data-pop-autofocus="1" placeholder="เช่น ห้องนอนใหญ่, ห้องรับแขก">
           </label>
-          <button type="button" class="primary" data-act="openPlan" style="margin-top:16px">✏️ วาด/แก้ไขแปลนห้อง</button>
+          <div class="inline" style="margin-top:16px">
+            <button type="button" class="primary" data-act="openPlan">✏️ วาดแปลนห้อง &amp; กำหนดจุดหน้าต่าง/ประตู</button>
+            <button type="button" data-act="syncFromPlan" title="อัปเดตรายการหน้าต่าง/ประตูตามจุดในแปลน">🔄 ดึงจุดจากแปลน</button>
+            <button type="button" data-pop-reorder-sheets="1" title="จัดลำดับหน้า/ใบแปลนงาน">📑 จัดลำดับใบแปลน</button>
+          </div>
+        </div>
+        <div id="popPlanMini" style="border:1px dashed #60a5fa;border-radius:8px;padding:6px;background:#f8fafc;cursor:pointer;text-align:center;margin-bottom:8px" title="คลิกเพื่อเปิดหน้าต่างวาดแปลนห้อง &amp; กำหนดจุดหน้าต่าง/ประตู">
+          ${popPlanSvg || '<div style="padding:14px;color:#1d4ed8;font-size:12px">📐 ยังไม่มีแปลนห้อง — คลิกที่นี่เพื่อวาดแปลนห้องและกำหนดจุดหน้าต่าง/ประตู</div>'}
         </div>
         <div class="opts">
           <div><span class="olbl">แอร์ผนัง</span>
@@ -3180,6 +3527,13 @@ function renderActivePopoverContent(opts = {}) {
           <label>ลำดับอ้างอิง <input data-sheet="room.refNo"></label>
           <label>โปรโมชัน <input data-sheet="room.promo"></label>
         </div>
+      </section>
+      <section class="pop-sec-card">
+        <div class="inline" style="justify-content:space-between;margin-bottom:6px">
+          <b>🪟 รายการหน้าต่าง / ประตูในหน้านี้ (${(sh.windows || []).length} บาน)</b>
+          <button type="button" data-act="addWin">➕ เพิ่มบานใหม่</button>
+        </div>
+        ${winRowsHtml || '<div class="hint">ยังไม่มีรายการหน้าต่าง/ประตู</div>'}
       </section>
       <section class="pop-sec-card">
         <div class="inline" style="justify-content:space-between;margin-bottom:4px">
@@ -3310,6 +3664,7 @@ function renderActivePopoverContent(opts = {}) {
                   <label><input type="checkbox" data-sheet="rods.${dk}.wood.on"> ลายไม้</label><input type="number" min="0" data-sheet="rods.${dk}.wood.qty" placeholder="อัน">
                   <label><input type="checkbox" data-sheet="rods.${dk}.alu.on"> อลูมิเนียม</label><input type="number" min="0" data-sheet="rods.${dk}.alu.qty" placeholder="อัน">
                   <label><input type="checkbox" data-sheet="rods.${dk}.acrylic.on"> อะคริลิค</label><input type="number" min="0" data-sheet="rods.${dk}.acrylic.qty" placeholder="อัน">
+                  <label><input type="checkbox" data-sheet="rods.${dk}.other.on"><input data-sheet="rods.${dk}.other.name" placeholder="อื่นๆ" style="width:82px"></label><input type="number" min="0" data-sheet="rods.${dk}.other.qty" placeholder="อัน">
                   <label><input type="checkbox" data-sheet="rods.${dk}.size120"> ขนาด 120 ซม.</label><span></span>
                   <label>ขนาดอื่น (ซม.)</label><input type="number" min="0" data-sheet="rods.${dk}.sizeCustom">
                 </div>
@@ -3336,6 +3691,27 @@ function renderActivePopoverContent(opts = {}) {
           `).join('')}
         </section>
       ` : ''}
+    `;
+  } else if (ctx.type === 'company') {
+    title = '🏢 แก้ไขข้อมูลบริษัท แบบฟอร์ม และโลโก้';
+    const hasLogo = !!(ord.company && ord.company.logo);
+    bodyHTML = `
+      <section class="pop-sec-card">
+        <div class="pop-sec-title"><span class="pop-sec-badge">หัวกระดาษ</span><b>ข้อมูลบริษัทและแบบฟอร์ม</b></div>
+        <div class="grid2">
+          <label>ชื่อบริษัท / โลโก้ (ข้อความ) <input data-shared="company.name" data-pop-autofocus="1"></label>
+          <label>ชื่อแบบฟอร์ม <input data-shared="company.title"></label>
+          <label class="full">ที่อยู่ / ติดต่อ (หลายบรรทัด) <textarea rows="3" data-shared="company.address"></textarea></label>
+        </div>
+      </section>
+      <section class="pop-sec-card">
+        <div class="pop-sec-title"><span class="pop-sec-badge">โลโก้</span><b>อัปโหลดโลโก้บริษัท</b></div>
+        <div class="inline" style="flex-wrap:wrap;gap:8px;margin-top:4px">
+          <input type="file" id="popLogoFile" accept="image/*" style="max-width:240px">
+          ${hasLogo ? `<button type="button" class="danger" data-pop-logo-clear="1">✕ ลบโลโก้</button>` : ''}
+        </div>
+        ${hasLogo ? `<div style="margin-top:8px"><img src="${ord.company.logo}" alt="logo" style="max-height:58px;border:1px solid #cbd5e1;border-radius:4px;padding:2px;background:#fff"></div>` : ''}
+      </section>
     `;
   } else if (ctx.type === 'sign') {
     title = '✍️ แก้ไขข้อมูลผู้ลงนาม และวันที่';
@@ -3485,6 +3861,7 @@ document.getElementById('preview').addEventListener('click', e => {
 
   if (e.target.closest('.s-hd')) {
     switchToCustomerSection('secCompany', '[data-shared="company.name"]');
+    openPdfQuickPopover({ type: 'company', sIdx }, e.clientX, e.clientY);
     return;
   }
   if (e.target.closest('.s-cust .disc') || e.target.closest('.s-cust .cr')) {
@@ -3500,6 +3877,12 @@ document.getElementById('preview').addEventListener('click', e => {
   if (e.target.closest('.s-sign')) {
     switchToCustomerSection('secSign', '[data-shared="sign.requester"]');
     openPdfQuickPopover({ type: 'sign', sIdx }, e.clientX, e.clientY);
+    return;
+  }
+  if (e.target.closest('.s-map .pbox')) {
+    switchToSheetSection(sIdx, 'secPlan', '[data-sheet="room.name"]');
+    closePdfQuickPopover();
+    actions.openPlan();
     return;
   }
   if (e.target.closest('.s-map')) {
@@ -3583,19 +3966,6 @@ document.getElementById('preview').addEventListener('click', e => {
   }
 });
 
-// ดับเบิลคลิกที่รูปแปลนห้องบนใบ PDF ด้านขวา -> เปิดหน้าต่างวาดแปลนห้องทันที
-document.getElementById('preview').addEventListener('dblclick', e => {
-  const pbox = e.target.closest('.s-map .pbox');
-  if (!pbox) return;
-  const pageEl = pbox.closest('.page[data-sheet-idx]');
-  if (pageEl) {
-    activeTabMode = 'sheet';
-    activeSheetIdx = +pageEl.dataset.sheetIdx;
-    renderAllWorkspace();
-  }
-  actions.openPlan();
-});
-
 document.getElementById('planMini').addEventListener('click', () => actions.openPlan());
 document.getElementById('btnGoFirstRoom').addEventListener('click', () => {
   activeTabMode = 'sheet';
@@ -3661,6 +4031,124 @@ document.getElementById('btnDelSheet').addEventListener('click', () => {
   syncPreviewToSheet(activeSheetIdx, 0);
   touchAndSave();
 });
+
+function renderSheetOrderModal() {
+  const ord = currentOrder();
+  const body = document.getElementById('sheetOrderBody');
+  if (!ord || !body) return;
+  const allPages = (typeof expandOrderPages === 'function') ? expandOrderPages(ord) : [];
+  const totalSheets = ord.sheets.length;
+
+  body.innerHTML = ord.sheets.map((sh, sIdx) => {
+    const leafPages = allPages.filter(p => p.sIdx === sIdx);
+    const roomName = (sh.room && sh.room.name) ? sh.room.name : 'ยังไม่ระบุชื่อห้อง';
+    const winCount = (sh.windows || []).length;
+
+    const leafRows = leafPages.map((p, li) => {
+      const isCont = li > 0 || p.pageType !== 'standard' || p.cIdx > 0;
+      let leafTitle = '';
+      if (p.pageType === 'standard' && p.cIdx === 0) {
+        const wLen = (p.wins || []).length;
+        leafTitle = `📄 หน้าเริ่มต้น (จุดที่ 1–${Math.max(wLen, 1)})`;
+      } else if (p.pageType === 'standard') {
+        const fromNo = (p.startNo != null ? p.startNo : p.cIdx * 4) + 1;
+        const toNo = fromNo + Math.max((p.wins || []).length, 1) - 1;
+        leafTitle = `📄 หน้าต่อ (จุดที่ ${fromNo}–${toNo})`;
+      } else if (p.pageType === 'gable') {
+        const wLabel = (p.win && p.win.label) || `จุดที่ ${(p.wIdx || 0) + 1}`;
+        leafTitle = `🔺 หน้าพิเศษ: ม่านจั่ว (${esc(wLabel)})`;
+      } else if (p.pageType === 'side_join') {
+        const wLabel = (p.win && p.win.label) || `จุดที่ ${(p.wIdx || 0) + 1}`;
+        leafTitle = `📐 หน้าพิเศษ: เย็บต่อด้านข้าง (${esc(wLabel)})`;
+      } else {
+        leafTitle = `📄 หน้า ${li + 1}`;
+      }
+      return `
+        <div class="reorder-leaf-item ${isCont ? 'is-cont' : ''}">
+          <span>${leafTitle}</span>
+          ${isCont
+            ? `<span class="inline" style="gap:6px"><span class="reorder-cont-lock">🔒 หน้าต่อจากหน้าเริ่มต้น — ห้ามเลื่อนขึ้นก่อนหน้าเริ่มต้น</span></span>`
+            : `<span class="hint">หน้าเริ่มต้นของชุด</span>`}
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="reorder-sheet-card ${sIdx === activeSheetIdx && activeTabMode === 'sheet' ? 'active' : ''}">
+        <div class="reorder-sheet-hd">
+          <div>
+            <b>ชุดที่ ${sIdx + 1}: 🏠 ${esc(roomName)}</b>
+            <small style="color:#475569;margin-left:6px">(${winCount} บาน • ${leafPages.length || 1} หน้ากระดาษ)</small>
+          </div>
+          <div class="inline" style="gap:4px">
+            <button type="button" data-sheet-move="${sIdx}" data-dir="-1" ${sIdx === 0 ? 'disabled' : ''}>▲ เลื่อนขึ้น</button>
+            <button type="button" data-sheet-move="${sIdx}" data-dir="1" ${sIdx >= totalSheets - 1 ? 'disabled' : ''}>▼ เลื่อนลง</button>
+            <button type="button" data-sheet-focus="${sIdx}">👁️ เปิดหน้านี้</button>
+          </div>
+        </div>
+        <div class="reorder-leaf-list">${leafRows || '<div class="reorder-leaf-item">📄 หน้าเริ่มต้น</div>'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openSheetOrderModal() {
+  const modal = document.getElementById('sheetOrderModal');
+  if (!modal) return;
+  renderSheetOrderModal();
+  modal.hidden = false;
+}
+
+const btnMoveSheetLeft = document.getElementById('btnMoveSheetLeft');
+if (btnMoveSheetLeft) {
+  btnMoveSheetLeft.addEventListener('click', () => {
+    if (activeTabMode !== 'sheet') return;
+    actions.moveSheet(activeSheetIdx, -1);
+  });
+}
+
+const btnMoveSheetRight = document.getElementById('btnMoveSheetRight');
+if (btnMoveSheetRight) {
+  btnMoveSheetRight.addEventListener('click', () => {
+    if (activeTabMode !== 'sheet') return;
+    actions.moveSheet(activeSheetIdx, 1);
+  });
+}
+
+const btnReorderSheets = document.getElementById('btnReorderSheets');
+if (btnReorderSheets) {
+  btnReorderSheets.addEventListener('click', openSheetOrderModal);
+}
+
+const sheetOrderClose = document.getElementById('sheetOrderClose');
+if (sheetOrderClose) {
+  sheetOrderClose.addEventListener('click', () => {
+    document.getElementById('sheetOrderModal').hidden = true;
+  });
+}
+
+const sheetOrderBody = document.getElementById('sheetOrderBody');
+if (sheetOrderBody) {
+  sheetOrderBody.addEventListener('click', e => {
+    const moveBtn = e.target.closest('[data-sheet-move]');
+    if (moveBtn) {
+      const sIdx = +moveBtn.dataset.sheetMove;
+      const dir = +moveBtn.dataset.dir;
+      actions.moveSheet(sIdx, dir);
+      renderSheetOrderModal();
+      return;
+    }
+    const focusBtn = e.target.closest('[data-sheet-focus]');
+    if (focusBtn) {
+      const sIdx = +focusBtn.dataset.sheetFocus;
+      document.getElementById('sheetOrderModal').hidden = true;
+      activeTabMode = 'sheet';
+      activeSheetIdx = sIdx;
+      renderAllWorkspace();
+      syncPreviewToSheet(activeSheetIdx, 0);
+    }
+  });
+}
 
 // Enter in a note -> insert a new note below
 document.getElementById('notesEditor').addEventListener('keydown', e => {

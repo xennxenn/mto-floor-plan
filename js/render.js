@@ -798,13 +798,13 @@ function rMap(sheet) {
   const notes = (sheet.notes || []).filter(n => String(n).trim());
   const yn = (label, v) => `<div class="r"><span class="ol">${label}</span>${CB(v === 'no', 'No')}${CB(v === 'yes', 'Yes')}</div>`;
   return `<div class="s-map">
-    <div class="pbox">${plan || '<span class="empty"></span>'}</div>
-    <div class="mid">
+    <div class="pbox" title="คลิกเพื่อวาดแปลนห้อง &amp; กำหนดจุดหน้าต่าง/ประตู">${plan || '<span class="empty" style="font-size:10px;color:#1f6feb">✏️ คลิกเพื่อวาดแปลนห้อง &amp; กำหนดจุด</span>'}</div>
+    <div class="mid" title="คลิกเพื่อแก้ไขชื่อห้องและหมายเหตุห้อง">
       <div class="r">${L('MAP ROOM (ห้อง)')}${F(r.name)}</div>
       <div class="r map-note-hd">${L('หมายเหตุ :')}</div>
       <ol class="notes-list">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ol>
     </div>
-    <div class="rt" data-map-part="roomOpts">
+    <div class="rt" data-map-part="roomOpts" title="คลิกเพื่อแก้ไขสภาพหน้างาน/ห้อง">
       <div class="r"><span class="ol">แอร์ผนัง</span>${CB(r.aircon === 'no', 'No')}${CB(r.aircon === 'yes', 'Yes')}${L('<b><u>No.</u></b>')}${F(r.refNo)}</div>
       ${yn('เหล็กดัด', r.grille)}
       <div class="r"><span class="ol">มุ้งลวด</span>${CB(r.screen === 'no', 'No')}${CB(r.screen === 'yes', 'Yes')}${L('<b><u>โปร.</u></b>')}${F(r.promo)}</div>
