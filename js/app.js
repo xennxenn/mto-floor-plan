@@ -729,7 +729,9 @@ function renderStaffDropdown() {
 
 function syncSharedInputs(root = document) {
   const ord = currentOrder(); if (!ord) return;
+  const active = document.activeElement;
   root.querySelectorAll('[data-shared]').forEach(el => {
+    if (el === active) return;
     const v = getPath(ord, el.dataset.shared);
     if (el.type === 'checkbox') el.checked = !!v;
     else if (el.type === 'radio') el.checked = v === el.value;
@@ -739,7 +741,9 @@ function syncSharedInputs(root = document) {
 
 function syncSheetInputs(root = document) {
   const sh = currentSheet(); if (!sh) return;
+  const active = document.activeElement;
   root.querySelectorAll('[data-sheet]').forEach(el => {
+    if (el === active) return;
     const v = getPath(sh, el.dataset.sheet);
     if (el.type === 'checkbox') el.checked = !!v;
     else if (el.type === 'radio') el.checked = v === el.value;
@@ -2229,7 +2233,9 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
           if (popEl && !popEl.hidden) syncSheetInputs(popEl);
         } else if (field === 'planNo' || field === 'label') {
           dedupeSheetWindowPositions(sh);
-          renderWindowsEditor();
+          const actEl = document.activeElement;
+          const typingInWinEd = actEl && actEl.closest('#windowsEditor') && (actEl.tagName === 'INPUT' || actEl.tagName === 'TEXTAREA') && actEl.type !== 'checkbox' && actEl.type !== 'radio';
+          if (!typingInWinEd) renderWindowsEditor();
           syncSheetInputs();
         } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|floorMode|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|cornerShape|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit|unequalSplitTarget|unequalLayerRail)$/.test(field)) {
           if (!curtainNeedsHook(w.curtainStyle1, w.curtainStyle2)) w.hookSize = '';
@@ -2331,7 +2337,7 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
         const t = document.querySelector(`[data-thumb="${idx}"]`);
         if (t) t.innerHTML = windowSVG(w);
       }
-    } else if (/^fabrics\.(blackout|sheer|roller|blinds|other)\.(name|design|color|label)$/.test(sheetPath)) {
+    } else if (/^fabrics\.(blackout|sheer|roller|blinds|other)\.name$/.test(sheetPath)) {
       const mFab = /^fabrics\.(blackout|sheer|roller|blinds|other)\.name$/.exec(sheetPath);
       if (mFab && sh.fabrics && sh.fabrics[mFab[1]]) {
         const ck = mFab[1];
@@ -2345,9 +2351,16 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
         if (w && w.calcMode !== 'manual') autoCalculateWindow(w, sh);
       });
       autoUpdateSheetFabricTableQty(sh);
-      renderWindowsEditor();
+      const actEl = document.activeElement;
+      const isTypingText = !!(actEl && (actEl.tagName === 'INPUT' || actEl.tagName === 'TEXTAREA') && actEl.type !== 'checkbox' && actEl.type !== 'radio');
+      if (!(isTypingText && actEl.closest('#windowsEditor'))) renderWindowsEditor();
       syncSheetInputs();
-      if (typeof refreshActivePopover === 'function') refreshActivePopover();
+      // ห้ามรีเฟรช HTML ของ Popover ขณะผู้ใช้กำลังพิมพ์อยู่ในช่องกรอก (ป้องกันพิมพ์ได้ทีละตัวแล้วหลุดโฟกัส)
+      const typingInPop = isTypingText && actEl.closest('#pdfQuickPopover');
+      if (!typingInPop && typeof refreshActivePopover === 'function') refreshActivePopover();
+    } else if (/^fabrics\.(blackout|sheer|roller|blinds|other)\.(design|color|label)$/.test(sheetPath)) {
+      // ช่องสี/ดีไซน์/ประเภทผ้าในตารางผ้า อัปเดตเฉพาะช่องที่ไม่ได้กำลังพิมพ์อยู่และพรีวิวแปลน โดยไม่รีเฟรช Popover หรือ Window Editor
+      syncSheetInputs();
     } else if (/^fabrics\.(blackout|sheer|roller|blinds|other)\.qty$/.test(sheetPath)) {
       const mQty = /^fabrics\.(blackout|sheer|roller|blinds|other)\.qty$/.exec(sheetPath);
       if (mQty && sh.fabrics && sh.fabrics[mQty[1]]) {

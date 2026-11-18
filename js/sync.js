@@ -31,6 +31,8 @@ const RealtimeSync = (() => {
   let status = 'local'; // 'local' | 'connecting' | 'online' | 'saving' | 'error'
   let statusMsg = 'โหมดออฟไลน์ (บันทึกในเครื่อง)';
   let isApplyingRemote = false;
+  let isPushing = false;
+  let lastLocalActivityMs = 0;
   let lastRev = '';
   let pushTimer = null;
   let pollTimer = null;
@@ -88,6 +90,7 @@ const RealtimeSync = (() => {
   function buildPayload() {
     const rev = Date.now() + '_' + CLIENT_ID;
     lastRev = rev;
+    lastLocalActivityMs = Date.now();
     return {
       rev,
       clientId: CLIENT_ID,
@@ -105,7 +108,9 @@ const RealtimeSync = (() => {
     if (!data || typeof data !== 'object') return;
     if (data.rev && data.rev === lastRev) return;
     if (data.clientId && data.clientId === CLIENT_ID) return;
-    if (pushTimer || (typeof autoSaveDirty !== 'undefined' && autoSaveDirty)) return; // ป้องกันข้อมูลเก่าจาก Cloud มาทับการแก้ไขที่กำลังพิมพ์หรือรอซิงค์ในเครื่อง
+    if (isPushing || pushTimer || (typeof autoSaveDirty !== 'undefined' && autoSaveDirty)) return; // ป้องกันข้อมูลเก่าจาก Cloud มาทับการแก้ไขที่กำลังพิมพ์หรือรอซิงค์ในเครื่อง
+    const remoteMs = data.updatedAt ? Date.parse(data.updatedAt) : 0;
+    if (lastLocalActivityMs && remoteMs && remoteMs < lastLocalActivityMs - 1000) return;
 
     lastRev = data.rev || String(Date.now());
     isApplyingRemote = true;
@@ -127,6 +132,8 @@ const RealtimeSync = (() => {
       // อัปเดต UI ตามหน้าปัจจุบัน
       const activeEl = document.activeElement;
       const isTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+      const popEl = document.getElementById('pdfQuickPopover');
+      const popOpen = !!(popEl && !popEl.hidden);
 
       if (!activeOrderId) {
         renderDashboard();
@@ -134,10 +141,10 @@ const RealtimeSync = (() => {
         const stillExists = orders.find(o => o.id === activeOrderId);
         if (!stillExists) {
           showDashboard();
-        } else if (!isTyping) {
+        } else if (!isTyping && !popOpen) {
           renderAllWorkspace();
         } else {
-          // ถ้าผู้ใช้กำลังพิมพ์อยู่ ให้อัปเดตเฉพาะพรีวิวA4 และแถบสถานะด้านบน เพื่อไม่ให้เคอร์เซอร์หลุด
+          // ถ้าผู้ใช้กำลังพิมพ์อยู่หรือเปิดหน้าต่างแก้ไขเฉพาะจุด ให้อัปเดตเฉพาะพรีวิวA4 และแถบสถานะด้านบน เพื่อไม่ให้เคอร์เซอร์หลุด
           updateTopBadge();
           renderTopSheetNav();
           renderPreview();
@@ -456,6 +463,7 @@ const RealtimeSync = (() => {
 
     // 2) ซิงค์ขึ้น Cloud ตาม Provider ที่ตั้งค่าไว้
     if (!cfg || !cfg.provider) return;
+    isPushing = true;
     try {
       setStatus('saving', 'กำลังซิงค์ข้อมูล...');
       if (cfg.provider === 'firebase_rtdb') await pushFirebaseRTDB(payload);
@@ -465,6 +473,8 @@ const RealtimeSync = (() => {
     } catch (err) {
       console.warn('Cloud push error:', err);
       setStatus('error', 'บันทึกขึ้น Cloud ไม่สำเร็จ');
+    } finally {
+      isPushing = false;
     }
   }
 
