@@ -123,24 +123,62 @@ function fmtDate(v) {
 }
 
 const numVal = v => {
-  const n = parseFloat(v);
+  const s = String(v ?? '').replace(/\*/g, '').trim();
+  const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 };
 const hasVal = v => v !== undefined && v !== null && String(v).trim() !== '';
 
+function withManualStar(val, isManual) {
+  const s = String(val ?? '').trim();
+  if (!s || s === '-') return s;
+  if (!isManual) return s;
+  return s.endsWith('*') ? s : (s + '*');
+}
+
+function formatFullHeightLeftToRight(w) {
+  if (!w) return '';
+  const l = hasVal(w.fullHLeft) ? String(w.fullHLeft).trim() : '';
+  const m = hasVal(w.fullHMid) ? String(w.fullHMid).trim() : '';
+  const r = hasVal(w.fullHRight) ? String(w.fullHRight).trim() : '';
+  const parts = [l, m, r].filter(Boolean);
+  if (parts.length > 0) {
+    const dedup = [];
+    parts.forEach(p => {
+      if (!dedup.length || dedup[dedup.length - 1] !== p) dedup.push(p);
+    });
+    return dedup.join('-');
+  }
+  return hasVal(w.fullH) ? String(w.fullH).trim() : '';
+}
+
+function calcCurvedSidesWidthSum(w) {
+  if (!w || String(w.cornerShape || '1') === '1') return 0;
+  const wings = shapeWings(w.cornerShape);
+  const wL = wings.left ? numVal(w.sideWidthLeft) : 0;
+  const wC = numVal(w.sideWidthCenter);
+  const wR = wings.right ? numVal(w.sideWidthRight) : 0;
+  const sum = wL + wC + wR;
+  return sum > 0 ? Math.round(sum * 100) / 100 : 0;
+}
+
 function calcRailWidth(w) {
   if (!w) return '';
-  if ((w.calcMode === 'manual' || (w.manualFields && w.manualFields.railW)) && hasVal(w.customRailW)) {
-    return String(w.customRailW).trim();
+  if ((w.calcMode === 'manual' || (w.manualFields && (w.manualFields.railW || w.manualFields.railA))) && hasVal(w.customRailW)) {
+    const clean = String(w.customRailW).replace(/\*/g, '').trim();
+    return clean;
   }
-  if (!hasVal(w.width) && !hasVal(w.extL) && !hasVal(w.extR)) return '';
-  const sum = numVal(w.width) + numVal(w.extL) + numVal(w.extR);
+  const curvedW = calcCurvedSidesWidthSum(w);
+  const baseW = hasVal(w.width) ? numVal(w.width) : curvedW;
+  if (!baseW && !hasVal(w.extL) && !hasVal(w.extR)) return '';
+  const sum = baseW + numVal(w.extL) + numVal(w.extR);
   return sum ? String(Math.round(sum * 100) / 100) : '';
 }
 function calcRailHeight(w) {
   if (!w) return '';
-  if ((w.calcMode === 'manual' || (w.manualFields && w.manualFields.railH)) && hasVal(w.customRailH)) {
-    return String(w.customRailH).trim();
+  if ((w.calcMode === 'manual' || (w.manualFields && (w.manualFields.railH || w.manualFields.railB))) && hasVal(w.customRailH)) {
+    const clean = String(w.customRailH).replace(/\*/g, '').trim();
+    return clean;
   }
   // คำนวณความสูงราง = สูงเฟรม + เผื่อบน + เผื่อล่าง
   if (!hasVal(w.height) && !hasVal(w.extT) && !hasVal(w.extB)) return '';
@@ -536,12 +574,12 @@ function windowSVG(w) {
   w = w || {};
   const shape = String(w.cornerShape || '1');
   const wings = shapeWings(shape);
-  const VW = 316, VH = 172;
+  const VW = 340, VH = 192;
 
-  // ขยายรูปแปลนหน้าต่าง/ประตูให้ใหญ่ขึ้นชัดเจน ดูง่ายไม่เล็กไป
-  const wingDX = 28, wingDY = 14;
-  const x0 = 82, x1 = 226;
-  const y0 = 42, y1 = 136;
+  // ขยายพื้นที่ viewBox รอบด้าน (-18 -14 376 216) เพื่อไม่ให้ตัวเลข/หมายเหตุ/พื้นที่ด้านล่างของบานดัดโค้งถูกตัดขาดไม่ว่าจะเป็นแปลนแบบใด
+  const wingDX = 28, wingDY = 13;
+  const x0 = 84, x1 = 224;
+  const y0 = 44, y1 = 132;
   const surfaces = getFrameSurfaces(x0, x1, y0, y1, wings, wingDX, wingDY);
 
   const leftOuterX = wings.left ? x0 - wingDX : x0;
@@ -549,27 +587,21 @@ function windowSVG(w) {
   const topOuterY = (wings.left === 'up' || wings.right === 'up') ? y0 - wingDY : y0;
   const botOuterY = (wings.left === 'down' || wings.right === 'down') ? y1 + wingDY : y1;
 
-  // ตามไฟล์แนบ 151942:
-  // 1) เส้นความกว้าง (แนวนอน hLineY) กับ เส้นความสูง (แนวตั้ง vLineX) ตัดผ่านกันที่มุมขวาบน (vLineX, hLineY)
-  // 2) ปลายเส้นทั้ง 4 ด้าน (ซ้ายสุด hLineX0, ขวาสุด hLineX1, บนสุด vLineY0, ล่างสุด vLineY1) มีขีดปิดปลายเส้น
-  //    และตัวเลขของ พื้นที่ด้านซ้าย / พื้นที่ด้านขวา / พื้นที่ด้านบน / พื้นที่ด้านล่าง อยู่นอกเส้น!
-  // 3) เหนือเฟรมหน้าต่าง (ระหว่าง leftOuterX ถึง vLineX) แสดงสัญลักษณ์ "+" คั่นเป็น: เผื่อซ้าย + ความกว้าง + เผื่อขวา (เช่น 50 + 150 + 50)
-  // 4) ด้านขวาของเฟรมหน้าต่าง (ระหว่าง topOuterY ถึง botOuterY) แสดงสัญลักษณ์ "+" คั่นเป็น: เผื่อบน + ความสูง + เผื่อล่าง
   const hLineY = topOuterY - 10;
   const vLineX = wings.right ? rightOuterX + 5 : rightOuterX;
 
   const hLineX0 = leftOuterX - 24;
   const hLineX1 = vLineX + 28;
 
-  const vLineY0 = hLineY - 14;
-  const vLineY1 = botOuterY + 14;
+  const vLineY0 = hLineY - 13;
+  const vLineY1 = botOuterY + 13;
 
   const cx = (leftOuterX + rightOuterX) / 2;
   const cy = (y0 + y1) / 2;
 
-  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet" font-family="Sarabun, Tahoma, sans-serif">`;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-18 -14 376 216" preserveAspectRatio="xMidYMid meet" font-family="Sarabun, Tahoma, sans-serif">`;
 
-  // ==================== 1) เส้นความกว้างแนวนอน + สัญลักษณ์ "+" (50 + 150 + 50) ตามรูป 151942 ====================
+  // ==================== 1) เส้นความกว้างแนวนอน + สัญลักษณ์ "+" (50 + 150 + 50) ====================
   s += `<line x1="${hLineX0}" y1="${hLineY}" x2="${hLineX1}" y2="${hLineY}" stroke="#000" stroke-width="1.25"/>`;
   s += `<line x1="${hLineX0}" y1="${hLineY - 5}" x2="${hLineX0}" y2="${hLineY + 5}" stroke="#000" stroke-width="1.15"/>`;
   s += `<line x1="${hLineX1}" y1="${hLineY - 5}" x2="${hLineX1}" y2="${hLineY + 5}" stroke="#000" stroke-width="1.15"/>`;
@@ -588,14 +620,15 @@ function windowSVG(w) {
   const yTopNum = hLineY - 3;
   const yTopNote = hLineY - 12;
   const drawHText = (x, anchor, textStr, noteStr, yNum = yTopNum, yNote = yTopNote) => {
-    if (textStr) s += `<text x="${x}" y="${yNum}" text-anchor="${anchor}" font-size="11.2" font-weight="700" fill="#000">${esc(textStr)}</text>`;
-    if (noteStr) s += `<text x="${x}" y="${yNote}" text-anchor="${anchor}" font-size="9.2" font-weight="700" fill="#000">${esc(noteStr)}</text>`;
+    if (textStr) s += `<text x="${x}" y="${yNum}" text-anchor="${anchor}" font-size="11.0" font-weight="700" fill="#000">${esc(textStr)}</text>`;
+    if (noteStr) s += `<text x="${x}" y="${yNote}" text-anchor="${anchor}" font-size="9.0" font-weight="700" fill="#000">${esc(noteStr)}</text>`;
   };
 
   const pExtL = valWithNote(w.extL, w.noteExtL);
   drawHText((leftOuterX + plusX1) / 2, 'middle', pExtL.v, pExtL.n);
 
-  const pWidth = valWithNote(w.width, w.noteWidth);
+  const effWidthVal = hasVal(w.width) ? w.width : (calcCurvedSidesWidthSum(w) || '');
+  const pWidth = valWithNote(effWidthVal, w.noteWidth);
   drawHText((plusX1 + plusX2) / 2, 'middle', pWidth.v, pWidth.n);
 
   const pExtR = valWithNote(w.extR, w.noteExtR);
@@ -607,7 +640,7 @@ function windowSVG(w) {
   const pWallR = valWithNote(w.wallR, w.noteWallR);
   drawHText(hLineX1 + 3, 'start', pWallR.v, pWallR.n, hLineY + 4, hLineY - 6);
 
-  // ==================== 2) เส้นความสูงแนวตั้ง + สัญลักษณ์ "+" ด้านขวาเฟรม ตามรูป 151942 ====================
+  // ==================== 2) เส้นความสูงแนวตั้ง + สัญลักษณ์ "+" ด้านขวาเฟรม ====================
   s += `<line x1="${vLineX}" y1="${vLineY0}" x2="${vLineX}" y2="${vLineY1}" stroke="#000" stroke-width="1.25"/>`;
   s += `<line x1="${vLineX - 5}" y1="${vLineY0}" x2="${vLineX + 5}" y2="${vLineY0}" stroke="#000" stroke-width="1.15"/>`;
   s += `<line x1="${vLineX - 5}" y1="${vLineY1}" x2="${vLineX + 5}" y2="${vLineY1}" stroke="#000" stroke-width="1.15"/>`;
@@ -630,7 +663,7 @@ function windowSVG(w) {
   const drawVText = (xPos, yPos, anchor, textStr, noteStr) => {
     const label = [textStr, noteStr].filter(Boolean).join(' ');
     if (label) {
-      s += `<text x="${xPos}" y="${yPos}" text-anchor="${anchor}" font-size="11.0" font-weight="700" fill="#000">${esc(label)}</text>`;
+      s += `<text x="${xPos}" y="${yPos}" text-anchor="${anchor}" font-size="10.8" font-weight="700" fill="#000">${esc(label)}</text>`;
     }
   };
 
@@ -649,19 +682,53 @@ function windowSVG(w) {
   const pFloorB = valWithNote(w.floorB, w.noteFloorB);
   drawVText(vLineX, vLineY1 + 11, 'middle', pFloorB.v, pFloorB.n);
 
-  // ==================== 3) ความสูงเต็ม & ความกว้างเต็ม ====================
-  const fullHPair = valWithNote(w.fullH, w.noteFullH);
+  // ==================== 3) ความสูงเต็ม (ซ้าย-ขวา เช่น 299.5-299) & ความกว้างเต็ม ====================
+  const fullHFormatted = formatFullHeightLeftToRight(w);
+  const fullHPair = valWithNote(fullHFormatted, w.noteFullH);
   const leftFullText = fullHPair.v ? `สูงเต็ม = ${fullHPair.v}` : (hasVal(w.drop) ? `สูงเต็ม = ${w.drop}` : 'สูงเต็ม =');
-  s += `<text x="2" y="${cy + 3}" text-anchor="start" font-size="10.0" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
+  s += `<text x="-14" y="${cy + 3}" text-anchor="start" font-size="9.6" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
   if (fullHPair.n) {
-    s += `<text x="2" y="${cy + 14}" text-anchor="start" font-size="9.0" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
+    s += `<text x="-14" y="${cy + 14}" text-anchor="start" font-size="8.8" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
   }
 
   const fullWPair = valWithNote(w.fullW, w.noteFullW);
   const botFullText = fullWPair.v
     ? `กว้างเต็ม = ${fullWPair.v}${fullWPair.n ? ' (' + fullWPair.n + ')' : ''}`
     : (fullWPair.n ? `กว้างเต็ม = (${fullWPair.n})` : 'กว้างเต็ม =');
-  s += `<text x="${cx}" y="${botOuterY + 13}" text-anchor="middle" font-size="10.0" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
+  s += `<text x="${cx}" y="${botOuterY + 13}" text-anchor="middle" font-size="9.8" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
+
+  // แสดงข้อมูลกำกับกรณีบานดัดโค้ง (ด้านซ้าย / ด้านตรง / ด้านขวา) หรือ ขนาดรางม่านทึบ/โปร่งไม่เท่ากัน
+  const extraBottomBadges = [];
+  if (shape !== '1' && (hasVal(w.sideWidthLeft) || hasVal(w.sideWidthCenter) || hasVal(w.sideWidthRight))) {
+    const sideParts = [];
+    if (wings.left && hasVal(w.sideWidthLeft)) sideParts.push(`โค้งซ้าย ${w.sideWidthLeft}`);
+    if (hasVal(w.sideWidthCenter)) sideParts.push(`ตรง ${w.sideWidthCenter}`);
+    if (wings.right && hasVal(w.sideWidthRight)) sideParts.push(`โค้งขวา ${w.sideWidthRight}`);
+    if (sideParts.length) extraBottomBadges.push(`(${sideParts.join(' + ')})`);
+  }
+  if (w.unequalLayerRail) {
+    const baseRW = numVal(calcRailWidth(w));
+    const baseRH = numVal(calcRailHeight(w));
+    const rw1 = numVal(w.railW1) || baseRW;
+    const rw2 = numVal(w.railW2) || baseRW;
+    const rh1 = numVal(w.railH1) || baseRH;
+    const rh2 = numVal(w.railH2) || baseRH;
+    if (rw1 > 0 && rw2 > 0 && rw1 !== rw2) {
+      extraBottomBadges.push(`รางกว้าง ทึบ ${rw1}* / โปร่ง ${rw2}*`);
+    }
+    if (rh1 > 0 && rh2 > 0 && rh1 !== rh2) {
+      extraBottomBadges.push(`รางสูง ทึบ ${rh1}* / โปร่ง ${rh2}*`);
+    }
+  }
+  if ((w.calcMode === 'manual' || (w.manualFields && (w.manualFields.railW || w.manualFields.railA))) && hasVal(w.customRailW) && !w.unequalLayerRail) {
+    extraBottomBadges.push(`กว้างรางระบุเอง ${String(w.customRailW).replace(/\*/g, '')}*`);
+  }
+  if ((w.calcMode === 'manual' || (w.manualFields && (w.manualFields.railH || w.manualFields.railB))) && hasVal(w.customRailH) && !w.unequalLayerRail) {
+    extraBottomBadges.push(`สูงรางระบุเอง ${String(w.customRailH).replace(/\*/g, '')}*`);
+  }
+  if (extraBottomBadges.length) {
+    s += `<text x="${cx}" y="${botOuterY + 25}" text-anchor="middle" font-size="8.8" font-weight="700" fill="#0d47a1">${esc(extraBottomBadges.join(' • '))}</text>`;
+  }
 
   // ==================== 4) วาดกรอบหน้าต่าง/ประตู (แบบ 1–9) ขนาดใหญ่ชัดเจน ====================
   if (surfaces.leftWing) {
@@ -700,6 +767,7 @@ function windowSVG(w) {
     const splitX = Math.round(leftOuterX + (rightOuterX - leftOuterX) * splitRatio);
     const sLText = hasVal(w.splitLeft) ? String(w.splitLeft).trim() : '';
     const sRText = hasVal(w.splitRight) ? String(w.splitRight).trim() : '';
+    const splitTargetTag = w.unequalSplitTarget === 'opaque' ? ' (ทึบ)' : (w.unequalSplitTarget === 'sheer' ? ' (โปร่ง)' : '');
     const ySplitDim = y0 + 13;
 
     // เส้นประจุดแบ่งที่รางม่านและสัญลักษณ์ขีดแบ่งบนรางม่านเดียวกัน
@@ -713,16 +781,18 @@ function windowSVG(w) {
     s += `<line x1="${rightOuterX - 2}" y1="${ySplitDim - 3.5}" x2="${rightOuterX - 2}" y2="${ySplitDim + 3.5}" stroke="#000" stroke-width="1.15"/>`;
 
     if (sLText) {
+      const dispL = sLText + splitTargetTag;
       const lx = Math.round((leftOuterX + splitX) / 2);
-      const bw = Math.max(22, sLText.length * 6.8 + 8);
+      const bw = Math.max(22, dispL.length * 6.0 + 8);
       s += `<rect x="${Math.round(lx - bw / 2)}" y="${ySplitDim - 7.5}" width="${bw}" height="13" rx="2.5" fill="#fff" stroke="#000" stroke-width="0.9"/>`;
-      s += `<text x="${lx}" y="${ySplitDim + 2.5}" text-anchor="middle" font-size="10.2" font-weight="700" fill="#000">${esc(sLText)}</text>`;
+      s += `<text x="${lx}" y="${ySplitDim + 2.5}" text-anchor="middle" font-size="9.6" font-weight="700" fill="#000">${esc(dispL)}</text>`;
     }
     if (sRText) {
+      const dispR = sRText + splitTargetTag;
       const rx = Math.round((splitX + rightOuterX) / 2);
-      const bw = Math.max(22, sRText.length * 6.8 + 8);
+      const bw = Math.max(22, dispR.length * 6.0 + 8);
       s += `<rect x="${Math.round(rx - bw / 2)}" y="${ySplitDim - 7.5}" width="${bw}" height="13" rx="2.5" fill="#fff" stroke="#000" stroke-width="0.9"/>`;
-      s += `<text x="${rx}" y="${ySplitDim + 2.5}" text-anchor="middle" font-size="10.2" font-weight="700" fill="#000">${esc(sRText)}</text>`;
+      s += `<text x="${rx}" y="${ySplitDim + 2.5}" text-anchor="middle" font-size="9.6" font-weight="700" fill="#000">${esc(dispR)}</text>`;
     }
   }
 
@@ -812,21 +882,26 @@ function rMap(sheet) {
   </div>`;
 }
 
-function rCalc(t, r, u1, u2, rowKey = '') {
+function rCalc(t, r, u1, u2, rowKey = '', manualFlags = null) {
   r = r || {};
-  const tRaw = String(r.t ?? '').trim();
+  const mf = manualFlags || {};
+  const valA = withManualStar(r.a, mf.a);
+  const valB = withManualStar(r.b, mf.b);
+  const valN = withManualStar(r.n, mf.n);
+  const valT = withManualStar(r.t, mf.t);
+  const tRaw = String(valT ?? '').trim();
   const isTextOnlyT = !tRaw || tRaw === '-' || tRaw === 'ใช้รางเดิม' || tRaw === 'ไม่เอาราง' || tRaw === 'ไม่รับราง';
   const showU2 = (isTextOnlyT || tRaw.endsWith('หลา') || tRaw.endsWith('ตร.ม.') || tRaw.endsWith('เมตร') || tRaw.endsWith('ชุด')) ? '' : u2;
   return `<div class="calc-row" data-calc-row="${esc(rowKey)}">
     <span class="c-lbl">${esc(t)}</span>
-    <span class="fl" data-calc-col="a">${esc(r.a)}</span>
+    <span class="fl" data-calc-col="a">${esc(valA)}</span>
     <span class="c-op">X</span>
-    <span class="fl" data-calc-col="b">${esc(r.b)}</span>
+    <span class="fl" data-calc-col="b">${esc(valB)}</span>
     <span class="c-op">=</span>
-    <span class="fl" data-calc-col="n">${esc(r.n)}</span>
+    <span class="fl" data-calc-col="n">${esc(valN)}</span>
     <span class="c-unit">${esc(u1)}</span>
     <span class="c-op">=</span>
-    <span class="fl" data-calc-col="t">${esc(r.t)}</span>
+    <span class="fl" data-calc-col="t">${esc(valT)}</span>
     <span class="c-unit2">${esc(showU2)}</span>
   </div>`;
 }
@@ -894,18 +969,35 @@ function rWinCell(w, n, winIdx = 0) {
   const railUnit2 = w.noRail ? '' : (w.railUnit || railInfo.totalUnit || (isBlind1 ? 'ตร.ม.' : 'เมตร'));
 
   const lbl1 = (w.rowLabel1 && String(w.rowLabel1).trim()) || 'รางม่าน';
-  const lbl2 = (w.rowLabel2 && String(w.rowLabel2).trim()) || 'ผ้าม่านทึบ';
+  const lbl2 = (w.rowLabel2 && String(w.rowLabel2).trim()) || (isBlind1 ? (w.curtainStyle1 || 'ม่านม้วน/มู่ลี่') : 'ผ้าม่านทึบ');
   const lbl3 = (w.rowLabel3 && String(w.rowLabel3).trim()) || 'ผ้าม่านโปร่ง';
+
+  const mf = w.manualFields || {};
+  const isAllMan = w.calcMode === 'manual';
+  const railMF = {
+    a: isAllMan || !!(mf.railA || (mf.railW && hasVal(w.customRailW))),
+    b: isAllMan || !!(mf.railB || (mf.railH && hasVal(w.customRailH))),
+    n: isAllMan || !!mf.railN,
+    t: isAllMan || !!mf.railT,
+  };
+  const boMF = { a: isAllMan || !!mf.boA, b: isAllMan || !!mf.boB, n: isAllMan || !!mf.boN, t: isAllMan || !!mf.boT };
+  const shMF = { a: isAllMan || !!mf.shA, b: isAllMan || !!mf.shB, n: isAllMan || !!mf.shN, t: isAllMan || !!mf.shT };
 
   const blindRows = buildGroupedBlindCalcRows(w);
   let calcHtml = '';
   if (blindRows && blindRows.length) {
     calcHtml = blindRows.map(item => rCalc(item.label, item.row, 'ผืน', 'ตร.ม.', item.key)).join('');
+  } else if (isBlind1 && !w.curtainStyle2) {
+    // Req #15: ม่านม้วน / มู่ลี่ ให้ใส่ขนาดแค่ช่องเดียว ไม่ต้องแยกขนาดราง ขนาดผ้าม่าน
+    const singleBlindRow = (w.blackout && (hasVal(w.blackout.a) || hasVal(w.blackout.b) || hasVal(w.blackout.t))) ? w.blackout : w.rail;
+    calcHtml = `
+      ${rCalc(lbl2, singleBlindRow, 'ผืน', 'ตร.ม.', 'blackout', boMF)}
+    `;
   } else {
     calcHtml = `
-      ${rCalc(lbl1, w.rail, railUnit1, railUnit2, 'rail')}
-      ${rCalc(lbl2, w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา', 'blackout')}
-      ${rCalc(lbl3, w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา', 'sheer')}
+      ${rCalc(lbl1, w.rail, railUnit1, railUnit2, 'rail', railMF)}
+      ${rCalc(lbl2, w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา', 'blackout', boMF)}
+      ${rCalc(lbl3, w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา', 'sheer', shMF)}
     `;
   }
 
@@ -1501,6 +1593,7 @@ function rSideJoinSpecialPage(order, sheet, w, sIdx, wIdx, pageNo, totalPages) {
    ========================================================= */
 function expandOrderPages(order) {
   const pages = [];
+  const showSpecialGablePages = !!(typeof window !== 'undefined' && window.SHOW_SPECIAL_GABLE_SECTION);
   (order.sheets || []).forEach((sheet, sIdx) => {
     const wins = sheet.windows || [];
     const chunks = [];
@@ -1509,19 +1602,21 @@ function expandOrderPages(order) {
     }
     chunks.forEach((ch, cIdx) => {
       pages.push({ pageType: 'standard', sheet, sIdx, cIdx, wins: ch.wins, startNo: ch.startNo });
-      // หากมีรายการพิเศษ (เช่น ม่านจั่ว หรือ ผ้าม่านเย็บต่อด้านข้าง) ให้สร้างหน้าถัดไปแยกต่างหากสำหรับรายการพิเศษนั้นๆ ทันที
-      ch.wins.forEach((w, localIdx) => {
-        if (w && (w.specialType === 'gable' || w.specialType === 'side_join')) {
-          pages.push({
-            pageType: w.specialType,
-            sheet,
-            sIdx,
-            cIdx,
-            wIdx: ch.startNo + localIdx,
-            win: w,
-          });
-        }
-      });
+      // ซ่อนการแปลนม่านจั่วแยกไปก่อน (ส่วนที่ 5) ตามคำขอผู้ใช้
+      if (showSpecialGablePages) {
+        ch.wins.forEach((w, localIdx) => {
+          if (w && (w.specialType === 'gable' || w.specialType === 'side_join')) {
+            pages.push({
+              pageType: w.specialType,
+              sheet,
+              sIdx,
+              cIdx,
+              wIdx: ch.startNo + localIdx,
+              win: w,
+            });
+          }
+        });
+      }
     });
   });
   return pages;

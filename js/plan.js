@@ -405,6 +405,36 @@ const PlanEditor = (() => {
         if (/^\d+$/.test(String(it.label || ''))) it.label = String(n++);
       }
     });
+    ensureUniqueOpeningLabels();
+  }
+
+  function ensureUniqueOpeningLabels() {
+    const used = new Set();
+    let maxNum = 0;
+    items.forEach(it => {
+      if (it.type === 'window' || it.type === 'door') {
+        const n = parseInt(String(it.label || '').replace(/^[WDwd]/, ''), 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    });
+    let nextSeq = 1;
+    const allocNext = () => {
+      while (used.has(String(nextSeq))) nextSeq++;
+      const s = String(nextSeq);
+      used.add(s);
+      return s;
+    };
+    items.forEach(it => {
+      if (it.type !== 'window' && it.type !== 'door') return;
+      const raw = String(it.label || '').trim();
+      const key = raw.toUpperCase().replace(/^[WD]/, '');
+      if (!raw || used.has(key) || used.has(raw.toUpperCase())) {
+        it.label = allocNext();
+      } else {
+        used.add(key);
+        used.add(raw.toUpperCase());
+      }
+    });
   }
 
   function syncLegacyCoords(it) {
@@ -429,6 +459,7 @@ const PlanEditor = (() => {
       } else {
         it.label = it.label || nextNo();
         syncLegacyCoords(it);
+        ensureUniqueOpeningLabels();
       }
     }
     activePoly = null;
@@ -458,8 +489,14 @@ const PlanEditor = (() => {
       const t = prompt('แก้ไขข้อความ', it.text || ''); if (t === null) return;
       pushUndo(); it.text = t; if (!t.trim()) items.splice(i, 1);
     } else if (it.type === 'window' || it.type === 'door') {
-      const t = prompt('ลำดับจุด / ป้ายกำกับ', it.label || ''); if (t === null) return;
-      pushUndo(); it.label = t.trim();
+      const t = prompt('ลำดับจุด / ป้ายกำกับ (ห้ามซ้ำกับจุดอื่น)', it.label || ''); if (t === null) return;
+      const trimmed = t.trim();
+      const dup = items.some((other, oi) => oi !== i && (other.type === 'window' || other.type === 'door') && String(other.label || '').trim().toUpperCase() === trimmed.toUpperCase());
+      if (dup) {
+        alert(`ลำดับจุด "${trimmed}" ซ้ำกับจุดที่มีอยู่แล้วในแปลน ระบบจะจัดลำดับไม่ให้ซ้ำอัตโนมัติ`);
+      }
+      pushUndo(); it.label = trimmed;
+      ensureUniqueOpeningLabels();
     } else if (it.type === 'entrance') {
       const t = prompt('ข้อความกำกับลูกศรทางเข้า (เว้นว่างได้)', it.label || ''); if (t === null) return;
       pushUndo(); it.label = t.trim();
@@ -660,6 +697,7 @@ const PlanEditor = (() => {
     document.getElementById('planCancel').onclick = close;
     document.getElementById('planOk').onclick = () => {
       finishActivePoly();
+      ensureUniqueOpeningLabels();
       const savedItems = clone(items);
       const cb = onSave;
       close();
@@ -674,6 +712,7 @@ const PlanEditor = (() => {
     if (!items.length) {
       items.push({ type: 'rect', x1: 160, y1: 80, x2: 640, y2: 420 });
     }
+    ensureUniqueOpeningLabels();
     activePoly = null;
     if (btnFinish) btnFinish.hidden = true;
     onSave = cb; undoS = []; redoS = []; sel = -1;

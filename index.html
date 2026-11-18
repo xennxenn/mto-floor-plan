@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=18">
+  <link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -274,8 +274,8 @@
                 <tr>
                   <th>ผ้าม่านทึบ</th>
                   <td>
-                    <label><input type="checkbox" data-sheet="fabrics.blackout.isOpaque">ทึบ</label>
-                    <label><input type="checkbox" data-sheet="fabrics.blackout.isSheer">โปร่ง</label>
+                    <label><input type="radio" name="ed_fab_grain_blackout" value="opaque" data-fab-grain="blackout">ทึบ</label>
+                    <label><input type="radio" name="ed_fab_grain_blackout" value="sheer" data-fab-grain="blackout">โปร่ง</label>
                   </td>
                   <td><input list="dlFabrics" data-sheet="fabrics.blackout.name"></td>
                   <td><input data-sheet="fabrics.blackout.design"></td>
@@ -285,8 +285,8 @@
                 <tr>
                   <th>ผ้าม่านโปร่ง</th>
                   <td>
-                    <label><input type="checkbox" data-sheet="fabrics.sheer.isOpaque">ทึบ</label>
-                    <label><input type="checkbox" data-sheet="fabrics.sheer.isSheer">โปร่ง</label>
+                    <label><input type="radio" name="ed_fab_grain_sheer" value="opaque" data-fab-grain="sheer">ทึบ</label>
+                    <label><input type="radio" name="ed_fab_grain_sheer" value="sheer" data-fab-grain="sheer">โปร่ง</label>
                   </td>
                   <td><input list="dlFabrics" data-sheet="fabrics.sheer.name"></td>
                   <td><input data-sheet="fabrics.sheer.design"></td>
@@ -311,7 +311,10 @@
                 </tr>
                 <tr>
                   <th><input class="th-in" data-sheet="fabrics.other.label" placeholder="อื่นๆ"></th>
-                  <td class="c">-</td>
+                  <td>
+                    <label><input type="radio" name="ed_fab_grain_other" value="opaque" data-fab-grain="other">ทึบ</label>
+                    <label><input type="radio" name="ed_fab_grain_other" value="sheer" data-fab-grain="other">โปร่ง</label>
+                  </td>
                   <td><input list="dlFabrics" data-sheet="fabrics.other.name"></td>
                   <td><input data-sheet="fabrics.other.design"></td>
                   <td><input data-sheet="fabrics.other.color"></td>
@@ -325,7 +328,8 @@
         <details class="sec room-sec" id="secRods" open>
           <summary>8. รางม่าน และอุปกรณ์เสริม</summary>
           <div class="inline admin-only-db" style="margin-bottom:6px;flex-wrap:wrap">
-            <button type="button" data-act="openDbRails" class="admin-only-db">🛤️ ตั้งค่าฐานข้อมูลรางและอุปกรณ์</button>
+            <button type="button" data-act="openDbRails" class="admin-only-db">🛤️ ตั้งค่าฐานข้อมูลรางม่าน</button>
+            <button type="button" data-act="openDbAccessories" class="admin-only-db">🪝 ตั้งค่าฐานข้อมูลอุปกรณ์เสริม (ขายเป็นชิ้น)</button>
           </div>
 
           <h4>ประเภทรางม่าน <label class="no"><input type="checkbox" data-sheet="rods.typeNo"> ไม่รับราง</label></h4>
@@ -436,7 +440,8 @@
         <button type="button" data-dbtab="widthFormulas">📐 ขนาดความกว้างผ้าม่าน</button>
         <button type="button" data-dbtab="heightFormulas">📏 ขนาดความสูงผ้าม่าน</button>
         <button type="button" data-dbtab="fabricCalcRules">🧮 คำนวณปริมาณผ้า (เกรนทึบ/โปร่ง)</button>
-        <button type="button" data-dbtab="rails">🛤️ รางและอุปกรณ์</button>
+        <button type="button" data-dbtab="rails">🛤️ ฐานข้อมูลรางม่าน</button>
+        <button type="button" data-dbtab="accessories">🪝 อุปกรณ์เสริม (ขายเป็นชิ้น)</button>
         <button type="button" data-dbtab="blinds">🪟 มู่ลี่และม่านม้วน (ตร.ม.)</button>
         <button type="button" data-dbtab="curtains">🎀 รูปแบบผ้าม่าน (ค่ามาตรฐานกลาง)</button>
         <button type="button" data-dbtab="hooks">🪝 ขนาดตะขอ</button>
@@ -532,10 +537,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=18"></script>
-  <script src="js/plan.js?v=18"></script>
-  <script src="js/render.js?v=18"></script>
-  <script src="js/sync.js?v=18"></script>
-  <script src="js/app.js?v=18"></script>
+  <script src="js/db.js?v=19"></script>
+  <script src="js/plan.js?v=19"></script>
+  <script src="js/render.js?v=19"></script>
+  <script src="js/sync.js?v=19"></script>
+  <script src="js/app.js?v=19"></script>
 </body>
 </html>
