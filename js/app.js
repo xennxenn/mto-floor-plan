@@ -422,6 +422,16 @@ let suppressPreviewScrollSync = false;
 
 let lastAutoSaveAt = null;
 let autoSaveIntervalId = null;
+let autoSaveDirty = false;
+let bgAutoSaveTimer = null;
+
+function runWhenIdle(fn) {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => fn(), { timeout: 2000 });
+  } else {
+    setTimeout(fn, 0);
+  }
+}
 
 function updateAutoSaveBadge(state = 'ready', msg = '') {
   const badge = document.getElementById('autoSaveBadge');
@@ -429,7 +439,7 @@ function updateAutoSaveBadge(state = 'ready', msg = '') {
   badge.classList.remove('is-saving', 'is-saved', 'is-error');
   if (state === 'saving') {
     badge.classList.add('is-saving');
-    badge.textContent = msg || '⏳ กำลังบันทึกอัตโนมัติ...';
+    badge.textContent = msg || '⏳ กำลังบันทึก...';
   } else if (state === 'saved') {
     badge.classList.add('is-saved');
     const tStr = lastAutoSaveAt
@@ -440,11 +450,14 @@ function updateAutoSaveBadge(state = 'ready', msg = '') {
     badge.classList.add('is-error');
     badge.textContent = msg || '⚠️ บันทึกอัตโนมัติไม่สำเร็จ';
   } else {
-    badge.textContent = msg || '💾 Auto Save: พร้อมใช้งาน';
+    badge.textContent = msg || '💾 Auto Save: เบื้องหลัง';
   }
 }
 
 function saveOrders() {
+  clearTimeout(bgAutoSaveTimer);
+  bgAutoSaveTimer = null;
+  autoSaveDirty = false;
   try {
     localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
     lastAutoSaveAt = new Date();
@@ -456,7 +469,22 @@ function saveOrders() {
   if (typeof RealtimeSync !== 'undefined') RealtimeSync.schedulePush();
 }
 
+function scheduleBackgroundAutoSave(delayMs = 2500) {
+  autoSaveDirty = true;
+  const ord = currentOrder();
+  if (ord) ord.updatedAt = new Date().toISOString();
+  clearTimeout(bgAutoSaveTimer);
+  bgAutoSaveTimer = setTimeout(() => {
+    bgAutoSaveTimer = null;
+    if (!autoSaveDirty) return;
+    runWhenIdle(() => {
+      if (autoSaveDirty) saveOrders();
+    });
+  }, delayMs);
+}
+
 function flushAutoSaveNow() {
+  if (!autoSaveDirty) return;
   const ord = currentOrder();
   if (ord) {
     ord.updatedAt = new Date().toISOString();
@@ -2335,9 +2363,8 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
     }
   }
 
-  updateAutoSaveBadge('saving');
   clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => { renderPreview(); touchAndSave(); }, 100);
+  renderTimer = setTimeout(() => { renderPreview(); scheduleBackgroundAutoSave(2500); }, 100);
 }
 
 function renderAllWorkspace() {
@@ -5041,13 +5068,13 @@ if (document.fonts && document.fonts.ready) {
   });
 }
 
-// Auto Save: บันทึกอัตโนมัติทุก 15 วินาทีเมื่อเปิดหน้าออเดอร์ + บันทึกทันทีเมื่อสลับแท็บหรือปิดหน้าเว็บ
+// Auto Save แบบเบื้องหลัง: บันทึกเฉพาะเมื่อมีการแก้ไขค้างอยู่ (ทุก 30 วินาทีตอนเบราว์เซอร์ว่าง) + บันทึกทันทีเมื่อสลับแท็บหรือปิดหน้าเว็บ
 if (autoSaveIntervalId) clearInterval(autoSaveIntervalId);
 autoSaveIntervalId = setInterval(() => {
-  if (activeOrderId && isUserLoggedIn()) {
-    flushAutoSaveNow();
+  if (autoSaveDirty && activeOrderId && isUserLoggedIn()) {
+    runWhenIdle(() => flushAutoSaveNow());
   }
-}, 15000);
+}, 30000);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && isUserLoggedIn() && activeOrderId) {

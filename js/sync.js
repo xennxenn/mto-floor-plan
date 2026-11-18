@@ -105,7 +105,7 @@ const RealtimeSync = (() => {
     if (!data || typeof data !== 'object') return;
     if (data.rev && data.rev === lastRev) return;
     if (data.clientId && data.clientId === CLIENT_ID) return;
-    if (pushTimer) return; // ป้องกันข้อมูลเก่าจาก Cloud มาทับการแก้ไขที่กำลังรอซิงค์ในเครื่อง
+    if (pushTimer || (typeof autoSaveDirty !== 'undefined' && autoSaveDirty)) return; // ป้องกันข้อมูลเก่าจาก Cloud มาทับการแก้ไขที่กำลังพิมพ์หรือรอซิงค์ในเครื่อง
 
     lastRev = data.rev || String(Date.now());
     isApplyingRemote = true;
@@ -475,7 +475,7 @@ const RealtimeSync = (() => {
     }
     if (!cfg || !cfg.provider) return;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(() => { pushTimer = null; pushToCloudNow(); }, 350);
+    pushTimer = setTimeout(() => { pushTimer = null; pushToCloudNow(); }, 1500);
   }
 
   function flushNow() {
