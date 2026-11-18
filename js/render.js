@@ -685,19 +685,30 @@ function windowSVG(w) {
   // ==================== 3) ความสูงเต็ม (ซ้าย-ขวา เช่น 299.5-299) & ความกว้างเต็ม ====================
   const fullHFormatted = formatFullHeightLeftToRight(w);
   const fullHPair = valWithNote(fullHFormatted, w.noteFullH);
-  const leftFullText = fullHPair.v ? `สูงเต็ม = ${fullHPair.v}` : (hasVal(w.drop) ? `สูงเต็ม = ${w.drop}` : 'สูงเต็ม =');
-  s += `<text x="-14" y="${cy + 3}" text-anchor="start" font-size="9.6" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
-  if (fullHPair.n) {
-    s += `<text x="-14" y="${cy + 14}" text-anchor="start" font-size="8.8" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
+  const fullHValText = fullHPair.v || (hasVal(w.drop) ? String(w.drop).trim() : '');
+  const leftFullText = fullHValText ? `สูงเต็ม = ${fullHValText}` : 'สูงเต็ม =';
+  const leftTextX = leftOuterX - 5;
+  if (fullHValText && (wings.left || fullHValText.length > 5)) {
+    s += `<text x="${leftTextX}" y="${cy - 4}" text-anchor="end" font-size="9.2" font-weight="700" fill="#000" data-fullh="${esc(leftFullText)}">สูงเต็ม =</text>`;
+    s += `<text x="${leftTextX}" y="${cy + 7}" text-anchor="end" font-size="9.5" font-weight="700" fill="#000">${esc(fullHValText)}</text>`;
+    if (fullHPair.n) {
+      s += `<text x="${leftTextX}" y="${cy + 17}" text-anchor="end" font-size="8.5" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
+    }
+  } else {
+    s += `<text x="${leftTextX}" y="${cy + 3}" text-anchor="end" font-size="9.6" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
+    if (fullHPair.n) {
+      s += `<text x="${leftTextX}" y="${cy + 14}" text-anchor="end" font-size="8.8" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
+    }
   }
 
   const fullWPair = valWithNote(w.fullW, w.noteFullW);
   const botFullText = fullWPair.v
     ? `กว้างเต็ม = ${fullWPair.v}${fullWPair.n ? ' (' + fullWPair.n + ')' : ''}`
     : (fullWPair.n ? `กว้างเต็ม = (${fullWPair.n})` : 'กว้างเต็ม =');
-  s += `<text x="${cx}" y="${botOuterY + 13}" text-anchor="middle" font-size="9.8" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
+  const centerFrameX = (x0 + x1) / 2;
+  s += `<text x="${centerFrameX}" y="${botOuterY + 12}" text-anchor="middle" font-size="9.6" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
 
-  // แสดงข้อมูลกำกับกรณีบานดัดโค้ง (ด้านซ้าย / ด้านตรง / ด้านขวา) หรือ ขนาดรางม่านทึบ/โปร่งไม่เท่ากัน
+  // แสดงข้อมูลกำกับกรณีบานดัดโค้ง (ด้านซ้าย / ด้านตรง / ด้านขวา) หรือ ขนาดรางม่านทึบ/โปร่งไม่เท่ากัน โดยแยกบรรทัดไม่ให้ทับตัวเลขพื้นที่ด้านล่าง
   const extraBottomBadges = [];
   if (shape !== '1' && (hasVal(w.sideWidthLeft) || hasVal(w.sideWidthCenter) || hasVal(w.sideWidthRight))) {
     const sideParts = [];
@@ -706,6 +717,7 @@ function windowSVG(w) {
     if (wings.right && hasVal(w.sideWidthRight)) sideParts.push(`โค้งขวา ${w.sideWidthRight}`);
     if (sideParts.length) extraBottomBadges.push(`(${sideParts.join(' + ')})`);
   }
+  const railBadges = [];
   if (w.unequalLayerRail) {
     const baseRW = numVal(calcRailWidth(w));
     const baseRH = numVal(calcRailHeight(w));
@@ -714,21 +726,22 @@ function windowSVG(w) {
     const rh1 = numVal(w.railH1) || baseRH;
     const rh2 = numVal(w.railH2) || baseRH;
     if (rw1 > 0 && rw2 > 0 && rw1 !== rw2) {
-      extraBottomBadges.push(`รางกว้าง ทึบ ${rw1}* / โปร่ง ${rw2}*`);
+      railBadges.push(`รางกว้าง ทึบ ${rw1}* / โปร่ง ${rw2}*`);
     }
     if (rh1 > 0 && rh2 > 0 && rh1 !== rh2) {
-      extraBottomBadges.push(`รางสูง ทึบ ${rh1}* / โปร่ง ${rh2}*`);
+      railBadges.push(`รางสูง ทึบ ${rh1}* / โปร่ง ${rh2}*`);
     }
   }
   if ((w.calcMode === 'manual' || (w.manualFields && (w.manualFields.railW || w.manualFields.railA))) && hasVal(w.customRailW) && !w.unequalLayerRail) {
-    extraBottomBadges.push(`กว้างรางระบุเอง ${String(w.customRailW).replace(/\*/g, '')}*`);
+    railBadges.push(`กว้างรางระบุเอง ${String(w.customRailW).replace(/\*/g, '')}*`);
   }
   if ((w.calcMode === 'manual' || (w.manualFields && (w.manualFields.railH || w.manualFields.railB))) && hasVal(w.customRailH) && !w.unequalLayerRail) {
-    extraBottomBadges.push(`สูงรางระบุเอง ${String(w.customRailH).replace(/\*/g, '')}*`);
+    railBadges.push(`สูงรางระบุเอง ${String(w.customRailH).replace(/\*/g, '')}*`);
   }
-  if (extraBottomBadges.length) {
-    s += `<text x="${cx}" y="${botOuterY + 25}" text-anchor="middle" font-size="8.8" font-weight="700" fill="#0d47a1">${esc(extraBottomBadges.join(' • '))}</text>`;
-  }
+  if (railBadges.length) extraBottomBadges.push(railBadges.join(' • '));
+  extraBottomBadges.forEach((lineTxt, li) => {
+    s += `<text x="${centerFrameX}" y="${botOuterY + 23 + li * 10}" text-anchor="middle" font-size="8.4" font-weight="700" fill="#0d47a1">${esc(lineTxt)}</text>`;
+  });
 
   // ==================== 4) วาดกรอบหน้าต่าง/ประตู (แบบ 1–9) ขนาดใหญ่ชัดเจน ====================
   if (surfaces.leftWing) {
