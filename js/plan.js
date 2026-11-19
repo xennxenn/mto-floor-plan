@@ -256,18 +256,21 @@ function planItemSVG(it, i, opts = {}) {
       const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
       const ux = dx / len, uy = dy / len;
       const nx = -uy, ny = ux;
-      const sw = ps ? Math.max(2.2, Math.round((1.5 / ps) * 10) / 10) : 5;
-      const headLen = ps ? Math.round(6.8 / ps) : 22;
-      const headW = ps ? Math.round(4.4 / ps) : 14;
+      const sw = ps ? Math.max(2.0, Math.min(len * 0.14, Math.round((1.5 / ps) * 10) / 10)) : 5;
+      const rawHeadLen = ps ? Math.round(6.2 / ps) : 22;
+      const headLen = Math.max(10, Math.min(rawHeadLen, len * 0.45));
+      const headW = Math.max(6, Math.round(headLen * 0.62));
       const hx = x2 - ux * headLen, hy = y2 - uy * headLen;
-      const lx = x2 - ux * (headLen * 0.7), ly = y2 - uy * (headLen * 0.7);
+      const lx = x2 - ux * (headLen * 0.72), ly = y2 - uy * (headLen * 0.72);
+      const haloSw = sw + (ps ? Math.max(2, Math.round(1.4 / ps)) : 4);
+      g += `<line x1="${x1}" y1="${y1}" x2="${lx}" y2="${ly}" stroke="#fff" stroke-width="${haloSw}" stroke-linecap="round"/>`;
       g += `<line x1="${x1}" y1="${y1}" x2="${lx}" y2="${ly}" stroke="#000" stroke-width="${sw}" stroke-linecap="round"/>`;
-      g += `<polygon points="${x2},${y2} ${Math.round(hx + nx * headW)},${Math.round(hy + ny * headW)} ${Math.round(hx - nx * headW)},${Math.round(hy - ny * headW)}" fill="#000" stroke="#000" stroke-width="1" stroke-linejoin="round"/>`;
+      g += `<polygon points="${x2},${y2} ${Math.round(hx + nx * headW)},${Math.round(hy + ny * headW)} ${Math.round(hx - nx * headW)},${Math.round(hy - ny * headW)}" fill="#000" stroke="#fff" stroke-width="${ps ? Math.max(1, Math.round(0.8 / ps)) : 2}" paint-order="stroke" stroke-linejoin="round"/>`;
       if (it.label) {
-        const fSize = ps ? Math.round(8.8 / ps) : 22;
-        const tx = Math.round(x1 - ux * (fSize * 0.6));
-        const ty = Math.round(y1 - uy * (fSize * 0.6) + fSize * 0.35);
-        g += `<text x="${tx}" y="${ty}" text-anchor="middle" font-size="${fSize}" font-weight="700" fill="#000" font-family="Sarabun, Tahoma, sans-serif">${planEsc(it.label)}</text>`;
+        const fSize = ps ? Math.round(8.2 / ps) : 22;
+        const tx = Math.round(x1 - ux * (fSize * 0.65));
+        const ty = Math.round(y1 - uy * (fSize * 0.65) + fSize * 0.35);
+        g += `<text x="${tx}" y="${ty}" text-anchor="middle" font-size="${fSize}" font-weight="700" fill="#000" stroke="#fff" stroke-width="${ps ? 2 : 4}" paint-order="stroke" font-family="Sarabun, Tahoma, sans-serif">${planEsc(it.label)}</text>`;
       }
       if (ed) g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="transparent" stroke-width="28"/>`;
       break;
@@ -318,8 +321,13 @@ function planPreviewSVG(items) {
     } else if (it.type === 'window' || it.type === 'door') {
       itemPoints(it).forEach(p => { add(p.x - 20, p.y - 20); add(p.x + 20, p.y + 20); });
     } else if (it.type === 'entrance') {
-      add(it.x1 - 18, it.y1 - 18); add(it.x1 + 18, it.y1 + 18);
-      add(it.x2 - 18, it.y2 - 18); add(it.x2 + 18, it.y2 + 18);
+      const len = Math.hypot((it.x2 || 0) - (it.x1 || 0), (it.y2 || 0) - (it.y1 || 0)) || 60;
+      const padA = Math.max(28, Math.round(len * 0.35));
+      add(it.x1 - padA, it.y1 - padA); add(it.x1 + padA, it.y1 + padA);
+      add(it.x2 - padA, it.y2 - padA); add(it.x2 + padA, it.y2 + padA);
+      if (it.label) {
+        add(it.x1 - 48, it.y1 - 48); add(it.x1 + 48, it.y1 + 48);
+      }
     } else {
       add(it.x1, it.y1); add(it.x2, it.y2);
     }
@@ -634,9 +642,10 @@ const PlanEditor = (() => {
       const it = items[drag.idx];
       if (Math.hypot(it.x2 - it.x1, it.y2 - it.y1) < 10) {
         if (it.type === 'entrance') {
-          // หากคลิก 1 ครั้งโดยไม่ลาก ให้สร้างลูกศรชี้ขึ้นด้านบนขนาดมาตรฐานให้อัตโนมัติ
-          it.y1 = it.y1 + 32;
-          it.y2 = it.y2 - 28;
+          // หากคลิก 1 ครั้งโดยไม่ลาก ให้สร้างลูกศรชี้ขึ้นด้านบนขนาดมาตรฐานอยู่ในกรอบแปลนเสมอ
+          const cy = Math.max(55, Math.min(445, it.y1));
+          it.y1 = cy + 36;
+          it.y2 = cy - 36;
           undoS.push(drag.before); redoS = [];
         } else {
           items.splice(drag.idx, 1);

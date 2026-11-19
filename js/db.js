@@ -408,13 +408,13 @@ function defaultMasterDB() {
       { id: 'ac6', name: 'ห่วงตาไก่ แบบเรียบ', category: 'ห่วงตาไก่', curtainStyle: 'ม่านตาไก่', defaultColor: 'สีเงิน', sellUnit: 'ชิ้น', spec: 'สีเงิน / ทองเหลือง / ทองแดง' },
       { id: 'ac7', name: 'ห่วงตาไก่ แบบลอน / แบบคลื่น', category: 'ห่วงตาไก่', curtainStyle: 'ม่านตาไก่', defaultColor: 'ทองเหลือง', sellUnit: 'ชิ้น', spec: 'ทองเหลือง / ทองแดง' },
     ],
-    // ฐานข้อมูลมู่ลี่และม่านม้วน (คำนวณเป็นตารางเมตร ขายขั้นต่ำ 1.5 ตร.ม./ผืน)
+    // ฐานข้อมูลมู่ลี่และม่านม้วน (แบ่งตามชื่อกลุ่ม -> รหัสชื่อ/รุ่น + สีเชือกเทป/เชือกสลิง + สีกล่องบังราง • คำนวณ ตร.ม. ขั้นต่ำ 1.5 ตร.ม./ผืน)
     blinds: [
-      { id: 'bl1', name: 'ม่านม้วน Blackout', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl2', name: 'ม่านม้วน Sunscreen', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl3', name: 'ม่านม้วน Dimout', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl4', name: 'มู่ลี่ไม้ Basswood 50 มม.', curtainStyle: 'มู่ลี่ไม้', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl5', name: 'มู่ลี่อลูมิเนียม 25 มม.', curtainStyle: 'มู่ลี่อลูมิเนียม', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl1', group: 'ม่านม้วน Blackout', name: 'Blackout มาตรฐาน', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl2', group: 'ม่านม้วน Sunscreen', name: 'Sunscreen 5%', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl3', group: 'ม่านม้วน Dimout', name: 'Dimout มาตรฐาน', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl4', group: 'มู่ลี่ไม้ Basswood 50 มม.', name: 'BW-50', curtainStyle: 'มู่ลี่ไม้', cordColors: 'เชือกเทปสีครีม, เชือกเทปสีขาว, เชือกเทปสีน้ำตาล, เชือกสลิงสีเทา', valanceColors: 'สีเดียวกับใบมู่ลี่, ขาว, ครีม, น้ำตาลเข้ม', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl5', group: 'มู่ลี่อลูมิเนียม 25 มม.', name: 'ALU-25', curtainStyle: 'มู่ลี่อลูมิเนียม', cordColors: 'เชือกสลิงสีขาว, เชือกสลิงสีเทา, เชือกสลิงสีดำ', valanceColors: 'สีเดียวกับใบมู่ลี่, ขาว, เงิน, ดำ', minSqm: 1.5, roundMode: 'ceil_1dec' },
     ],
     // ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (WC) — ไม่ต้องระบุจำนวนผืนในฐานข้อมูล ระบบจะดึงจำนวนผืน (P) จากบานนั้นๆ อัตโนมัติ
     // 1. แบบย่นสำเร็จ (ม่านจีบ, ม่านลอน): WC = (RW / P) + OV + SR
@@ -874,10 +874,12 @@ function normalizeWidthFormulaItem(wf, idx) {
 }
 
 function normalizeHeightFormulaItem(hf, idx) {
-  return Object.assign({
+  const item = Object.assign({
     id: 'hf_' + (idx + 1),
     curtainStyle: '*',
     rodType: '*',
+    railGroup: '*',
+    railName: '*',
     railTracks: '*',
     pieces: '*',
     hookSize: '*',
@@ -886,6 +888,10 @@ function normalizeHeightFormulaItem(hf, idx) {
     heightExp: 'RH - FL_BASE',
     roundMode: 'none',
   }, hf || {});
+  item.pieces = '*'; // ไม่ใช้จำนวนผืนในฐานข้อมูลความสูงผ้าม่าน ใช้กลุ่มรางม่านและรายการรางม่านแทน
+  if (!item.railGroup) item.railGroup = '*';
+  if (!item.railName) item.railName = '*';
+  return item;
 }
 
 function normalizeFabricCalcRuleItem(r, idx) {
@@ -964,6 +970,7 @@ function normalizeRailItem(rl, idx) {
   return Object.assign({
     id: 'rl_' + (idx + 1),
     name: '',
+    railGroup: '',
     rodCategory,
     curtainStyle: '*',
     defaultColor: '',
@@ -976,6 +983,25 @@ function normalizeRailItem(rl, idx) {
     sellUnit,
     minLength: (!isNaN(minLengthRaw) && minLengthRaw > 0) ? minLengthRaw : (sellUnit === 'ชุด' ? 2.0 : 1.0),
   });
+}
+
+function normalizeBlindItem(bl, idx) {
+  const item = Object.assign({
+    id: 'bl_' + (idx + 1),
+    group: '',
+    name: '',
+    curtainStyle: 'ม่านม้วน',
+    cordColors: '',
+    valanceColors: '',
+    minSqm: 1.5,
+    roundMode: 'ceil_1dec',
+  }, bl || {});
+  if (!item.group && item.name) {
+    // อัปเกรดข้อมูลเก่าที่ยังไม่มีชื่อกลุ่ม ให้ตั้งชื่อกลุ่มจากรูปแบบม่านหรือชื่อเดิม
+    item.group = item.curtainStyle && item.curtainStyle !== '*' ? item.curtainStyle : item.name;
+  }
+  item.minSqm = Math.max(1.5, parseFloat(item.minSqm) || 1.5);
+  return item;
 }
 
 function normalizeAccessoryItem(ac, idx) {
@@ -1021,7 +1047,7 @@ function normalizeMasterDBObject(raw) {
       : def.fabrics,
     rails: (onlyRails.length ? onlyRails : def.rails).map((rl, i) => normalizeRailItem(rl, i)),
     accessories: rawAccessories.map((ac, i) => normalizeAccessoryItem(ac, i)),
-    blinds: Array.isArray(raw.blinds) && raw.blinds.length ? raw.blinds : def.blinds,
+    blinds: (Array.isArray(raw.blinds) && raw.blinds.length ? raw.blinds : def.blinds).map((bl, i) => normalizeBlindItem(bl, i)),
     widthFormulas: !isLegacy9 && Array.isArray(raw.widthFormulas) && raw.widthFormulas.length
       ? raw.widthFormulas.map((w, i) => normalizeWidthFormulaItem(w, i))
       : def.widthFormulas,
@@ -1187,50 +1213,61 @@ function inferNaturalRodTypeForStyle(curtainStyle) {
   return '';
 }
 
-function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks = '', pieces = '') {
+function resolveRailMetaByName(railModelName) {
+  const n = String(railModelName || '').trim();
+  if (!n) return { name: '', railGroup: '' };
+  const rl = (masterDB.rails || []).find(r => String(r.name || '').trim() === n);
+  return { name: n, railGroup: rl ? String(rl.railGroup || '').trim() : '' };
+}
+
+function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks = '', railModel = '') {
   const all = masterDB.heightFormulas || [];
   if (!curtainStyle) return all;
   const hKey = normalizeHookKey(hookSize);
   const naturalRod = inferNaturalRodTypeForStyle(curtainStyle);
+  const rm = resolveRailMetaByName(railModel);
   const matched = all.filter(f => {
     const matchStyle = !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
     const matchRod = !rodType || !f.rodType || f.rodType === '*' || f.rodType === rodType || (rodType !== 'รางโชว์' && naturalRod && f.rodType === naturalRod);
+    const matchRailGroup = !rm.railGroup || !f.railGroup || f.railGroup === '*' || f.railGroup === rm.railGroup;
+    const matchRailName = !rm.name || !f.railName || f.railName === '*' || f.railName === rm.name;
     const fHookKey = normalizeHookKey(f.hookSize);
     const matchHook = !hookSize || !f.hookSize || f.hookSize === '*' || f.hookSize === hookSize || (hKey !== '*' && fHookKey === hKey);
     const matchTracks = !railTracks || !f.railTracks || String(f.railTracks) === '*' || String(f.railTracks) === String(railTracks);
-    const matchPieces = !pieces || !f.pieces || String(f.pieces) === '*' || String(f.pieces) === String(pieces);
-    return matchStyle && matchRod && matchHook && matchTracks && matchPieces;
+    return matchStyle && matchRod && matchRailGroup && matchRailName && matchHook && matchTracks;
   });
   return matched.length ? matched : all;
 }
 
 /**
- * ค้นหาสูตรลดความสูงผ้าม่านอัตโนมัติตามรูปแบบผ้าม่านและเงื่อนไขของชั้นนั้นๆ
- * (เช่น ม่าน 2 ชั้น ชั้นที่ 1 เป็นม่านลอน ตะขอเบอร์ 8 และชั้นที่ 2 เป็นม่านจีบ ตะขอเบอร์ 8 จะคำนวณตามสูตรของม่านจีบเองก่อนลดเพิ่ม 1 ซม.)
+ * ค้นหาสูตรลดความสูงผ้าม่านอัตโนมัติตามรูปแบบผ้าม่าน, รายการรางม่าน, กลุ่มรางม่าน, และเงื่อนไขของชั้นนั้นๆ
  */
-function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTracks = '', pieces = '') {
+function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTracks = '', railModel = '') {
   if (!curtainStyle) return null;
   const all = masterDB.heightFormulas || [];
   const hKey = normalizeHookKey(hookSize);
   const naturalRod = inferNaturalRodTypeForStyle(curtainStyle);
+  const rm = resolveRailMetaByName(railModel);
 
   const tryMatchWithRod = effRod => all.filter(f => {
     const reqStyle = f.curtainStyle && f.curtainStyle !== '*';
     const reqRod = f.rodType && f.rodType !== '*';
+    const reqRailGroup = f.railGroup && f.railGroup !== '*';
+    const reqRailName = f.railName && f.railName !== '*';
     const reqHook = f.hookSize && f.hookSize !== '*';
     const reqTracks = f.railTracks && String(f.railTracks) !== '*';
-    const reqPieces = f.pieces && String(f.pieces) !== '*';
 
     if (reqStyle && f.curtainStyle !== curtainStyle && !curtainStyle.includes(f.curtainStyle)) return false;
     if (reqRod && (!effRod || f.rodType !== effRod)) return false;
+    if (reqRailName && (!rm.name || f.railName !== rm.name)) return false;
+    if (reqRailGroup && (!rm.railGroup || f.railGroup !== rm.railGroup)) return false;
     if (reqHook) {
       if (!hookSize) return false;
       const fHookKey = normalizeHookKey(f.hookSize);
       if (f.hookSize !== hookSize && (hKey === '*' || fHookKey !== hKey)) return false;
     }
     if (reqTracks && (!railTracks || String(f.railTracks) !== String(railTracks))) return false;
-    if (reqPieces && (!pieces || String(f.pieces) !== String(pieces))) return false;
-    return reqStyle || reqRod || reqHook;
+    return reqStyle || reqRod || reqRailName || reqRailGroup || reqHook;
   });
 
   let exactMatched = tryMatchWithRod(rodType);
@@ -1241,11 +1278,12 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
   if (exactMatched.length) {
     exactMatched.sort((a, b) => {
       const score = x =>
+        ((x.railName && x.railName !== '*') ? 10 : 0) +
+        ((x.railGroup && x.railGroup !== '*') ? 8 : 0) +
         ((x.curtainStyle && x.curtainStyle !== '*') ? 4 : 0) +
         ((x.rodType && x.rodType !== '*') ? 2 : 0) +
         ((x.hookSize && x.hookSize !== '*') ? 2 : 0) +
-        ((x.railTracks && String(x.railTracks) !== '*') ? 1 : 0) +
-        ((x.pieces && String(x.pieces) !== '*') ? 1 : 0);
+        ((x.railTracks && String(x.railTracks) !== '*') ? 1 : 0);
       return score(b) - score(a);
     });
     return exactMatched[0];
@@ -2113,21 +2151,36 @@ const DB_IMPORT_SCHEMAS = {
     },
   },
   blinds: {
-    title: 'ฐานข้อมูลมู่ลี่และม่านม้วน (ตร.ม.)',
-    pattern: 'name, curtainStyle, minSqm, roundMode',
-    desc: 'คอลัมน์: ชื่อมู่ลี่/ม่านม้วน, รูปแบบม่าน (ม่านม้วน/มู่ลี่ไม้/มู่ลี่อลูมิเนียม), ขายขั้นต่ำ(ตร.ม./ผืน อย่างน้อย 1.5), การปัดเศษ (ceil_1dec / ceil_int / floor_int / none)',
+    title: 'ฐานข้อมูลมู่ลี่และม่านม้วน (ชื่อกลุ่ม -> รหัสชื่อ/รุ่น + สีเชือกเทป/สลิง + สีกล่องบังราง)',
+    pattern: 'group, name, curtainStyle, cordColors, valanceColors, minSqm, roundMode',
+    desc: 'คอลัมน์: ชื่อกลุ่ม, รหัสชื่อ/รุ่น, รูปแบบม่าน (ม่านม้วน/มู่ลี่ไม้/มู่ลี่อลูมิเนียม), สีเชือกเทป/เชือกสลิง (คั่นด้วย ;), สีกล่องบังรางมู่ลี่ (คั่นด้วย ;), ขายขั้นต่ำ(ตร.ม./ผืน อย่างน้อย 1.5), การปัดเศษ',
     example: [
-      'name, curtainStyle, minSqm, roundMode',
-      'ม่านม้วน Blackout, ม่านม้วน, 1.5, ceil_1dec',
-      'มู่ลี่ไม้ Basswood 50mm, มู่ลี่ไม้, 1.5, ceil_1dec',
+      'group, name, curtainStyle, cordColors, valanceColors, minSqm, roundMode',
+      'ม่านม้วน Blackout, RB-101, ม่านม้วน, , , 1.5, ceil_1dec',
+      'มู่ลี่ไม้ Basswood 50mm, BW-50, มู่ลี่ไม้, เชือกเทปสีครีม; เชือกเทปสีขาว; เชือกสลิงสีเทา, สีเดียวกับใบมู่ลี่; ขาว; ครีม, 1.5, ceil_1dec',
     ].join('\n'),
-    headers: ['name', 'ชื่อมู่ลี่', 'ชื่อม่านม้วน'],
+    headers: ['group', 'name', 'ชื่อกลุ่ม', 'ชื่อมู่ลี่', 'ชื่อม่านม้วน'],
     parseRow(cols, idx) {
       if (!cols[0]) return null;
+      if (cols.length >= 6) {
+        return {
+          id: 'bl_imp_' + Date.now() + '_' + idx,
+          group: cols[0],
+          name: cols[1] || cols[0],
+          curtainStyle: cols[2] || 'ม่านม้วน',
+          cordColors: String(cols[3] || '').replace(/;/g, ', '),
+          valanceColors: String(cols[4] || '').replace(/;/g, ', '),
+          minSqm: Math.max(1.5, parseFloat(cols[5]) || 1.5),
+          roundMode: cols[6] || 'ceil_1dec',
+        };
+      }
       return {
         id: 'bl_imp_' + Date.now() + '_' + idx,
+        group: cols[1] || cols[0],
         name: cols[0],
         curtainStyle: cols[1] || 'ม่านม้วน',
+        cordColors: '',
+        valanceColors: '',
         minSqm: Math.max(1.5, parseFloat(cols[2]) || 1.5),
         roundMode: cols[3] || 'ceil_1dec',
       };
@@ -2393,6 +2446,21 @@ const MasterDBModal = (() => {
   function piecesSelectOpts(selected) {
     const opts = [['*', 'ทั้งหมด (*)'], ['1', '1 ผืน'], ['2', '2 ผืน'], ['3', '3 ผืน'], ['4', '4 ผืน']];
     return opts.map(([v, t]) => `<option value="${escH(v)}" ${String(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
+  }
+
+  function railGroupSelectOpts(selected) {
+    const groups = Array.from(new Set((masterDB.rails || []).map(r => String(r.railGroup || '').trim()).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, 'th'));
+    const opts = [['*', 'ทุกกลุ่ม (*)'], ...groups.map(g => [g, g])];
+    if (selected && selected !== '*' && !groups.includes(selected)) opts.push([selected, selected]);
+    return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
+  }
+
+  function railNameSelectOpts(selected) {
+    const names = Array.from(new Set((masterDB.rails || []).map(r => String(r.name || '').trim()).filter(Boolean)));
+    const opts = [['*', 'ทุกรายการราง (*)'], ...names.map(n => [n, n])];
+    if (selected && selected !== '*' && !names.includes(selected)) opts.push([selected, selected]);
+    return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
   }
 
   function hookSelectOpts(selected) {
@@ -2661,23 +2729,24 @@ const MasterDBModal = (() => {
     } else if (activeTab === 'heightFormulas') {
       body.innerHTML = renderVariableReferenceCard('height') + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>📏 ฐานข้อมูลการคำนวณขนาดความสูงผ้าม่าน (มาตรฐานลอยจากพื้น <code>FL_BASE = 1</code> ซม.):</b><br>
-          • <b>ความสูงราง (<code>RH</code>) = สูงเฟรม (<code>H</code>) + เผื่อบน (<code>ET</code>) + เผื่อล่าง (<code>EB</code>)</b><br>
-          • สูตรในฐานข้อมูลนี้คิดความสูงที่ระยะ <b>ลอยจากพื้นมาตรฐาน 1 ซม.</b> (หากบานใดต้องการลอยมากว่า 1 ซม., กองพื้น, หรือพอดีพื้น สามารถเลือกปรับที่แปลนงานได้ทันที)
+          <b>📏 ฐานข้อมูลการคำนวณขนาดความสูงผ้าม่าน (เชื่อมโยงกับกลุ่มรางม่านและรายการรางม่าน • มาตรฐานลอยจากพื้น <code>FL_BASE = 1</code> ซม.):</b><br>
+          • กำหนด <b>กลุ่มรางม่าน</b> (จับกลุ่มรางที่มีระยะลดความสูงเท่ากันในแท็บรางม่าน) หรือระบุ <b>รายการรางม่าน</b> เฉพาะรุ่นได้โดยไม่ต้องระบุจำนวนผืน<br>
+          • <b>ความสูงราง (<code>RH</code>) = สูงเฟรม (<code>H</code>) + เผื่อบน (<code>ET</code>) + เผื่อล่าง (<code>EB</code>)</b>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1300px">
+          <table class="ed-tbl" style="min-width:1420px">
             <thead>
               <tr>
                 <th style="width:110px">รูปแบบผ้าม่าน</th>
-                <th style="width:120px">ประเภทรางม่าน</th>
-                <th style="width:100px">ชั้นราง (RT)</th>
-                <th style="width:85px">จำนวนผืน (P)</th>
-                <th style="width:100px">ขนาดตะขอ</th>
-                <th style="width:105px">ลอยพื้นมาตรฐาน (FL_BASE ซม.)</th>
-                <th style="min-width:280px">ชื่อเงื่อนไขความสูง</th>
-                <th style="width:165px">สูตรความสูงผ้า (HC)</th>
-                <th style="width:165px">การปัดเศษ</th>
+                <th style="width:115px">ประเภทรางม่าน</th>
+                <th style="width:145px">กลุ่มรางม่าน (ขนาดเดียวกัน)</th>
+                <th style="width:170px">รายการรางม่าน</th>
+                <th style="width:95px">ชั้นราง (RT)</th>
+                <th style="width:95px">ขนาดตะขอ</th>
+                <th style="width:95px">ลอยพื้น (FL_BASE)</th>
+                <th style="min-width:250px">ชื่อเงื่อนไขความสูง</th>
+                <th style="width:155px">สูตรความสูงผ้า (HC)</th>
+                <th style="width:150px">การปัดเศษ</th>
                 <th style="width:42px">ลบ</th>
               </tr>
             </thead>
@@ -2686,8 +2755,9 @@ const MasterDBModal = (() => {
                 <tr>
                   <td><select data-db-edit="heightFormulas.${i}.curtainStyle">${curtainSelectOpts(hf.curtainStyle)}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.rodType">${rodSelectOpts(hf.rodType)}</select></td>
+                  <td><select data-db-edit="heightFormulas.${i}.railGroup">${railGroupSelectOpts(hf.railGroup || '*')}</select></td>
+                  <td><select data-db-edit="heightFormulas.${i}.railName">${railNameSelectOpts(hf.railName || '*')}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.railTracks">${railTrackSelectOpts(hf.railTracks || '*')}</select></td>
-                  <td><select data-db-edit="heightFormulas.${i}.pieces">${piecesSelectOpts(hf.pieces || '*')}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.hookSize">${hookSelectOpts(hf.hookSize)}</select></td>
                   <td><input type="number" step="any" min="0" data-db-edit="heightFormulas.${i}.floorFloat" value="${escH(hf.floorFloat ?? 1)}" title="ค่ามาตรฐานลอยจากพื้น (ซม.) เช่น 1"></td>
                   <td><input data-db-edit="heightFormulas.${i}.label" value="${escH(hf.label || '')}"></td>
@@ -2779,24 +2849,27 @@ const MasterDBModal = (() => {
       `;
     } else if (activeTab === 'rails') {
       const railsAll = masterDB.rails || [];
+      const railGroupsList = Array.from(new Set(railsAll.map(r => String(r.railGroup || '').trim()).filter(Boolean)));
       body.innerHTML = `
+        <datalist id="dlRailGroups">${railGroupsList.map(g => `<option value="${escH(g)}"></option>`).join('')}</datalist>
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>🛤️ ฐานข้อมูลรางม่าน (แยกออกจากอุปกรณ์เสริม • กำหนดหน่วยขาย เมตร หรือ ชุด พร้อมขนาดขั้นต่ำต่อชุด):</b><br>
-          • กรณีขายเป็น <b>เมตร</b>: กำหนดขั้นต่ำต่อรางได้ เช่น <b>1.00 เมตร</b> (ราง 80 ซม. = 1.00 เมตร)<br>
-          • กรณีขายเป็น <b>ชุด</b>: กำหนดขนาดความยาวเป็นเมตรควบคู่จำนวนชุด เช่น กว้าง 285 ซม. = <b>2.85 1 ชุด</b> พร้อมกำหนดขั้นต่ำต่อชุดได้ เช่น <b>2.00</b> หรือ <b>1.00</b> เมตร ตามแต่ชุดระบุเองได้
+          <b>🛤️ ฐานข้อมูลรางม่าน (แยกออกจากอุปกรณ์เสริม • กำหนดกลุ่มรางม่านที่มีขนาด/ระยะลดความสูงเดียวกัน + หน่วยขาย เมตร หรือ ชุด):</b><br>
+          • <b>กลุ่มรางม่าน</b>: ตั้งชื่อกลุ่มเดียวกันให้รางที่มีขนาด/ระยะลดความสูงเท่ากัน เพื่อนำไปผูกในฐานข้อมูลขนาดความสูงผ้าม่าน<br>
+          • กรณีขายเป็น <b>เมตร</b>: กำหนดขั้นต่ำต่อรางได้ เช่น <b>1.00 เมตร</b> | กรณีขายเป็น <b>ชุด</b>: เช่น <b>2.00</b> เมตร/ชุด
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1320px">
+          <table class="ed-tbl" style="min-width:1460px">
             <thead>
               <tr>
-                <th style="min-width:220px">ชื่อรางม่าน</th>
-                <th style="width:145px">ประเภทรางม่าน</th>
-                <th style="width:130px">ใช้กับรูปแบบม่าน</th>
-                <th style="width:155px">หน่วยขายราง</th>
-                <th style="width:135px">ขั้นต่ำต่อชุด/ราง (เมตร)</th>
-                <th style="min-width:250px">การแบ่งชุดตามความยาวราง (เมตร=ชุด)</th>
-                <th style="width:100px">สีมาตรฐาน</th>
-                <th style="width:175px">รายละเอียด / ขนาด</th>
+                <th style="min-width:210px">ชื่อรางม่าน</th>
+                <th style="width:165px">กลุ่มรางม่าน (ขนาดเดียวกัน)</th>
+                <th style="width:135px">ประเภทรางม่าน</th>
+                <th style="width:125px">ใช้กับรูปแบบม่าน</th>
+                <th style="width:145px">หน่วยขายราง</th>
+                <th style="width:125px">ขั้นต่ำต่อชุด/ราง (เมตร)</th>
+                <th style="min-width:230px">การแบ่งชุดตามความยาวราง (เมตร=ชุด)</th>
+                <th style="width:95px">สีมาตรฐาน</th>
+                <th style="width:160px">รายละเอียด / ขนาด</th>
                 <th style="width:45px">ลบ</th>
               </tr>
             </thead>
@@ -2804,6 +2877,7 @@ const MasterDBModal = (() => {
               ${railsAll.map((rl, i) => `
                 <tr>
                   <td><input data-db-edit="rails.${i}.name" value="${escH(rl.name || '')}" placeholder="เช่น รางม่านจีบ มาตรฐาน / รางโชว์"></td>
+                  <td><input list="dlRailGroups" data-db-edit="rails.${i}.railGroup" value="${escH(rl.railGroup || '')}" placeholder="เช่น กลุ่มรางจีบ 1.5 ซม."></td>
                   <td><select data-db-edit="rails.${i}.rodCategory">${ROD_TYPES_LIST.map(rt => `<option value="${escH(rt)}" ${rl.rodCategory === rt ? 'selected' : ''}>${escH(rt)}</option>`).join('')}</select></td>
                   <td><select data-db-edit="rails.${i}.curtainStyle">${curtainSelectOpts(rl.curtainStyle)}</select></td>
                   <td><select data-db-edit="rails.${i}.sellUnit">${railSellUnitSelectOpts(rl.sellUnit || (rl.rodCategory === 'รางโชว์' ? 'ชุด' : 'เมตร'))}</select></td>
@@ -2860,27 +2934,36 @@ const MasterDBModal = (() => {
         </div>
       `;
     } else if (activeTab === 'blinds') {
+      const blindGroupsList = Array.from(new Set((masterDB.blinds || []).map(b => String(b.group || '').trim()).filter(Boolean)));
       body.innerHTML = `
+        <datalist id="dlBlindGroups">${blindGroupsList.map(g => `<option value="${escH(g)}"></option>`).join('')}</datalist>
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>🪟 ฐานข้อมูลมู่ลี่และม่านม้วน:</b><br>
-          คำนวณพื้นที่เป็น <b>ตารางเมตร (ตร.ม.)</b> โดยกำหนดขายขั้นต่ำ <b>1.5 ตารางเมตรต่อผืน</b> (หากขนาดกว้าง×สูงต่อผืนน้อยกว่าขั้นต่ำ ระบบจะคิดเป็น 1.5 ตร.ม./ผืน อัตโนมัติ)
+          <b>🪟 ฐานข้อมูลมู่ลี่และม่านม้วน (แยกตามชื่อกลุ่ม → รหัสชื่อ/รุ่น + สีเชือกเทป/เชือกสลิง + สีกล่องบังรางมู่ลี่):</b><br>
+          • ระบุ <b>ชื่อกลุ่ม</b> เพื่อจัดหมวดมู่ลี่/ม่านม้วน แล้วลงรายละเอียด <b>รหัสชื่อ / รุ่น</b> ภายใต้กลุ่มนั้น (บนแปลนเลือกจาก Dropdown หรือระบุเองได้)<br>
+          • สำหรับมู่ลี่ สามารถกำหนดตัวเลือก <b>สีเชือกเทป / สีเชือกสลิง</b> และ <b>สีกล่องบังรางมู่ลี่</b> (คั่นหลายสีด้วยเครื่องหมาย <code>,</code>) • ขายขั้นต่ำ <b>1.5 ตร.ม./ผืน</b>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:820px">
+          <table class="ed-tbl" style="min-width:1320px">
             <thead>
               <tr>
-                <th style="min-width:220px">ชื่อมู่ลี่ / ม่านม้วน</th>
-                <th style="width:160px">รูปแบบม่าน</th>
-                <th style="width:155px">ขายขั้นต่ำ (ตร.ม. / ผืน)</th>
-                <th style="width:210px">การปัดเศษ</th>
-                <th style="width:50px">ลบ</th>
+                <th style="width:135px">รูปแบบม่าน</th>
+                <th style="min-width:180px">ชื่อกลุ่มมู่ลี่ / ม่านม้วน</th>
+                <th style="min-width:170px">รหัสชื่อ / รุ่น</th>
+                <th style="min-width:220px">สีเชือกเทป / สีเชือกสลิง (คั่นด้วย ,)</th>
+                <th style="min-width:200px">สีกล่องบังรางมู่ลี่ (คั่นด้วย ,)</th>
+                <th style="width:120px">ขั้นต่ำ (ตร.ม./ผืน)</th>
+                <th style="width:165px">การปัดเศษ</th>
+                <th style="width:45px">ลบ</th>
               </tr>
             </thead>
             <tbody>
               ${(masterDB.blinds || []).map((bl, i) => `
                 <tr>
-                  <td><input data-db-edit="blinds.${i}.name" value="${escH(bl.name || '')}" placeholder="ระบุชื่อมู่ลี่ / ม่านม้วน"></td>
                   <td><select data-db-edit="blinds.${i}.curtainStyle">${curtainSelectOpts(bl.curtainStyle)}</select></td>
+                  <td><input list="dlBlindGroups" data-db-edit="blinds.${i}.group" value="${escH(bl.group || '')}" placeholder="เช่น ม่านม้วน Blackout / มู่ลี่ไม้ 50 มม."></td>
+                  <td><input data-db-edit="blinds.${i}.name" value="${escH(bl.name || '')}" placeholder="เช่น RB-101 / BW-50"></td>
+                  <td><input data-db-edit="blinds.${i}.cordColors" value="${escH(bl.cordColors || '')}" placeholder="เช่น เชือกเทปสีครีม, เชือกสลิงสีเทา"></td>
+                  <td><input data-db-edit="blinds.${i}.valanceColors" value="${escH(bl.valanceColors || '')}" placeholder="เช่น สีเดียวกับใบ, ขาว, ครีม"></td>
                   <td><input type="number" step="0.1" min="1.5" data-db-edit="blinds.${i}.minSqm" value="${escH(bl.minSqm ?? 1.5)}"></td>
                   <td><select data-db-edit="blinds.${i}.roundMode">${roundModeSelectOpts(bl.roundMode || 'ceil_1dec')}</select></td>
                   <td class="c"><button type="button" class="danger" data-db-del="blinds.${i}">✕</button></td>
@@ -3153,7 +3236,7 @@ const MasterDBModal = (() => {
             sellUnit: 'ชิ้น', defaultColor: '', spec: '',
           });
         } else if (t === 'blinds') {
-          masterDB.blinds.push({ id, name: '', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' });
+          masterDB.blinds.push({ id, group: '', name: '', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' });
         } else if (t === 'curtains') {
           masterDB.curtains.push({
             id, name: '', subCalcType: 'stretched', useHook: false,
@@ -3175,7 +3258,7 @@ const MasterDBModal = (() => {
           });
         } else if (t === 'heightFormulas') {
           masterDB.heightFormulas.push({
-            id, curtainStyle: 'ม่านจีบ', rodType: 'รางม่านจีบ', railTracks: '*', pieces: '*', hookSize: '*', floorFloat: 1,
+            id, curtainStyle: 'ม่านจีบ', rodType: 'รางม่านจีบ', railGroup: '*', railName: '*', railTracks: '*', pieces: '*', hookSize: '*', floorFloat: 1,
             label: 'เงื่อนไขความสูงใหม่ (ลอยพื้น 1 ซม.)', heightExp: 'RH - FL_BASE', roundMode: 'none',
           });
         } else if (t === 'fabricCalcRules') {

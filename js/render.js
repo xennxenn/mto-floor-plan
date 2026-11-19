@@ -965,7 +965,9 @@ function buildGroupedBlindCalcRows(w) {
 }
 
 function rWinCell(w, n, winIdx = 0) {
-  w = w || {};
+  if (!w) {
+    return `<div class="wc wc-empty" data-preview-win="${winIdx}" title="คลิกเพื่อเพิ่มจุดที่ ${esc(n)}"></div>`;
+  }
   const cType = formatCurtainType(w);
   const showHook = curtainNeedsHook(w.curtainStyle1, w.curtainStyle2);
   const hookTxt = showHook ? (w.hookSize || '') : '';
@@ -1132,7 +1134,19 @@ function rFabric(sheet, pageWins) {
   const row = (label, key) => `<tr><th>${label}</th>${cols.map((c, ci) => {
     const ck = colKeys[ci];
     let val = c[key];
-    if (key === 'qty') {
+    if ((ck === 'roller' || ck === 'blinds') && key === 'name') {
+      if (c.group && !c.design) val = c.group;
+      else if (c.group && c.name && !String(c.name).includes(c.group)) val = `${c.group} (${c.name})`;
+      else val = c.name || c.group || '';
+    } else if ((ck === 'roller' || ck === 'blinds') && key === 'design') {
+      val = c.design || (c.group ? (c.name || '') : '');
+    } else if (ck === 'blinds' && key === 'color') {
+      const parts = [];
+      if (String(c.color || '').trim()) parts.push(String(c.color).trim());
+      if (String(c.cordColor || '').trim()) parts.push(`${c.cordType || 'เชือก'}:${String(c.cordColor).trim()}`);
+      if (String(c.valanceColor || '').trim()) parts.push(`กล่อง:${String(c.valanceColor).trim()}`);
+      val = parts.join(' / ');
+    } else if (key === 'qty') {
       const autoSum = sums[ck];
       if (autoSum > 0 && (!c.manualQty || !String(c.qty || '').trim())) {
         val = String(autoSum);
@@ -1140,7 +1154,7 @@ function rFabric(sheet, pageWins) {
         val = String(extractYardsFromCalcText(val) || '');
       }
     }
-    return `<td data-fab-col="${ck}" data-fab-field="${key}">${esc(val)}</td>`;
+    return `<td data-fab-col="${ck}" data-fab-field="${key}" title="${esc(val)}">${esc(val)}</td>`;
   }).join('')}</tr>`;
   const chkMini = on => `<span class="cb-mini">${on ? '✓' : ''}</span>`;
   return `<table class="s-tb">
