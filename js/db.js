@@ -1339,7 +1339,7 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
   const rm = resolveRailMetaByName(railModel);
   const isBlindStyle = isBlindOrRollerStyle(curtainStyle);
 
-  const tryMatchWithRod = effRod => all.filter(f => {
+  const tryMatchWithRod = (effRod, relaxRailIfUnset = false) => all.filter(f => {
     const reqStyle = f.curtainStyle && f.curtainStyle !== '*';
     const reqRod = f.rodType && f.rodType !== '*';
     const reqRailGroup = f.railGroup && f.railGroup !== '*';
@@ -1350,8 +1350,10 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
     if (reqStyle && f.curtainStyle !== curtainStyle && !curtainStyle.includes(f.curtainStyle)) return false;
     if (isBlindStyle && !reqStyle) return false; // ม่านม้วน/มู่ลี่ หากไม่ได้กำหนดสูตรลดความสูงเฉพาะไว้ ห้ามนำสูตรผ้าม่านทั่วไปมาลดความสูง
     if (reqRod && (!effRod || f.rodType !== effRod)) return false;
-    if (reqRailName && (!rm.name || f.railName !== rm.name)) return false;
-    if (reqRailGroup && (!rm.railGroup || f.railGroup !== rm.railGroup)) return false;
+    if (!relaxRailIfUnset || rm.name) {
+      if (reqRailName && (!rm.name || f.railName !== rm.name)) return false;
+      if (reqRailGroup && (!rm.railGroup || f.railGroup !== rm.railGroup)) return false;
+    }
     if (reqHook) {
       if (!hookSize) return false;
       const fHookKey = normalizeHookKey(f.hookSize);
@@ -1361,9 +1363,12 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
     return reqStyle || reqRod || reqRailName || reqRailGroup || reqHook;
   });
 
-  let exactMatched = tryMatchWithRod(rodType);
+  let exactMatched = tryMatchWithRod(rodType, false);
   if (!exactMatched.length && naturalRod && rodType !== naturalRod) {
-    exactMatched = tryMatchWithRod(naturalRod);
+    exactMatched = tryMatchWithRod(naturalRod, false);
+  }
+  if (!exactMatched.length && !rm.name) {
+    exactMatched = tryMatchWithRod(rodType || naturalRod, true);
   }
 
   if (exactMatched.length) {
