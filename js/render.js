@@ -618,10 +618,10 @@ function windowSVG(w) {
   });
 
   const yTopNum = hLineY - 3;
-  const yTopNote = hLineY - 12;
+  const yTopNote = hLineY - 15;
   const drawHText = (x, anchor, textStr, noteStr, yNum = yTopNum, yNote = yTopNote) => {
-    if (textStr) s += `<text x="${x}" y="${yNum}" text-anchor="${anchor}" font-size="11.0" font-weight="700" fill="#000">${esc(textStr)}</text>`;
-    if (noteStr) s += `<text x="${x}" y="${yNote}" text-anchor="${anchor}" font-size="9.0" font-weight="700" fill="#000">${esc(noteStr)}</text>`;
+    if (textStr) s += `<text x="${x}" y="${yNum}" text-anchor="${anchor}" font-size="13.5" font-weight="700" fill="#000">${esc(textStr)}</text>`;
+    if (noteStr) s += `<text x="${x}" y="${yNote}" text-anchor="${anchor}" font-size="10.2" font-weight="700" fill="#000">${esc(noteStr)}</text>`;
   };
 
   const pExtL = valWithNote(w.extL, w.noteExtL);
@@ -663,7 +663,7 @@ function windowSVG(w) {
   const drawVText = (xPos, yPos, anchor, textStr, noteStr) => {
     const label = [textStr, noteStr].filter(Boolean).join(' ');
     if (label) {
-      s += `<text x="${xPos}" y="${yPos}" text-anchor="${anchor}" font-size="10.8" font-weight="700" fill="#000">${esc(label)}</text>`;
+      s += `<text x="${xPos}" y="${yPos}" text-anchor="${anchor}" font-size="13.0" font-weight="700" fill="#000">${esc(label)}</text>`;
     }
   };
 
@@ -682,31 +682,35 @@ function windowSVG(w) {
   const pFloorB = valWithNote(w.floorB, w.noteFloorB);
   drawVText(vLineX, vLineY1 + 11, 'middle', pFloorB.v, pFloorB.n);
 
-  // ==================== 3) ความสูงเต็ม (ซ้าย-ขวา เช่น 299.5-299) & ความกว้างเต็ม ====================
+  // ==================== 3) ความสูงเต็ม & ความกว้างเต็ม (ซ่อนหากไม่ได้ระบุขนาด) ====================
   const fullHFormatted = formatFullHeightLeftToRight(w);
   const fullHPair = valWithNote(fullHFormatted, w.noteFullH);
   const fullHValText = fullHPair.v || (hasVal(w.drop) ? String(w.drop).trim() : '');
-  const leftFullText = fullHValText ? `สูงเต็ม = ${fullHValText}` : 'สูงเต็ม =';
   const leftTextX = leftOuterX - 5;
-  if (fullHValText && (wings.left || fullHValText.length > 5)) {
-    s += `<text x="${leftTextX}" y="${cy - 4}" text-anchor="end" font-size="9.2" font-weight="700" fill="#000" data-fullh="${esc(leftFullText)}">สูงเต็ม =</text>`;
-    s += `<text x="${leftTextX}" y="${cy + 7}" text-anchor="end" font-size="9.5" font-weight="700" fill="#000">${esc(fullHValText)}</text>`;
-    if (fullHPair.n) {
-      s += `<text x="${leftTextX}" y="${cy + 17}" text-anchor="end" font-size="8.5" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
-    }
-  } else {
-    s += `<text x="${leftTextX}" y="${cy + 3}" text-anchor="end" font-size="9.6" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
-    if (fullHPair.n) {
-      s += `<text x="${leftTextX}" y="${cy + 14}" text-anchor="end" font-size="8.8" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
+  if (fullHValText || fullHPair.n) {
+    const leftFullText = fullHValText ? `สูงเต็ม = ${fullHValText}` : 'สูงเต็ม =';
+    if (fullHValText && (wings.left || fullHValText.length > 5)) {
+      s += `<text x="${leftTextX}" y="${cy - 4}" text-anchor="end" font-size="10.8" font-weight="700" fill="#000" data-fullh="${esc(leftFullText)}">สูงเต็ม =</text>`;
+      s += `<text x="${leftTextX}" y="${cy + 9}" text-anchor="end" font-size="11.5" font-weight="700" fill="#000">${esc(fullHValText)}</text>`;
+      if (fullHPair.n) {
+        s += `<text x="${leftTextX}" y="${cy + 20}" text-anchor="end" font-size="9.5" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
+      }
+    } else {
+      s += `<text x="${leftTextX}" y="${cy + 4}" text-anchor="end" font-size="11.4" font-weight="700" fill="#000">${esc(leftFullText)}</text>`;
+      if (fullHPair.n) {
+        s += `<text x="${leftTextX}" y="${cy + 16}" text-anchor="end" font-size="9.6" font-weight="700" fill="#000">${esc(fullHPair.n)}</text>`;
+      }
     }
   }
 
   const fullWPair = valWithNote(w.fullW, w.noteFullW);
-  const botFullText = fullWPair.v
-    ? `กว้างเต็ม = ${fullWPair.v}${fullWPair.n ? ' (' + fullWPair.n + ')' : ''}`
-    : (fullWPair.n ? `กว้างเต็ม = (${fullWPair.n})` : 'กว้างเต็ม =');
   const centerFrameX = (x0 + x1) / 2;
-  s += `<text x="${centerFrameX}" y="${botOuterY + 12}" text-anchor="middle" font-size="9.6" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
+  if (fullWPair.v || fullWPair.n) {
+    const botFullText = fullWPair.v
+      ? `กว้างเต็ม = ${fullWPair.v}${fullWPair.n ? ' (' + fullWPair.n + ')' : ''}`
+      : `กว้างเต็ม = (${fullWPair.n})`;
+    s += `<text x="${centerFrameX}" y="${botOuterY + 13}" text-anchor="middle" font-size="11.4" font-weight="700" fill="#000">${esc(botFullText)}</text>`;
+  }
 
   // แสดงข้อมูลกำกับกรณีบานดัดโค้ง (ด้านซ้าย / ด้านตรง / ด้านขวา) หรือ ขนาดรางม่านทึบ/โปร่งไม่เท่ากัน โดยแยกบรรทัดไม่ให้ทับตัวเลขพื้นที่ด้านล่าง
   const extraBottomBadges = [];

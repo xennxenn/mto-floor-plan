@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -74,6 +74,7 @@
           <p class="hint">เลือกออเดอร์เพื่อเปิดแก้ไขและพิมพ์ใบงาน หรือสร้างออเดอร์ใหม่</p>
         </div>
         <div class="actions">
+          <button type="button" id="btnImportPdf" title="นำเข้าไฟล์ PDF แปลนงานลายมือเขียน / สแกน เพื่อสร้างออเดอร์อัตโนมัติ">📄 นำเข้าแปลน PDF</button>
           <label class="btn" title="นำเข้าไฟล์ข้อมูลออเดอร์">📂 นำเข้าไฟล์ข้อมูล<input type="file" id="fileImportOrder" accept=".json,application/json" hidden></label>
           <button id="btnNewOrder" class="primary">➕ สร้างออเดอร์ใหม่</button>
         </div>
@@ -87,14 +88,15 @@
         <table class="dash-tbl">
           <thead>
             <tr>
-              <th style="width:125px">เลขที่เอกสาร</th>
-              <th>ชื่อลูกค้า / สถานที่ติดตั้ง</th>
-              <th style="width:130px">เบอร์มือถือ</th>
-              <th style="width:155px">พนักงานขาย</th>
-              <th style="width:145px">สาขา</th>
-              <th style="width:85px">จำนวนหน้า</th>
-              <th style="width:140px">แก้ไขล่าสุด</th>
-              <th style="width:245px">จัดการ</th>
+              <th style="width:115px">เลขที่เอกสาร</th>
+              <th style="min-width:165px">ชื่อลูกค้า</th>
+              <th style="min-width:190px">สถานที่ติดตั้ง</th>
+              <th style="width:120px">เบอร์มือถือ</th>
+              <th style="width:140px">พนักงานขาย</th>
+              <th style="width:130px">สาขา</th>
+              <th style="width:80px">จำนวนหน้า</th>
+              <th style="width:135px">แก้ไขล่าสุด</th>
+              <th style="width:235px">จัดการ</th>
             </tr>
           </thead>
           <tbody id="ordersTableBody"></tbody>
@@ -157,7 +159,12 @@
             </label>
             <label>ชื่อพนักงานขาย<input data-shared="staff.name"></label>
             <label>แผนก<input data-shared="staff.dept"></label>
-            <label class="full">สาขา<input data-shared="staff.branch"></label>
+            <label class="full">สาขา
+              <div class="mto-combo" data-combo-kind="staffBranch">
+                <input data-shared="staff.branch" placeholder="เลือกสาขาของพนักงาน หรือระบุเอง..." autocomplete="off">
+                <button type="button" class="mto-combo-toggle" tabindex="-1" title="เปิดรายการสาขา">▾</button>
+              </div>
+            </label>
           </div>
         </details>
 
@@ -444,6 +451,7 @@
         <button type="button" data-dbtab="rails">🛤️ รางม่าน</button>
         <button type="button" data-dbtab="accessories">🪝 อุปกรณ์เสริม</button>
         <button type="button" data-dbtab="blinds">🪟 มู่ลี่/ม่านม้วน</button>
+        <button type="button" data-dbtab="blindCords">🎨 สีเชือกมู่ลี่</button>
         <button type="button" data-dbtab="curtains">🎀 รูปแบบม่าน</button>
         <button type="button" data-dbtab="hooks">🪝 ตะขอ</button>
         <button type="button" data-dbtab="remarks">🏷️ หมายเหตุ</button>
@@ -529,6 +537,31 @@
     </div>
   </div>
 
+  <!-- ================= PDF HANDWRITING / SCAN IMPORT MODAL ================= -->
+  <div id="pdfImportModal" class="modal no-print" hidden>
+    <div class="modal-box" style="width:96vw;max-width:1360px">
+      <div class="dash-head" style="margin-bottom:8px">
+        <h3>📄 นำเข้าแปลนงานจาก PDF (ลายมือเขียน / สแกน) → สร้างออเดอร์อัตโนมัติ</h3>
+        <button type="button" id="pdfImpClose">✕ ปิด</button>
+      </div>
+      <div class="subcard" style="margin-bottom:8px;background:#f0f7ff;border:1px solid #bfdbfe">
+        <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div class="inline" style="flex-wrap:wrap;gap:6px">
+            <label class="btn primary" style="margin:0">📂 เลือกไฟล์ PDF แปลนงาน<input type="file" id="pdfImpFileInput" accept="application/pdf,.pdf" hidden></label>
+            <input type="password" id="pdfImpGeminiKey" placeholder="Gemini API Key (สำหรับ AI อ่านลายมืออัตโนมัติ)" style="width:280px">
+            <button type="button" id="pdfImpRunAiBtn" class="primary">🤖 อ่านลายมือจาก PDF อัตโนมัติ (AI)</button>
+          </div>
+          <button type="button" id="pdfImpCreateBtn" class="primary" style="background:#15803d;border-color:#15803d">✔ สร้างออเดอร์และเปิดแก้ไขบนแปลน</button>
+        </div>
+        <div id="pdfImpStatus" hidden style="margin-top:6px;padding:5px 9px;border-radius:6px;border:1px solid #86efac;font-size:12px;font-weight:600"></div>
+      </div>
+      <div class="pdf-imp-layout">
+        <div id="pdfImpPreview" class="pdf-imp-preview"></div>
+        <div id="pdfImpReview" class="pdf-imp-review"></div>
+      </div>
+    </div>
+  </div>
+
   <datalist id="dlRemarks"></datalist>
   <datalist id="dlFabrics"></datalist>
   <datalist id="dlBlinds"></datalist>
@@ -538,10 +571,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=22"></script>
-  <script src="js/plan.js?v=22"></script>
-  <script src="js/render.js?v=22"></script>
-  <script src="js/sync.js?v=22"></script>
-  <script src="js/app.js?v=22"></script>
+  <script src="js/db.js?v=23"></script>
+  <script src="js/plan.js?v=23"></script>
+  <script src="js/render.js?v=23"></script>
+  <script src="js/sync.js?v=23"></script>
+  <script src="js/pdf-import.js?v=23"></script>
+  <script src="js/app.js?v=23"></script>
 </body>
 </html>

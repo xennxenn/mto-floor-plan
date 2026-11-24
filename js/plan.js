@@ -215,7 +215,7 @@ function planItemSVG(it, i, opts = {}) {
       const labelText = it.label || '?';
       const halfThick = ps ? Math.round(6.9 / ps) : 19;
       const bandSw = ps ? Math.max(1.3, Math.round((1.0 / ps) * 10) / 10) : 3;
-      const fontSize = ps ? Math.round(9.8 / ps) : 28;
+      const fontSize = ps ? Math.round(11.0 / ps) : 28;
       const yOff = Math.round(fontSize * 0.35);
 
       // กรณีลากเส้นตรงสั้นกว่าความกว้างตัวอักษร ให้ขยายความยาวขั้นต่ำเพื่อให้กรอบครอบตัวเลขได้สวยงามเสมอ

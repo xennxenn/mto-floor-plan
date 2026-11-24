@@ -408,13 +408,36 @@ function defaultMasterDB() {
       { id: 'ac6', name: 'ห่วงตาไก่ แบบเรียบ', category: 'ห่วงตาไก่', curtainStyle: 'ม่านตาไก่', defaultColor: 'สีเงิน', sellUnit: 'ชิ้น', spec: 'สีเงิน / ทองเหลือง / ทองแดง' },
       { id: 'ac7', name: 'ห่วงตาไก่ แบบลอน / แบบคลื่น', category: 'ห่วงตาไก่', curtainStyle: 'ม่านตาไก่', defaultColor: 'ทองเหลือง', sellUnit: 'ชิ้น', spec: 'ทองเหลือง / ทองแดง' },
     ],
-    // ฐานข้อมูลมู่ลี่และม่านม้วน (แบ่งตามชื่อกลุ่ม -> รหัสชื่อ/รุ่น + สีเชือกเทป/เชือกสลิง + สีกล่องบังราง • คำนวณ ตร.ม. ขั้นต่ำ 1.5 ตร.ม./ผืน)
+    // ฐานข้อมูลมู่ลี่ ม่านม้วน ม่านปรับแสง (แยกชื่อรุ่น model/group และช่องรหัสสินค้า codes คั่นด้วย , เช่น P101, P102, P103 • คำนวณ ตร.ม. ขั้นต่ำ 1.5 ตร.ม./ผืน)
     blinds: [
-      { id: 'bl1', group: 'ม่านม้วน Blackout', name: 'Blackout มาตรฐาน', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl2', group: 'ม่านม้วน Sunscreen', name: 'Sunscreen 5%', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl3', group: 'ม่านม้วน Dimout', name: 'Dimout มาตรฐาน', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl4', group: 'มู่ลี่ไม้ Basswood 50 มม.', name: 'BW-50', curtainStyle: 'มู่ลี่ไม้', cordColors: 'เชือกเทปสีครีม, เชือกเทปสีขาว, เชือกเทปสีน้ำตาล, เชือกสลิงสีเทา', valanceColors: 'สีเดียวกับใบมู่ลี่, ขาว, ครีม, น้ำตาลเข้ม', minSqm: 1.5, roundMode: 'ceil_1dec' },
-      { id: 'bl5', group: 'มู่ลี่อลูมิเนียม 25 มม.', name: 'ALU-25', curtainStyle: 'มู่ลี่อลูมิเนียม', cordColors: 'เชือกสลิงสีขาว, เชือกสลิงสีเทา, เชือกสลิงสีดำ', valanceColors: 'สีเดียวกับใบมู่ลี่, ขาว, เงิน, ดำ', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl1', model: 'ม่านม้วน Blackout', group: 'ม่านม้วน Blackout', name: 'ม่านม้วน Blackout', codes: 'BO-101, BO-102, BO-103', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl2', model: 'ม่านม้วน Sunscreen', group: 'ม่านม้วน Sunscreen', name: 'ม่านม้วน Sunscreen', codes: 'SS-201, SS-202, SS-203', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl3', model: 'ม่านม้วน Dimout', group: 'ม่านม้วน Dimout', name: 'ม่านม้วน Dimout', codes: 'DM-301, DM-302', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl4', model: 'มู่ลี่ไม้ Basswood 50 มม.', group: 'มู่ลี่ไม้ Basswood 50 มม.', name: 'มู่ลี่ไม้ Basswood 50 มม.', codes: 'BW-501, BW-502, BW-503', curtainStyle: 'มู่ลี่ไม้', minSqm: 1.5, roundMode: 'ceil_1dec' },
+      { id: 'bl5', model: 'มู่ลี่อลูมิเนียม 25 มม.', group: 'มู่ลี่อลูมิเนียม 25 มม.', name: 'มู่ลี่อลูมิเนียม 25 มม.', codes: 'ALU-251, ALU-252, ALU-253', curtainStyle: 'มู่ลี่อลูมิเนียม', minSqm: 1.5, roundMode: 'ceil_1dec' },
+    ],
+    // ฐานข้อมูลชุดสีเชือกเทป และสีเชือกสลิง (แยกเป็นชุดข้อมูลต่างหากสำหรับมู่ลี่/ม่านม้วน/ม่านปรับแสง)
+    blindCords: [
+      { id: 'bc1', cordType: 'เชือกเทป', name: 'สีครีม', code: 'TP-01' },
+      { id: 'bc2', cordType: 'เชือกเทป', name: 'สีขาว', code: 'TP-02' },
+      { id: 'bc3', cordType: 'เชือกเทป', name: 'สีน้ำตาลอ่อน', code: 'TP-03' },
+      { id: 'bc4', cordType: 'เชือกเทป', name: 'สีน้ำตาลเข้ม', code: 'TP-04' },
+      { id: 'bc5', cordType: 'เชือกเทป', name: 'สีดำ', code: 'TP-05' },
+      { id: 'bc6', cordType: 'เชือกสลิง', name: 'สีขาว', code: 'SL-01' },
+      { id: 'bc7', cordType: 'เชือกสลิง', name: 'สีครีม', code: 'SL-02' },
+      { id: 'bc8', cordType: 'เชือกสลิง', name: 'สีเทา', code: 'SL-03' },
+      { id: 'bc9', cordType: 'เชือกสลิง', name: 'สีน้ำตาล', code: 'SL-04' },
+      { id: 'bc10', cordType: 'เชือกสลิง', name: 'สีดำ', code: 'SL-05' },
+    ],
+    // ฐานข้อมูลสีกล่องบังรางมู่ลี่ (แยกเป็นชุดข้อมูลต่างหาก)
+    blindValances: [
+      { id: 'bv1', name: 'สีเดียวกับใบมู่ลี่', code: 'VL-00' },
+      { id: 'bv2', name: 'ขาว', code: 'VL-01' },
+      { id: 'bv3', name: 'ครีม', code: 'VL-02' },
+      { id: 'bv4', name: 'น้ำตาลอ่อน', code: 'VL-03' },
+      { id: 'bv5', name: 'น้ำตาลเข้ม', code: 'VL-04' },
+      { id: 'bv6', name: 'เงิน', code: 'VL-05' },
+      { id: 'bv7', name: 'ดำ', code: 'VL-06' },
     ],
     // ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (WC) — ไม่ต้องระบุจำนวนผืนในฐานข้อมูล ระบบจะดึงจำนวนผืน (P) จากบานนั้นๆ อัตโนมัติ
     // 1. แบบย่นสำเร็จ (ม่านจีบ, ม่านลอน): WC = (RW / P) + OV + SR
@@ -999,22 +1022,73 @@ function normalizeRailItem(rl, idx) {
 }
 
 function normalizeBlindItem(bl, idx) {
+  const raw = bl || {};
+  const modelName = String(raw.model || raw.group || raw.name || '').trim();
+  let codesStr = String(raw.codes || '').trim();
+  if (!codesStr && raw.name && raw.group && String(raw.name).trim() !== String(raw.group).trim()) {
+    codesStr = String(raw.name).trim();
+  }
   const item = Object.assign({
     id: 'bl_' + (idx + 1),
-    group: '',
-    name: '',
+    model: modelName,
+    group: modelName,
+    name: modelName,
+    codes: codesStr,
     curtainStyle: 'ม่านม้วน',
     cordColors: '',
     valanceColors: '',
     minSqm: 1.5,
     roundMode: 'ceil_1dec',
-  }, bl || {});
-  if (!item.group && item.name) {
-    // อัปเกรดข้อมูลเก่าที่ยังไม่มีชื่อกลุ่ม ให้ตั้งชื่อกลุ่มจากรูปแบบม่านหรือชื่อเดิม
-    item.group = item.curtainStyle && item.curtainStyle !== '*' ? item.curtainStyle : item.name;
-  }
+  }, raw, {
+    model: modelName,
+    group: modelName,
+    name: modelName || String(raw.name || ''),
+    codes: codesStr,
+  });
   item.minSqm = Math.max(1.5, parseFloat(item.minSqm) || 1.5);
   return item;
+}
+
+function normalizeBlindCordItem(bc, idx) {
+  const raw = bc || {};
+  const ct = String(raw.cordType || '').trim();
+  return Object.assign({
+    id: 'bc_' + (idx + 1),
+    cordType: ct === 'เชือกสลิง' ? 'เชือกสลิง' : 'เชือกเทป',
+    name: '',
+    code: '',
+  }, raw, {
+    cordType: ct === 'เชือกสลิง' ? 'เชือกสลิง' : 'เชือกเทป',
+  });
+}
+
+function normalizeBlindValanceItem(bv, idx) {
+  return Object.assign({
+    id: 'bv_' + (idx + 1),
+    name: '',
+    code: '',
+  }, bv || {});
+}
+
+function parseBlindCodesList(codesStr) {
+  return Array.from(new Set(
+    String(codesStr || '')
+      .split(/[,;\n/|]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+  ));
+}
+
+function getStaffBranchList(staffNameOrObj) {
+  let st = null;
+  if (staffNameOrObj && typeof staffNameOrObj === 'object') {
+    st = staffNameOrObj;
+  } else if (staffNameOrObj && typeof masterDB !== 'undefined' && Array.isArray(masterDB.staff)) {
+    const target = String(staffNameOrObj).trim().toLowerCase();
+    st = masterDB.staff.find(s => String(s.name || '').trim().toLowerCase() === target || String(s.username || '').trim().toLowerCase() === target);
+  }
+  const rawBranch = st ? String(st.branch || '') : '';
+  return Array.from(new Set(rawBranch.split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean)));
 }
 
 function normalizeAccessoryItem(ac, idx) {
@@ -1061,6 +1135,8 @@ function normalizeMasterDBObject(raw) {
     rails: (onlyRails.length ? onlyRails : def.rails).map((rl, i) => normalizeRailItem(rl, i)),
     accessories: rawAccessories.map((ac, i) => normalizeAccessoryItem(ac, i)),
     blinds: (Array.isArray(raw.blinds) && raw.blinds.length ? raw.blinds : def.blinds).map((bl, i) => normalizeBlindItem(bl, i)),
+    blindCords: (Array.isArray(raw.blindCords) && raw.blindCords.length ? raw.blindCords : def.blindCords).map((bc, i) => normalizeBlindCordItem(bc, i)),
+    blindValances: (Array.isArray(raw.blindValances) && raw.blindValances.length ? raw.blindValances : def.blindValances).map((bv, i) => normalizeBlindValanceItem(bv, i)),
     widthFormulas: !isLegacy9 && Array.isArray(raw.widthFormulas) && raw.widthFormulas.length
       ? raw.widthFormulas.map((w, i) => normalizeWidthFormulaItem(w, i))
       : def.widthFormulas,
@@ -1261,6 +1337,7 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
   const hKey = normalizeHookKey(hookSize);
   const naturalRod = inferNaturalRodTypeForStyle(curtainStyle);
   const rm = resolveRailMetaByName(railModel);
+  const isBlindStyle = isBlindOrRollerStyle(curtainStyle);
 
   const tryMatchWithRod = effRod => all.filter(f => {
     const reqStyle = f.curtainStyle && f.curtainStyle !== '*';
@@ -1271,6 +1348,7 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
     const reqTracks = f.railTracks && String(f.railTracks) !== '*';
 
     if (reqStyle && f.curtainStyle !== curtainStyle && !curtainStyle.includes(f.curtainStyle)) return false;
+    if (isBlindStyle && !reqStyle) return false; // ม่านม้วน/มู่ลี่ หากไม่ได้กำหนดสูตรลดความสูงเฉพาะไว้ ห้ามนำสูตรผ้าม่านทั่วไปมาลดความสูง
     if (reqRod && (!effRod || f.rodType !== effRod)) return false;
     if (reqRailName && (!rm.name || f.railName !== rm.name)) return false;
     if (reqRailGroup && (!rm.railGroup || f.railGroup !== rm.railGroup)) return false;
@@ -1301,6 +1379,7 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
     });
     return exactMatched[0];
   }
+  if (isBlindStyle) return null; // ม่านม้วน/มู่ลี่ หากไม่ได้กำหนดสูตรลดความสูงไว้ ไม่ลดความสูงอัตโนมัติ
   return all.find(f => (!f.curtainStyle || f.curtainStyle === '*') && (!f.rodType || f.rodType === '*') && (!f.hookSize || f.hookSize === '*')) || null;
 }
 
@@ -1522,12 +1601,14 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
   }
 
   // 2) คำนวณขนาดความสูงผ้าม่าน (b) — รวมระยะลอย/กองพื้นตามที่เลือกบนแปลน (บวกเพิ่มยิ่งลอย, ลบเพิ่มยิ่งกองพื้น — ไม่ดูเครื่องหมาย)
+  // หากเป็นม่านม้วน/มู่ลี่ และไม่มีสูตรลดความสูงกำหนดไว้ (hf == null) ให้ใช้ความสูงเต็มตามขนาดที่วัดโดยไม่ลดความสูง
   let b = '';
   let hcNum = 0;
-  const noRailDeduct = getNoRailHeightDeduction(w);
-  const extraHeightDeduct = num(opts.extraHeightDeduct);
+  const isBlindNoDeduct = (isBlindOrRollerStyle(styleName) || !!(opts.blindItem || opts.blindRule)) && !hf;
+  const noRailDeduct = isBlindNoDeduct ? 0 : getNoRailHeightDeduction(w);
+  const extraHeightDeduct = isBlindNoDeduct ? 0 : num(opts.extraHeightDeduct);
   const totalHeightDeduct = noRailDeduct + extraHeightDeduct;
-  const floorDelta = opts.skipFloorAdjust ? 0 : getWindowFloorDelta(w, baseFloorFloat);
+  const floorDelta = (opts.skipFloorAdjust || isBlindNoDeduct) ? 0 : getWindowFloorDelta(w, baseFloorFloat);
   if (RH > 0) {
     if (hf && hf.heightExp) {
       b = evalFormulaExpr(hf.heightExp, vars, hf.roundMode || 'none');
@@ -2211,38 +2292,61 @@ const DB_IMPORT_SCHEMAS = {
     },
   },
   blinds: {
-    title: 'ฐานข้อมูลมู่ลี่และม่านม้วน (ชื่อกลุ่ม -> รหัสชื่อ/รุ่น + สีเชือกเทป/สลิง + สีกล่องบังราง)',
-    pattern: 'group, name, curtainStyle, cordColors, valanceColors, minSqm, roundMode',
-    desc: 'คอลัมน์: ชื่อกลุ่ม, รหัสชื่อ/รุ่น, รูปแบบม่าน (ม่านม้วน/มู่ลี่ไม้/มู่ลี่อลูมิเนียม), สีเชือกเทป/เชือกสลิง (คั่นด้วย ;), สีกล่องบังรางมู่ลี่ (คั่นด้วย ;), ขายขั้นต่ำ(ตร.ม./ผืน อย่างน้อย 1.5), การปัดเศษ',
+    title: 'ฐานข้อมูลมู่ลี่ ม่านม้วน ม่านปรับแสง (ชื่อรุ่น + รหัสสินค้าหลายรหัสในช่องเดียว)',
+    pattern: 'curtainStyle, model, codes, minSqm, roundMode',
+    desc: 'คอลัมน์: รูปแบบม่าน (ม่านม้วน/มู่ลี่ไม้/มู่ลี่อลูมิเนียม/ม่านปรับแสง), ชื่อรุ่น (เช่น P100), รหัสสินค้าหลายรหัสคั่นด้วย ; (เช่น P101; P102; P103), ขายขั้นต่ำ(ตร.ม./ผืน อย่างน้อย 1.5), การปัดเศษ',
     example: [
-      'group, name, curtainStyle, cordColors, valanceColors, minSqm, roundMode',
-      'ม่านม้วน Blackout, RB-101, ม่านม้วน, , , 1.5, ceil_1dec',
-      'มู่ลี่ไม้ Basswood 50mm, BW-50, มู่ลี่ไม้, เชือกเทปสีครีม; เชือกเทปสีขาว; เชือกสลิงสีเทา, สีเดียวกับใบมู่ลี่; ขาว; ครีม, 1.5, ceil_1dec',
+      'curtainStyle, model, codes, minSqm, roundMode',
+      'ม่านม้วน, P100, P101; P102; P103, 1.5, ceil_1dec',
+      'มู่ลี่ไม้, Basswood 50mm, BW-501; BW-502; BW-503, 1.5, ceil_1dec',
     ].join('\n'),
-    headers: ['group', 'name', 'ชื่อกลุ่ม', 'ชื่อมู่ลี่', 'ชื่อม่านม้วน'],
+    headers: ['curtainStyle', 'model', 'group', 'name', 'ชื่อรุ่น', 'รูปแบบม่าน'],
     parseRow(cols, idx) {
       if (!cols[0]) return null;
-      if (cols.length >= 6) {
+      if (cols.length >= 4 && /ม่านม้วน|มู่ลี่|ม่านปรับแสง/.test(String(cols[0]))) {
+        const model = cols[1] || cols[0];
         return {
           id: 'bl_imp_' + Date.now() + '_' + idx,
-          group: cols[0],
-          name: cols[1] || cols[0],
-          curtainStyle: cols[2] || 'ม่านม้วน',
-          cordColors: String(cols[3] || '').replace(/;/g, ', '),
-          valanceColors: String(cols[4] || '').replace(/;/g, ', '),
-          minSqm: Math.max(1.5, parseFloat(cols[5]) || 1.5),
-          roundMode: cols[6] || 'ceil_1dec',
+          curtainStyle: cols[0] || 'ม่านม้วน',
+          model,
+          group: model,
+          name: model,
+          codes: String(cols[2] || '').replace(/;/g, ', '),
+          minSqm: Math.max(1.5, parseFloat(cols[3]) || 1.5),
+          roundMode: cols[4] || 'ceil_1dec',
         };
       }
+      const model = cols[0];
       return {
         id: 'bl_imp_' + Date.now() + '_' + idx,
-        group: cols[1] || cols[0],
-        name: cols[0],
-        curtainStyle: cols[1] || 'ม่านม้วน',
-        cordColors: '',
-        valanceColors: '',
-        minSqm: Math.max(1.5, parseFloat(cols[2]) || 1.5),
-        roundMode: cols[3] || 'ceil_1dec',
+        curtainStyle: cols[2] || 'ม่านม้วน',
+        model,
+        group: model,
+        name: model,
+        codes: String(cols[1] || '').replace(/;/g, ', '),
+        minSqm: Math.max(1.5, parseFloat(cols[3]) || 1.5),
+        roundMode: cols[4] || 'ceil_1dec',
+      };
+    },
+  },
+  blindCords: {
+    title: 'ฐานข้อมูลสีเชือกเทป และสีเชือกสลิง (ชุดข้อมูลแยกต่างหาก)',
+    pattern: 'cordType, name, code',
+    desc: 'คอลัมน์: ประเภทเชือก (เชือกเทป / เชือกสลิง), ชื่อสี, รหัสสี',
+    example: [
+      'cordType, name, code',
+      'เชือกเทป, สีครีม, TP-01',
+      'เชือกสลิง, สีเทา, SL-03',
+    ].join('\n'),
+    headers: ['cordType', 'ประเภทเชือก', 'name'],
+    parseRow(cols, idx) {
+      if (!cols[0]) return null;
+      const isSling = /สลิง/.test(String(cols[0]));
+      return {
+        id: 'bc_imp_' + Date.now() + '_' + idx,
+        cordType: isSling ? 'เชือกสลิง' : 'เชือกเทป',
+        name: cols[1] || cols[0],
+        code: cols[2] || '',
       };
     },
   },
@@ -2516,9 +2620,14 @@ const MasterDBModal = (() => {
     return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
   }
 
-  function railNameSelectOpts(selected) {
-    const names = Array.from(new Set((masterDB.rails || []).map(r => String(r.name || '').trim()).filter(Boolean)));
-    const opts = [['*', 'ทุกรายการราง (*)'], ...names.map(n => [n, n])];
+  function railNameSelectOpts(selected, railGroup = '*') {
+    const grp = String(railGroup || '*').trim();
+    const srcRails = (grp && grp !== '*')
+      ? (masterDB.rails || []).filter(r => String(r.railGroup || '').trim() === grp)
+      : (masterDB.rails || []);
+    const names = Array.from(new Set(srcRails.map(r => String(r.name || '').trim()).filter(Boolean)));
+    const allLabel = (grp && grp !== '*') ? `ทุกรายการในกลุ่ม (${names.length} ราง)` : 'ทุกรายการราง (*)';
+    const opts = [['*', allLabel], ...names.map(n => [n, n])];
     if (selected && selected !== '*' && !names.includes(selected)) opts.push([selected, selected]);
     return opts.map(([v, t]) => `<option value="${escH(v)}" ${(selected || '*') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
   }
@@ -2651,7 +2760,7 @@ const MasterDBModal = (() => {
                 <th style="width:130px">สิทธิ์การใช้งาน</th>
                 <th style="min-width:180px">ชื่อพนักงาน</th>
                 <th style="width:140px">แผนก</th>
-                <th style="min-width:180px">สาขา</th>
+                <th style="min-width:220px">สาขา (ใส่ได้หลายสาขาคั่นด้วย ,)</th>
                 <th style="width:50px">ลบ</th>
               </tr>
             </thead>
@@ -2668,7 +2777,7 @@ const MasterDBModal = (() => {
                   </td>
                   <td><input data-db-edit="staff.${i}.name" value="${escH(st.name)}" placeholder="ชื่อพนักงาน"></td>
                   <td><input data-db-edit="staff.${i}.dept" value="${escH(st.dept)}" placeholder="แผนก"></td>
-                  <td><input data-db-edit="staff.${i}.branch" value="${escH(st.branch)}" placeholder="สาขา"></td>
+                  <td><input data-db-edit="staff.${i}.branch" value="${escH(st.branch)}" placeholder="เช่น สำนักงานใหญ่, พารากอน, เมกาบางนา"></td>
                   <td class="c"><button type="button" class="danger" data-db-del="staff.${i}">✕</button></td>
                 </tr>`).join('')}
             </tbody>
@@ -2811,12 +2920,20 @@ const MasterDBModal = (() => {
               </tr>
             </thead>
             <tbody>
-              ${(masterDB.heightFormulas || []).map((hf, i) => `
+              ${(masterDB.heightFormulas || []).map((hf, i) => {
+                const grp = String(hf.railGroup || '*').trim();
+                const grpRails = (grp && grp !== '*')
+                  ? (masterDB.rails || []).filter(r => String(r.railGroup || '').trim() === grp).map(r => r.name).filter(Boolean)
+                  : [];
+                return `
                 <tr>
                   <td><select data-db-edit="heightFormulas.${i}.curtainStyle">${curtainSelectOpts(hf.curtainStyle)}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.rodType">${rodSelectOpts(hf.rodType)}</select></td>
-                  <td><select data-db-edit="heightFormulas.${i}.railGroup">${railGroupSelectOpts(hf.railGroup || '*')}</select></td>
-                  <td><select data-db-edit="heightFormulas.${i}.railName">${railNameSelectOpts(hf.railName || '*')}</select></td>
+                  <td><select data-db-edit="heightFormulas.${i}.railGroup">${railGroupSelectOpts(grp)}</select></td>
+                  <td>
+                    <select data-db-edit="heightFormulas.${i}.railName">${railNameSelectOpts(hf.railName || '*', grp)}</select>
+                    ${grpRails.length ? `<div style="font-size:10.5px;color:#0b5ed7;margin-top:2px;line-height:1.25">ในกลุ่ม: ${escH(grpRails.join(', '))}</div>` : ''}
+                  </td>
                   <td><select data-db-edit="heightFormulas.${i}.railTracks">${railTrackSelectOpts(hf.railTracks || '*')}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.hookSize">${hookSelectOpts(hf.hookSize)}</select></td>
                   <td><input type="number" step="any" min="0" data-db-edit="heightFormulas.${i}.floorFloat" value="${escH(hf.floorFloat ?? 1)}" title="ค่ามาตรฐานลอยจากพื้น (ซม.) เช่น 1"></td>
@@ -2824,7 +2941,8 @@ const MasterDBModal = (() => {
                   <td><input data-db-edit="heightFormulas.${i}.heightExp" value="${escH(hf.heightExp || 'RH - FL_BASE')}"></td>
                   <td><select data-db-edit="heightFormulas.${i}.roundMode">${roundModeSelectOpts(hf.roundMode || 'none')}</select></td>
                   <td class="c"><button type="button" class="danger" data-db-del="heightFormulas.${i}">✕</button></td>
-                </tr>`).join('')}
+                </tr>`;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -2994,25 +3112,23 @@ const MasterDBModal = (() => {
         </div>
       `;
     } else if (activeTab === 'blinds') {
-      const blindGroupsList = Array.from(new Set((masterDB.blinds || []).map(b => String(b.group || '').trim()).filter(Boolean)));
       body.innerHTML = `
-        <datalist id="dlBlindGroups">${blindGroupsList.map(g => `<option value="${escH(g)}"></option>`).join('')}</datalist>
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
-          <b>🪟 ฐานข้อมูลมู่ลี่และม่านม้วน (แยกตามชื่อกลุ่ม → รหัสชื่อ/รุ่น + สีเชือกเทป/เชือกสลิง + สีกล่องบังรางมู่ลี่):</b><br>
-          • ระบุ <b>ชื่อกลุ่ม</b> เพื่อจัดหมวดมู่ลี่/ม่านม้วน แล้วลงรายละเอียด <b>รหัสชื่อ / รุ่น</b> ภายใต้กลุ่มนั้น (บนแปลนเลือกจาก Dropdown หรือระบุเองได้)<br>
-          • สำหรับมู่ลี่ สามารถกำหนดตัวเลือก <b>สีเชือกเทป / สีเชือกสลิง</b> และ <b>สีกล่องบังรางมู่ลี่</b> (คั่นหลายสีด้วยเครื่องหมาย <code>,</code>) • ขายขั้นต่ำ <b>1.5 ตร.ม./ผืน</b>
+          <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+            <b>🪟 ฐานข้อมูลมู่ลี่ ม่านม้วน ม่านปรับแสง (แยกช่องชื่อรุ่น และช่องรหัสสินค้า 1 รุ่นใส่ได้หลายรหัส):</b>
+            <button type="button" data-db-goto="blindCords">🎨 จัดการชุดสีเชือกเทป / สีเชือกสลิง &amp; กล่องบังราง (แยกชุดข้อมูล)</button>
+          </div>
+          • กรอก <b>ชื่อรุ่น</b> (เช่น <code>P100</code>) และ <b>รหัสสินค้า</b> หลายรหัสในช่องเดียวคั่นด้วย <code>,</code> (เช่น <code>P101, P102, P103</code>) — ที่หน้าแปลนงานจะให้เลือกรุ่นก่อนแล้วค่อยเลือกรหัสของรุ่นนั้นอัตโนมัติ • ขายขั้นต่ำ <b>1.5 ตร.ม./ผืน</b>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1320px">
+          <table class="ed-tbl" style="min-width:1080px">
             <thead>
               <tr>
-                <th style="width:135px">รูปแบบม่าน</th>
-                <th style="min-width:180px">ชื่อกลุ่มมู่ลี่ / ม่านม้วน</th>
-                <th style="min-width:170px">รหัสชื่อ / รุ่น</th>
-                <th style="min-width:220px">สีเชือกเทป / สีเชือกสลิง (คั่นด้วย ,)</th>
-                <th style="min-width:200px">สีกล่องบังรางมู่ลี่ (คั่นด้วย ,)</th>
-                <th style="width:120px">ขั้นต่ำ (ตร.ม./ผืน)</th>
-                <th style="width:165px">การปัดเศษ</th>
+                <th style="width:145px">รูปแบบม่าน</th>
+                <th style="min-width:200px">ชื่อรุ่น (เช่น P100)</th>
+                <th style="min-width:340px">รหัสสินค้า (ใส่หลายรหัสคั่นด้วย , เช่น P101, P102, P103)</th>
+                <th style="width:125px">ขั้นต่ำ (ตร.ม./ผืน)</th>
+                <th style="width:170px">การปัดเศษ</th>
                 <th style="width:45px">ลบ</th>
               </tr>
             </thead>
@@ -3020,10 +3136,8 @@ const MasterDBModal = (() => {
               ${(masterDB.blinds || []).map((bl, i) => `
                 <tr>
                   <td><select data-db-edit="blinds.${i}.curtainStyle">${curtainSelectOpts(bl.curtainStyle)}</select></td>
-                  <td><input list="dlBlindGroups" data-db-edit="blinds.${i}.group" value="${escH(bl.group || '')}" placeholder="เช่น ม่านม้วน Blackout / มู่ลี่ไม้ 50 มม."></td>
-                  <td><input data-db-edit="blinds.${i}.name" value="${escH(bl.name || '')}" placeholder="เช่น RB-101 / BW-50"></td>
-                  <td><input data-db-edit="blinds.${i}.cordColors" value="${escH(bl.cordColors || '')}" placeholder="เช่น เชือกเทปสีครีม, เชือกสลิงสีเทา"></td>
-                  <td><input data-db-edit="blinds.${i}.valanceColors" value="${escH(bl.valanceColors || '')}" placeholder="เช่น สีเดียวกับใบ, ขาว, ครีม"></td>
+                  <td><input data-db-edit="blinds.${i}.model" value="${escH(bl.model || bl.group || bl.name || '')}" placeholder="เช่น P100 / Basswood 50mm"></td>
+                  <td><input data-db-edit="blinds.${i}.codes" value="${escH(bl.codes || '')}" placeholder="เช่น P101, P102, P103"></td>
                   <td><input type="number" step="0.1" min="1.5" data-db-edit="blinds.${i}.minSqm" value="${escH(bl.minSqm ?? 1.5)}"></td>
                   <td><select data-db-edit="blinds.${i}.roundMode">${roundModeSelectOpts(bl.roundMode || 'ceil_1dec')}</select></td>
                   <td class="c"><button type="button" class="danger" data-db-del="blinds.${i}">✕</button></td>
@@ -3031,7 +3145,71 @@ const MasterDBModal = (() => {
             </tbody>
           </table>
         </div>
-        <button type="button" class="primary" style="margin-top:8px" data-db-add="blinds">➕ เพิ่มรายการมู่ลี่ / ม่านม้วน</button>
+        <button type="button" class="primary" style="margin-top:8px" data-db-add="blinds">➕ เพิ่มรุ่นมู่ลี่ / ม่านม้วน / ม่านปรับแสง</button>
+      `;
+    } else if (activeTab === 'blindCords') {
+      const cordsAll = masterDB.blindCords || [];
+      const tapeRows = cordsAll.map((c, i) => ({ c, i })).filter(({ c }) => c.cordType !== 'เชือกสลิง');
+      const slingRows = cordsAll.map((c, i) => ({ c, i })).filter(({ c }) => c.cordType === 'เชือกสลิง');
+      const valRows = masterDB.blindValances || [];
+      body.innerHTML = `
+        <div class="subcard" style="margin-bottom:8px;font-size:12px">
+          <b>🎨 ฐานข้อมูลสีเชือกเทป, สีเชือกสลิง และสีกล่องบังรางมู่ลี่ (แยกชุดข้อมูลอิสระจากรุ่นมู่ลี่):</b><br>
+          • แยกชุดข้อมูล <b>สีเชือกเทป</b> และ <b>สีเชือกสลิง</b> ออกจากกันชัดเจน เมื่อเลือกประเภทเชือกที่หน้าแปลนงาน ระบบจะแสดงเฉพาะสีของประเภทเชือกนั้นให้เลือกทันที
+        </div>
+        <div class="grid3" style="gap:10px;align-items:start">
+          <div class="subcard" style="background:#fff">
+            <div class="inline" style="justify-content:space-between;margin-bottom:6px">
+              <b style="color:#0b5ed7">🧵 ชุดข้อมูลสีเชือกเทป (${tapeRows.length})</b>
+              <button type="button" class="primary" data-db-add="blindCords" data-cordtype="เชือกเทป" style="padding:2px 8px;font-size:11.5px">➕ เพิ่มสีเชือกเทป</button>
+            </div>
+            <table class="ed-tbl">
+              <thead><tr><th>ชื่อสีเชือกเทป</th><th style="width:85px">รหัส</th><th style="width:38px">ลบ</th></tr></thead>
+              <tbody>
+                ${tapeRows.map(({ c, i }) => `
+                  <tr>
+                    <td><input data-db-edit="blindCords.${i}.name" value="${escH(c.name || '')}" placeholder="เช่น สีครีม"></td>
+                    <td><input data-db-edit="blindCords.${i}.code" value="${escH(c.code || '')}" placeholder="TP-01"></td>
+                    <td class="c"><button type="button" class="danger" data-db-del="blindCords.${i}">✕</button></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="subcard" style="background:#fff">
+            <div class="inline" style="justify-content:space-between;margin-bottom:6px">
+              <b style="color:#0f766e">🪢 ชุดข้อมูลสีเชือกสลิง (${slingRows.length})</b>
+              <button type="button" class="primary" data-db-add="blindCords" data-cordtype="เชือกสลิง" style="padding:2px 8px;font-size:11.5px">➕ เพิ่มสีเชือกสลิง</button>
+            </div>
+            <table class="ed-tbl">
+              <thead><tr><th>ชื่อสีเชือกสลิง</th><th style="width:85px">รหัส</th><th style="width:38px">ลบ</th></tr></thead>
+              <tbody>
+                ${slingRows.map(({ c, i }) => `
+                  <tr>
+                    <td><input data-db-edit="blindCords.${i}.name" value="${escH(c.name || '')}" placeholder="เช่น สีเทา"></td>
+                    <td><input data-db-edit="blindCords.${i}.code" value="${escH(c.code || '')}" placeholder="SL-01"></td>
+                    <td class="c"><button type="button" class="danger" data-db-del="blindCords.${i}">✕</button></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="subcard" style="background:#fff">
+            <div class="inline" style="justify-content:space-between;margin-bottom:6px">
+              <b style="color:#7c2d12">📦 ชุดข้อมูลสีกล่องบังรางมู่ลี่ (${valRows.length})</b>
+              <button type="button" class="primary" data-db-add="blindValances" style="padding:2px 8px;font-size:11.5px">➕ เพิ่มสีกล่อง</button>
+            </div>
+            <table class="ed-tbl">
+              <thead><tr><th>ชื่อสีกล่องบังราง</th><th style="width:85px">รหัส</th><th style="width:38px">ลบ</th></tr></thead>
+              <tbody>
+                ${valRows.map((v, i) => `
+                  <tr>
+                    <td><input data-db-edit="blindValances.${i}.name" value="${escH(v.name || '')}" placeholder="เช่น สีเดียวกับใบ"></td>
+                    <td><input data-db-edit="blindValances.${i}.code" value="${escH(v.code || '')}" placeholder="VL-01"></td>
+                    <td class="c"><button type="button" class="danger" data-db-del="blindValances.${i}">✕</button></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
       `;
     } else if (activeTab === 'curtains') {
       const calcBehaviorOpts = sel => CALC_BEHAVIOR_MODES.map(([v, t]) => `<option value="${escH(v)}" ${(sel || 'curtain') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
@@ -3133,6 +3311,21 @@ const MasterDBModal = (() => {
       if (list === 'fabrics' && field === 'fabricWidth') {
         if (!canFabricUseSheerGrain(val)) {
           masterDB.fabrics[+idx].calcMode = 'opaque';
+        }
+        saveMasterDB();
+        render();
+        return;
+      }
+      if (list === 'blinds' && field === 'model') {
+        masterDB.blinds[+idx].group = val;
+        masterDB.blinds[+idx].name = val;
+      }
+      if (list === 'heightFormulas' && field === 'railGroup') {
+        const grp = String(val || '*').trim();
+        const curRail = masterDB.heightFormulas[+idx].railName;
+        if (grp !== '*' && curRail && curRail !== '*') {
+          const inGrp = (masterDB.rails || []).some(r => String(r.railGroup || '').trim() === grp && String(r.name || '').trim() === curRail);
+          if (!inGrp) masterDB.heightFormulas[+idx].railName = '*';
         }
         saveMasterDB();
         render();
@@ -3299,7 +3492,13 @@ const MasterDBModal = (() => {
             sellUnit: 'ชิ้น', defaultColor: '', spec: '',
           });
         } else if (t === 'blinds') {
-          masterDB.blinds.push({ id, group: '', name: '', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' });
+          masterDB.blinds.push({ id, model: '', group: '', name: '', codes: '', curtainStyle: 'ม่านม้วน', minSqm: 1.5, roundMode: 'ceil_1dec' });
+        } else if (t === 'blindCords') {
+          if (!Array.isArray(masterDB.blindCords)) masterDB.blindCords = [];
+          masterDB.blindCords.push({ id, cordType: add.dataset.cordtype === 'เชือกสลิง' ? 'เชือกสลิง' : 'เชือกเทป', name: '', code: '' });
+        } else if (t === 'blindValances') {
+          if (!Array.isArray(masterDB.blindValances)) masterDB.blindValances = [];
+          masterDB.blindValances.push({ id, name: '', code: '' });
         } else if (t === 'curtains') {
           masterDB.curtains.push({
             id, name: '', calcBehavior: 'curtain', subCalcType: 'stretched', useHook: false,

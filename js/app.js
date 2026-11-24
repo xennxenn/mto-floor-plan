@@ -559,7 +559,7 @@ function renderDashboard() {
   });
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="c" style="padding:24px;color:#777">ไม่พบรายการออเดอร์ — กด "➕ สร้างออเดอร์ใหม่" ด้านบน</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="c" style="padding:24px;color:#777">ไม่พบรายการออเดอร์ — กด "➕ สร้างออเดอร์ใหม่" ด้านบน</td></tr>`;
     return;
   }
 
@@ -577,14 +577,12 @@ function renderDashboard() {
     const multiBadge = (cKey && custPlanCount[cKey] > 1)
       ? ` <span class="pill" style="background:#eef4ff;color:#1f6feb;font-size:11px">มี ${custPlanCount[cKey]} แปลนงาน</span>`
       : '';
-    const locSummary = [o.customer.building, o.customer.houseNo ? `เลขที่ ${o.customer.houseNo}` : '', o.customer.road ? `ถ.${o.customer.road}` : '', o.customer.district]
+    const locSummary = [o.customer.building, o.customer.houseNo ? `เลขที่ ${o.customer.houseNo}` : '', o.customer.road ? `ถ.${o.customer.road}` : '', o.customer.district, o.customer.province]
       .filter(Boolean).join(' ');
     return `<tr>
       <td class="c"><b>${esc(o.staff.orderNo || '-')}</b></td>
-      <td>
-        <b>${esc(cName)}</b>${multiBadge}
-        ${locSummary ? `<div style="font-size:11.5px;color:#555">📍 ${esc(locSummary)}</div>` : ''}
-      </td>
+      <td><b>${esc(cName)}</b>${multiBadge}</td>
+      <td>${locSummary ? `📍 ${esc(locSummary)}` : '<span style="color:#94a3b8">-</span>'}</td>
       <td class="c">${esc(o.customer.mobile || '-')}</td>
       <td class="c">${esc(o.staff.name || '-')}</td>
       <td class="c">${esc(o.staff.branch || '-')}</td>
@@ -941,8 +939,8 @@ function syncWindowsFromPlan(sh) {
 function dimFieldRow(b, label, numKey, noteKey, idx, isRailCalc = false) {
   return `<div class="dim-pair">
     <span class="dim-lbl">${label}</span>
-    <input type="number" step="0.5" data-halfcm="1" ${b(numKey)} ${isRailCalc ? `data-rail-calc="${idx}"` : ''} placeholder="เช่น 150 หรือ 150.5">
-    <input list="dlRemarks" ${b(noteKey)} placeholder="หมายเหตุ (เช่น ชนแอร์)">
+    <input type="number" step="0.5" data-halfcm="1" data-dim-num="1" ${b(numKey)} ${isRailCalc ? `data-rail-calc="${idx}"` : ''} placeholder="เช่น 150">
+    <input list="dlRemarks" tabindex="-1" ${b(noteKey)} placeholder="หมายเหตุ (คลิกเพื่อระบุ)">
   </div>`;
 }
 
@@ -1510,6 +1508,8 @@ function buildBlindPiecesEditorHTML(w, i) {
   const pieces = Array.isArray(w && w.blindPieces) ? w.blindPieces : [];
   const info = (typeof calcBlindPiecesTotalSqm === 'function') ? calcBlindPiecesTotalSqm(w) : { pieceSqms: [] };
   const activeCnt = pieces.length;
+  const sameH = w.blindSameHeight !== false;
+  const quickHint = pieces.map(p => p && p.w).filter(Boolean).join(', ');
   return `
     <div class="blind-pieces-box" style="margin-top:6px;padding:7px 9px;background:#f0f9ff;border:1px solid #7dd3fc;border-radius:6px">
       <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:5px">
@@ -1520,16 +1520,23 @@ function buildBlindPiecesEditorHTML(w, i) {
           ${activeCnt >= 2 ? `<button type="button" data-act="balanceBlindPieces" data-i="${i}" style="padding:2px 7px;font-size:11px" title="คำนวณความกว้างที่เหลือให้ผืนสุดท้ายอัตโนมัติ">⚡ เติมส่วนที่เหลือ</button>` : ''}
         </div>
       </div>
+      <div class="inline" style="margin-bottom:5px;gap:5px;flex-wrap:wrap">
+        <input type="text" data-bp-quick="${i}" value="${esc(quickHint)}" placeholder="⚡ พิมพ์ความกว้างหลายผืนแบบเร็ว เช่น 180, 120 แล้วกด Enter" style="flex:1;min-width:190px;font-size:12px;background:#fff">
+        <button type="button" class="primary" data-act="applyBlindQuickWidths" data-i="${i}" style="padding:3px 8px;font-size:11.5px">แบ่งทันที</button>
+        <label class="inline" style="font-size:11.5px;color:#0c4a6e;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" data-bp-sameh="${i}" ${sameH ? 'checked' : ''}> สูงเท่ากันทุกผืน
+        </label>
+      </div>
       ${pieces.map((bp, pi) => {
         const sqm = (info.pieceSqms && info.pieceSqms[pi]) || '';
         return `
         <div class="inline" style="margin-bottom:4px;flex-wrap:wrap;gap:5px">
           <span class="layer-tag">ผืนที่ ${pi + 1}</span>
-          <input type="number" step="0.5" data-halfcm="1" data-sheet="windows.${i}.blindPieces.${pi}.w" value="${esc(bp.w || '')}" placeholder="กว้าง (ซม.)" style="width:92px">
+          <input type="number" step="0.5" data-halfcm="1" data-dim-num="1" data-sheet="windows.${i}.blindPieces.${pi}.w" value="${esc(bp.w || '')}" placeholder="กว้าง (ซม.)" style="width:92px">
           <span>×</span>
-          <input type="number" step="0.5" data-halfcm="1" data-sheet="windows.${i}.blindPieces.${pi}.h" value="${esc(bp.h || '')}" placeholder="สูง (ซม.)" style="width:92px">
+          <input type="number" step="0.5" data-halfcm="1" ${sameH && pi > 0 ? 'tabindex="-1"' : 'data-dim-num="1"'} data-sheet="windows.${i}.blindPieces.${pi}.h" value="${esc(bp.h || '')}" placeholder="สูง (ซม.)" style="width:92px">
           <span class="bp-sqm-tag" data-bp-sqm="${i}_${pi}" style="font-size:11.5px;color:#0369a1;font-weight:700;min-width:68px">${sqm ? `= ${esc(sqm)} ตร.ม.` : ''}</span>
-          <button type="button" class="danger" data-act="delBlindPiece" data-i="${i}" data-li="${pi}" style="padding:2px 6px">✕</button>
+          <button type="button" class="danger" tabindex="-1" data-act="delBlindPiece" data-i="${i}" data-li="${pi}" style="padding:2px 6px">✕</button>
         </div>`;
       }).join('')}
       <div class="blind-pieces-summary" data-bp-summary="${i}" style="font-size:11.5px;color:#0c4a6e;font-weight:600;margin-top:4px">${esc(buildBlindPiecesSummaryText(w))}</div>
@@ -2412,6 +2419,14 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
           const popEl = document.getElementById('pdfQuickPopover');
           if (popEl && !popEl.hidden) syncSheetInputs(popEl);
         } else if (/^blindPieces\.(\d+)\.(w|h)$/.test(field)) {
+          const mBp = /^blindPieces\.(\d+)\.(w|h)$/.exec(field);
+          if (mBp && mBp[2] === 'h' && w.blindSameHeight !== false && Array.isArray(w.blindPieces)) {
+            const newH = w.blindPieces[+mBp[1]] ? w.blindPieces[+mBp[1]].h : '';
+            w.blindPieces.forEach((p, k) => {
+              if (k !== +mBp[1] && p) p.h = newH;
+            });
+            syncSheetInputs();
+          }
           autoCalculateWindow(w, sh);
           autoUpdateSheetFabricTableQty(sh);
           const info = (typeof calcBlindPiecesTotalSqm === 'function') ? calcBlindPiecesTotalSqm(w) : { pieceSqms: [] };
@@ -2491,6 +2506,13 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
       if (!typingInPop && typeof refreshActivePopover === 'function') refreshActivePopover();
     } else if (/^fabrics\.(blackout|sheer|roller|blinds|other)\.(design|color|label)$/.test(sheetPath)) {
       // ช่องสี/ดีไซน์/ประเภทผ้าในตารางผ้า อัปเดตเฉพาะช่องที่ไม่ได้กำลังพิมพ์อยู่และพรีวิวแปลน โดยไม่รีเฟรช Popover หรือ Window Editor
+      syncSheetInputs();
+    } else if (/^rods\.(pleat|show|wave|fold)\.model$/.test(sheetPath)) {
+      // Req #11: เมื่อเปลี่ยนรุ่นรางม่าน ให้คำนวณลดขนาดความสูงผ้าม่านใหม่ตามกลุ่มราง/รายการรางม่านของบานต่างๆ อัตโนมัติ
+      (sh.windows || []).forEach(w => {
+        if (w && w.calcMode !== 'manual') autoCalculateWindow(w, sh);
+      });
+      autoUpdateSheetFabricTableQty(sh);
       syncSheetInputs();
     } else if (/^fabrics\.(blackout|sheer|roller|blinds|other)\.qty$/.test(sheetPath)) {
       const mQty = /^fabrics\.(blackout|sheer|roller|blinds|other)\.qty$/.exec(sheetPath);
@@ -2751,7 +2773,8 @@ document.getElementById('staffSelect').addEventListener('change', e => {
   if (st && ord) {
     ord.staff.name = st.name || '';
     ord.staff.dept = st.dept || '';
-    ord.staff.branch = st.branch || '';
+    const brs = (typeof getStaffBranchList === 'function') ? getStaffBranchList(st) : [];
+    ord.staff.branch = brs[0] || st.branch || '';
     syncSharedInputs();
     changed(null, 'staff.name');
   }
@@ -2930,6 +2953,28 @@ const actions = {
   addLayer(i) {
     const sh = currentSheet(); if (!sh) return;
     sh.windows[i].layers.push({ op: 'split', target: 'all', label: '' });
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
+  applyBlindQuickWidths(i) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    const pop = document.getElementById('pdfQuickPopover');
+    const qIn = (pop && !pop.hidden && pop.querySelector(`[data-bp-quick="${i}"]`))
+      || document.querySelector(`[data-bp-quick="${i}"]`);
+    if (!qIn) return;
+    const nums = String(qIn.value || '')
+      .split(/[,;+\s/|]+/)
+      .map(s => parseFloat(s.trim()))
+      .filter(n => !isNaN(n) && n > 0);
+    if (!nums.length) return;
+    const defH = (Array.isArray(w.blindPieces) && w.blindPieces[0] && w.blindPieces[0].h)
+      || String(calcRailHeight(w) || w.height || '').replace(/\*/g, '');
+    w.blindPieces = nums.map(nw => ({ w: String(nw), h: defH }));
+    w.pieces1 = String(nums.length);
+    autoCalculateWindow(w, sh);
+    autoUpdateSheetFabricTableQty(sh);
     renderWindowsEditor();
     if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
@@ -3267,56 +3312,96 @@ const MtoCombo = (() => {
       const src = filtered.length ? filtered : allBlinds;
       const gMap = new Map();
       src.forEach(b => {
-        const g = String(b.group || b.curtainStyle || b.name || '').trim();
+        const g = String(b.model || b.group || b.name || '').trim();
         if (!g) return;
-        gMap.set(g, (gMap.get(g) || 0) + 1);
+        const codes = (typeof parseBlindCodesList === 'function') ? parseBlindCodesList(b.codes) : [];
+        if (!gMap.has(g)) gMap.set(g, new Set(codes));
+        else codes.forEach(c => gMap.get(g).add(c));
       });
-      return Array.from(gMap.entries()).map(([g, cnt]) => ({
-        value: g,
-        label: g,
-        sub: `${cnt} รหัสชื่อ / รุ่น`,
-      }));
+      return Array.from(gMap.entries()).map(([g, codeSet]) => {
+        const arr = Array.from(codeSet);
+        const sub = arr.length ? `${arr.length} รหัส: ${arr.slice(0, 5).join(', ')}${arr.length > 5 ? '...' : ''}` : 'ระบุรหัสเองได้';
+        return { value: g, label: g, sub };
+      });
     }
     if (kind === 'blindCode') {
       const allBlinds = masterDB.blinds || [];
-      const curGroup = String((sh && sh.fabrics && sh.fabrics[col] && sh.fabrics[col].group) || '').trim();
+      const curModel = String((sh && sh.fabrics && sh.fabrics[col] && sh.fabrics[col].group) || '').trim();
       let list = allBlinds.filter(b => {
+        const mName = String(b.model || b.group || b.name || '').trim();
+        if (curModel) return mName === curModel;
         const st = String(b.curtainStyle || '');
-        if (curGroup && String(b.group || '').trim() === curGroup) return true;
-        if (curGroup) return false;
         if (col === 'roller') return /ม่านม้วน/.test(st) || !st || st === '*';
         if (col === 'blinds') return /มู่ลี่|ม่านปรับแสง/.test(st) || !st || st === '*';
         return true;
       });
       if (!list.length) list = allBlinds;
-      return list.map((x, idx) => ({
-        value: x.name || '',
-        label: x.name || '',
-        sub: `${x.group ? 'กลุ่ม: ' + x.group : ''}${x.curtainStyle ? ' [' + x.curtainStyle + ']' : ''}`,
-        id: x.id || ('__idx_' + idx),
-        raw: x,
-      }));
-    }
-    if (kind === 'blindCord' || kind === 'blindValance') {
-      const cell = (sh && sh.fabrics && sh.fabrics[col]) || {};
-      const allBlinds = masterDB.blinds || [];
-      const matched = allBlinds.filter(b =>
-        (cell.name && String(b.name || '').trim() === String(cell.name).trim()) ||
-        (cell.group && String(b.group || '').trim() === String(cell.group).trim())
-      );
-      const srcList = matched.length ? matched : allBlinds;
-      const fieldKey = kind === 'blindCord' ? 'cordColors' : 'valanceColors';
-      const set = new Set();
-      srcList.forEach(b => {
-        String(b[fieldKey] || '').split(/[,;]/).map(s => s.trim()).filter(Boolean).forEach(s => set.add(s));
+      const out = [];
+      const seen = new Set();
+      list.forEach((x, idx) => {
+        const mName = String(x.model || x.group || x.name || '').trim();
+        const codes = (typeof parseBlindCodesList === 'function') ? parseBlindCodesList(x.codes) : [];
+        if (codes.length) {
+          codes.forEach(code => {
+            const key = `${mName}::${code}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            out.push({
+              value: code,
+              label: code,
+              sub: `รุ่น: ${mName}${x.curtainStyle ? ' [' + x.curtainStyle + ']' : ''}`,
+              id: x.id || ('__idx_' + idx),
+              raw: Object.assign({}, x, { group: mName }),
+            });
+          });
+        } else if (x.name) {
+          out.push({
+            value: x.name,
+            label: x.name,
+            sub: `รุ่น: ${mName}${x.curtainStyle ? ' [' + x.curtainStyle + ']' : ''}`,
+            id: x.id || ('__idx_' + idx),
+            raw: Object.assign({}, x, { group: mName }),
+          });
+        }
       });
-      if (!set.size) {
-        const defaults = kind === 'blindCord'
-          ? ['เชือกเทปสีครีม', 'เชือกเทปสีขาว', 'เชือกเทปสีน้ำตาล', 'เชือกสลิงสีขาว', 'เชือกสลิงสีเทา', 'เชือกสลิงสีดำ']
-          : ['สีเดียวกับใบมู่ลี่', 'ขาว', 'ครีม', 'น้ำตาลเข้ม', 'เงิน', 'ดำ'];
-        defaults.forEach(s => set.add(s));
+      return out;
+    }
+    if (kind === 'blindCord') {
+      const cell = (sh && sh.fabrics && sh.fabrics[col]) || {};
+      const selType = cell.cordType === 'เชือกสลิง' ? 'เชือกสลิง' : 'เชือกเทป';
+      const cordsAll = (masterDB.blindCords || []).filter(c => c && c.name && (c.cordType === selType));
+      const items = cordsAll.map(c => ({
+        value: c.name,
+        label: c.name,
+        sub: `${c.cordType}${c.code ? ' • รหัส ' + c.code : ''}`,
+      }));
+      if (items.length) return items;
+      const defaults = selType === 'เชือกสลิง'
+        ? ['สีขาว', 'สีครีม', 'สีเทา', 'สีน้ำตาล', 'สีดำ']
+        : ['สีครีม', 'สีขาว', 'สีน้ำตาลอ่อน', 'สีน้ำตาลเข้ม', 'สีดำ'];
+      return defaults.map(v => ({ value: v, label: v, sub: selType }));
+    }
+    if (kind === 'blindValance') {
+      const vals = (masterDB.blindValances || []).filter(v => v && v.name);
+      if (vals.length) {
+        return vals.map(v => ({ value: v.name, label: v.name, sub: v.code ? `รหัส ${v.code}` : 'กล่องบังรางมู่ลี่' }));
       }
-      return Array.from(set).map(v => ({ value: v, label: v, sub: '' }));
+      return ['สีเดียวกับใบมู่ลี่', 'ขาว', 'ครีม', 'น้ำตาลเข้ม', 'เงิน', 'ดำ'].map(v => ({ value: v, label: v, sub: '' }));
+    }
+    if (kind === 'staffBranch') {
+      const staffName = ord && ord.staff ? ord.staff.name : '';
+      const assigned = (typeof getStaffBranchList === 'function') ? getStaffBranchList(staffName) : [];
+      const curUser = getCurrentUser();
+      const userBranches = (curUser && typeof getStaffBranchList === 'function') ? getStaffBranchList(curUser) : [];
+      let branchList = assigned.length ? assigned : userBranches;
+      if (!branchList.length) {
+        const allSet = new Set();
+        (masterDB.staff || []).forEach(s => {
+          if (typeof getStaffBranchList === 'function') getStaffBranchList(s).forEach(b => allSet.add(b));
+        });
+        branchList = Array.from(allSet);
+      }
+      return branchList.map(b => ({ value: b, label: b, sub: assigned.length ? 'สาขาที่กำหนดให้พนักงาน' : 'สาขาในระบบ' }));
     }
     if (kind === 'rail') {
       const catMap = { pleat: 'รางม่านจีบ', show: 'รางโชว์', wave: 'รางม่านลอน', fold: 'รางม่านพับ' };
@@ -3485,6 +3570,8 @@ const MtoCombo = (() => {
       sh.rods[col].model = item.value;
       if (item.raw && item.raw.defaultColor) sh.rods[col].color = item.raw.defaultColor;
       close();
+      (sh.windows || []).forEach(w => { if (w && w.calcMode !== 'manual') autoCalculateWindow(w, sh); });
+      autoUpdateSheetFabricTableQty(sh);
       syncSheetInputs();
       renderPreview();
       scheduleBackgroundAutoSave(1200);
@@ -3493,10 +3580,18 @@ const MtoCombo = (() => {
     if (kind === 'staff' && ord && item.raw) {
       ord.staff.name = item.raw.name || '';
       ord.staff.dept = item.raw.dept || '';
-      ord.staff.branch = item.raw.branch || '';
+      const brList = (typeof getStaffBranchList === 'function') ? getStaffBranchList(item.raw) : [];
+      ord.staff.branch = brList[0] || item.raw.branch || '';
       close();
       syncSharedInputs();
       changed(null, 'staff.name');
+      return;
+    }
+    if (kind === 'staffBranch' && ord) {
+      ord.staff.branch = item.value;
+      close();
+      syncSharedInputs();
+      changed(null, 'staff.branch');
       return;
     }
     if (kind === 'customer' && ord && item.raw && item.raw.customer) {
@@ -3981,7 +4076,7 @@ function renderActivePopoverContent(opts = {}) {
 
     const lockBtn = (mKey, titleTxt) => {
       const locked = isFieldManual(w, mKey);
-      return `<button type="button" class="field-mode-btn ${locked ? 'is-manual' : 'is-auto'}" data-act="toggleFieldManual" data-i="${i}" data-mkey="${mKey}" title="${locked ? 'กรอกเอง (คลิกเพื่อสลับเป็นอัตโนมัติ)' : 'คำนวณอัตโนมัติ (คลิกเพื่อล็อกกรอกเอง)'}">${locked ? '✍️' : '⚡'}</button>`;
+      return `<button type="button" tabindex="-1" class="field-mode-btn ${locked ? 'is-manual' : 'is-auto'}" data-act="toggleFieldManual" data-i="${i}" data-mkey="${mKey}" title="${locked ? 'กรอกเอง (คลิกเพื่อสลับเป็นอัตโนมัติ)' : 'คำนวณอัตโนมัติ (คลิกเพื่อล็อกกรอกเอง)'}">${locked ? '✍️' : '⚡'}</button>`;
     };
     const calcRowEd = (key, mPrefix, rowTitle, u1, u2) => `<tr><th class="r">${rowTitle}</th>
       <td><div class="calc-cell-wrap">${lockBtn(mPrefix + 'A', rowTitle + ' กว้าง')}<input ${b(key + '.a')} placeholder="กว้าง"></div></td><td class="op">×</td>
@@ -3998,6 +4093,13 @@ function renderActivePopoverContent(opts = {}) {
       </div>
     `;
 
+    const autoMatchedHf1 = (!w.heightFormulaId1 && style1 && typeof findAutoHeightFormulaForWindow === 'function')
+      ? findAutoHeightFormulaForWindow(style1, w.rodType, w.hookSize, effTracks, effRailModelPop)
+      : null;
+    const activeHf1Obj = (w.heightFormulaId1 && (masterDB.heightFormulas || []).find(f => f.id === w.heightFormulaId1)) || autoMatchedHf1;
+    const autoHfBadgeHtml = (activeHf1Obj && !isBlind1)
+      ? `<div style="margin-bottom:6px;padding:4px 8px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:6px;color:#065f46;font-size:11.5px;font-weight:600">✔ ลดความสูงอัตโนมัติตามเงื่อนไข: ${esc(activeHf1Obj.label)} (แก้ไขตัวเลขสูงเองได้ในช่องตาราง)</div>`
+      : '';
     const hasAdvDims = !!(w.customRailW || w.customRailH || w.unequalLayerRail || w.fullHLeft || w.fullHMid || w.fullHRight);
     const hasAdvCalc = !!(w.railCountUnit || w.railUnit || w.railMinLength || w.rowLabel1 || w.rowLabel2 || w.rowLabel3);
     const showLayer2Box = !!(w.curtainStyle2 || isTwoLayer || w.fabricCol2 || (w.sheer && (w.sheer.a || w.sheer.t)));
@@ -4009,7 +4111,7 @@ function renderActivePopoverContent(opts = {}) {
           <b>🎯 จุดที่คลิกแก้ไข: <span style="color:#b42318">${esc(fMeta[0])}</span></b>
           <div class="grid2" style="margin-top:4px">
             <label>ขนาด ${esc(fMeta[0])} (ซม.)
-              <input type="number" step="any" ${b(fKey)} data-pop-autofocus="1" placeholder="ระบุขนาด (ซม.)" style="font-weight:700;font-size:14px">
+              <input type="number" step="any" data-dim-num="1" ${b(fKey)} data-pop-autofocus="1" placeholder="ระบุขนาด (ซม.)" style="font-weight:700;font-size:14px">
             </label>
             <label>หมายเหตุกำกับจุดนี้
               ${comboInputHTML({ kind: 'remark', sheetPath: `windows.${i}.${fMeta[1]}`, placeholder: 'เช่น ชนแอร์, ปลั๊กไฟ, บิ้วอิน' })}
@@ -4023,17 +4125,17 @@ function renderActivePopoverContent(opts = {}) {
       <section class="pop-sec-card" id="popSec_dims">
         <div class="pop-sec-title">
           <span class="pop-sec-badge">ส่วนที่ 1</span>
-          <b>รหัสจุด และขนาดพื้นที่รอบบาน</b>
+          <b>รหัสจุด และขนาดพื้นที่รอบบาน (กด Tab เลื่อนช่องขนาดถัดไปได้ทันที)</b>
         </div>
         <div class="grid3" style="margin-bottom:6px">
           <label>ลำดับจุด ${hasPlanPoints ? '<small style="color:#1d4ed8">(จากแปลน)</small>' : ''}
-            <input ${b('planNo')} ${hasPlanPoints ? 'readonly style="background:#f1f5f9"' : ''} placeholder="1, 2...">
+            <input ${b('planNo')} ${hasPlanPoints ? 'readonly tabindex="-1" style="background:#f1f5f9"' : ''} placeholder="1, 2...">
           </label>
           <label>รหัส/ตำแหน่ง ${hasPlanPoints ? '<small style="color:#1d4ed8">(จากแปลน)</small>' : ''}
-            <input ${b('label')} ${hasPlanPoints ? 'readonly style="background:#f1f5f9"' : ''} placeholder="W1, D1">
+            <input ${b('label')} ${hasPlanPoints ? 'readonly tabindex="-1" style="background:#f1f5f9"' : ''} placeholder="W1, D1">
           </label>
           <label>ดึงจากจุดในแปลนห้อง
-            <select data-plan-pick="${i}">${planSelectOpts}</select>
+            <select tabindex="-1" data-plan-pick="${i}">${planSelectOpts}</select>
           </label>
         </div>
         ${isCurvedShape ? `
@@ -4065,6 +4167,7 @@ function renderActivePopoverContent(opts = {}) {
             กว้างราง = <b>${esc(rw || '-')}${isFieldManual(w, 'railW') && w.customRailW ? '*' : ''}</b> ซม. • สูงราง (สูงเฟรม+เผื่อบน+เผื่อล่าง) = <b>${esc(rh || '-')}${isFieldManual(w, 'railH') && w.customRailH ? '*' : ''}</b> ซม.
           </div>
         </div>
+        ${showBlindPiecePanel ? buildBlindPiecesEditorHTML(w, i) : ''}
         <details class="pop-adv-details" ${hasAdvDims ? 'open' : ''}>
           <summary>⚙️ ตั้งค่าขั้นสูง (ระบุขนาดรางเอง / รางทึบ-โปร่งไม่เท่ากัน / ความสูงเต็ม ซ้าย-กลาง-ขวา)</summary>
           <div class="grid3" style="margin-bottom:6px">
@@ -4286,6 +4389,7 @@ function renderActivePopoverContent(opts = {}) {
         </div>
 
         ${showBlindPiecePanel ? buildBlindPiecesEditorHTML(w, i) : ''}
+        ${autoHfBadgeHtml}
 
         <div class="pop-layer-box" style="margin-top:6px">
           <div class="pop-layer-hd">ชั้นที่ 1: ${esc(style1 || 'ผ้าม่านทึบ (กรุณาเลือกรูปแบบม่านและรายการผ้าก่อนคำนวณ)')}</div>
@@ -4578,7 +4682,9 @@ function renderActivePopoverContent(opts = {}) {
             ${comboInputHTML({ kind: 'staff', sharedPath: 'staff.name', placeholder: 'เลือกพนักงาน หรือพิมพ์ค้นหา/ระบุเอง...' })}
           </label>
           <label>แผนก <input data-shared="staff.dept"></label>
-          <label>สาขา <input data-shared="staff.branch"></label>
+          <label>สาขา
+            ${comboInputHTML({ kind: 'staffBranch', sharedPath: 'staff.branch', placeholder: 'เลือกสาขาของพนักงาน หรือระบุเอง...' })}
+          </label>
         </div>
       </section>
       <section class="pop-sec-card">
@@ -4678,24 +4784,24 @@ function renderActivePopoverContent(opts = {}) {
         ${col === 'other' ? `<label style="margin-bottom:6px">หัวข้อคอลัมน์อื่นๆ <input data-sheet="fabrics.other.label"></label>` : ''}
         ${isBlindCol ? `
           <div class="grid2">
-            <label>ชื่อกลุ่ม${col === 'roller' ? 'ม่านม้วน' : 'มู่ลี่'}
-              ${comboInputHTML({ kind: 'blindGroup', col, sheetPath: `fabrics.${col}.group`, placeholder: 'เลือกชื่อกลุ่ม หรือพิมพ์ระบุเอง...', autofocus: true })}
+            <label>ชื่อรุ่น${col === 'roller' ? 'ม่านม้วน' : 'มู่ลี่ / ม่านปรับแสง'} (เลือกรุ่นก่อน)
+              ${comboInputHTML({ kind: 'blindGroup', col, sheetPath: `fabrics.${col}.group`, placeholder: 'เลือกชื่อรุ่น เช่น P100 หรือระบุเอง...', autofocus: true })}
             </label>
-            <label>รหัสชื่อ / รุ่นสินค้า
-              ${comboInputHTML({ kind: 'blindCode', col, sheetPath: `fabrics.${col}.name`, placeholder: 'เลือกรหัสชื่อ หรือพิมพ์ระบุเอง...' })}
+            <label>รหัสสินค้า (ตามรุ่นที่เลือก)
+              ${comboInputHTML({ kind: 'blindCode', col, sheetPath: `fabrics.${col}.name`, placeholder: 'เลือกรหัสสินค้า เช่น P101 หรือระบุเอง...' })}
             </label>
             <label>สีใบ / สีผ้า <input data-sheet="fabrics.${col}.color" placeholder="ระบุสี"></label>
             <label>ปริมาณรวม (ตร.ม.) <input data-sheet="fabrics.${col}.qty" placeholder="คำนวณอัตโนมัติ"></label>
           </div>
           ${col === 'blinds' ? `
             <div class="grid2" style="margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">
-              <label>ประเภทเชือก
+              <label>ประเภทเชือก (ดึงชุดสีแยกเชือกเทป/สลิง)
                 <select data-sheet="fabrics.blinds.cordType">
                   <option value="เชือกเทป">เชือกเทป</option>
                   <option value="เชือกสลิง">เชือกสลิง</option>
                 </select>
               </label>
-              <label>สีเชือกเทป / สีเชือกสลิง
+              <label>สีเชือก (แยกตามประเภทเชือกที่เลือก)
                 ${comboInputHTML({ kind: 'blindCord', col: 'blinds', sheetPath: 'fabrics.blinds.cordColor', placeholder: 'เลือกสีเชือก หรือพิมพ์ระบุเอง...' })}
               </label>
               <label class="full">สีกล่องบังรางมู่ลี่
@@ -5568,6 +5674,62 @@ document.getElementById('btnLogout').addEventListener('click', () => {
 
 PlanEditor.init();
 MtoCombo.init();
+if (typeof PdfHandwritingImporter !== 'undefined') PdfHandwritingImporter.init();
+
+const btnImportPdfEl = document.getElementById('btnImportPdf');
+if (btnImportPdfEl) {
+  btnImportPdfEl.addEventListener('click', () => {
+    if (typeof PdfHandwritingImporter !== 'undefined') PdfHandwritingImporter.open();
+  });
+}
+
+// Req #8: กด Tab / Enter ที่ช่องขนาดหน้าต่าง/ประตู (data-dim-num) ให้เลื่อนไปช่องใส่ขนาดถัดไปทันที (ข้ามช่องหมายเหตุ)
+document.addEventListener('keydown', e => {
+  const el = e.target;
+  if (!el || !el.dataset) return;
+  if (el.dataset.bpQuick !== undefined && e.key === 'Enter') {
+    e.preventDefault();
+    actions.applyBlindQuickWidths(+el.dataset.bpQuick);
+    return;
+  }
+  if (el.dataset.dimNum === '1' && (e.key === 'Tab' || e.key === 'Enter')) {
+    const scope = el.closest('#pdfQuickPopover') || el.closest('.win-ed') || document;
+    const allDims = Array.from(scope.querySelectorAll('input[data-dim-num="1"]:not([disabled]):not([readonly])'))
+      .filter(inp => inp.offsetParent !== null);
+    const curIdx = allDims.indexOf(el);
+    if (curIdx >= 0 && allDims.length > 1) {
+      const nextIdx = e.shiftKey ? (curIdx - 1) : (curIdx + 1);
+      if (nextIdx >= 0 && nextIdx < allDims.length) {
+        e.preventDefault();
+        const nxt = allDims[nextIdx];
+        nxt.focus();
+        if (typeof nxt.select === 'function') nxt.select();
+      }
+    }
+  }
+});
+
+// Req #10: Checkbox "สูงเท่ากันทุกผืน" สำหรับม่านม้วน/มู่ลี่
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el && el.dataset && el.dataset.bpSameh !== undefined) {
+    const sh = currentSheet();
+    const w = sh && sh.windows[+el.dataset.bpSameh];
+    if (w) {
+      w.blindSameHeight = !!el.checked;
+      if (w.blindSameHeight && Array.isArray(w.blindPieces) && w.blindPieces.length > 1) {
+        const refH = (w.blindPieces[0] && w.blindPieces[0].h) || String(calcRailHeight(w) || w.height || '').replace(/\*/g, '');
+        w.blindPieces.forEach(p => { if (p) p.h = refH; });
+        autoCalculateWindow(w, sh);
+        autoUpdateSheetFabricTableQty(sh);
+        syncSheetInputs();
+        renderPreview();
+      }
+      if (typeof refreshActivePopover === 'function') refreshActivePopover();
+      scheduleBackgroundAutoSave(1200);
+    }
+  }
+});
 MasterDBModal.init(() => {
   if (isUserLoggedIn()) {
     applyUserRoleUI();
