@@ -965,9 +965,8 @@ function buildGroupedBlindCalcRows(w) {
 }
 
 function rWinCell(w, n, winIdx = 0) {
-  if (!w) {
-    return `<div class="wc wc-empty" data-preview-win="${winIdx}" title="คลิกเพื่อเพิ่มจุดที่ ${esc(n)}"></div>`;
-  }
+  const isUnassigned = !w;
+  w = w || {};
   const cType = formatCurtainType(w);
   const showHook = curtainNeedsHook(w.curtainStyle1, w.curtainStyle2);
   const hookTxt = showHook ? (w.hookSize || '') : '';
@@ -975,7 +974,8 @@ function rWinCell(w, n, winIdx = 0) {
   const ceilAttachTxt = (w.mount === 'wall' && w.wallCeilingAttach)
     ? `ผนังชิดเพดาน${w.wallCeilingNote ? ' (' + w.wallCeilingNote + ')' : ''}`
     : '';
-  const numLabel = w.planNo || n;
+  const numLabel = isUnassigned ? '' : (w.planNo || n);
+  const boxLabel = isUnassigned ? '' : (w.label || '');
   const isBlind1 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle1);
   const isBlind2 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w.curtainStyle2);
 
@@ -1016,8 +1016,8 @@ function rWinCell(w, n, winIdx = 0) {
     `;
   }
 
-  return `<div class="wc" data-preview-win="${winIdx}" title="คลิกที่ส่วนใดของจุดที่ ${esc(numLabel)} เพื่อแก้ไขตรงจุดนั้นทันที">
-    <div class="r" data-win-part="header"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(w.label)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
+  return `<div class="wc" data-preview-win="${winIdx}" title="${isUnassigned ? `คลิกเพื่อกำหนดข้อมูลช่องที่ ${esc(n)}` : `คลิกที่ส่วนใดของจุดที่ ${esc(numLabel)} เพื่อแก้ไขตรงจุดนั้นทันที`}">
+    <div class="r" data-win-part="header"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(boxLabel)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
     <div class="opt-align-row" data-win-part="box">
       <span class="opt-lbl">กล่องม่าน</span>
       <span class="opt-col1">${CB(w.box === 'no', 'No')}</span>
@@ -1104,7 +1104,10 @@ function computePageFabricQtySums(sheet, pageWins) {
 
   wins.forEach(w => {
     if (!w) return;
-    const y1 = parseYds(w.blackout && w.blackout.t);
+    const bpSum = (Array.isArray(w.blindPieces) && w.blindPieces.length && typeof calcBlindPiecesTotalSqm === 'function')
+      ? calcBlindPiecesTotalSqm(w).totalSqm
+      : 0;
+    const y1 = bpSum > 0 ? bpSum : parseYds(w.blackout && w.blackout.t);
     if (y1 > 0) {
       const col1 = matchColForLayer(w, 1);
       if (col1 && sums[col1] !== undefined) {

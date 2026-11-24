@@ -462,18 +462,18 @@ function updateAutoSaveBadge(state = 'ready', msg = '') {
   badge.classList.remove('is-saving', 'is-saved', 'is-error');
   if (state === 'saving') {
     badge.classList.add('is-saving');
-    badge.textContent = msg || '⏳ กำลังบันทึก...';
+    badge.textContent = msg || '⏳ บันทึก...';
   } else if (state === 'saved') {
     badge.classList.add('is-saved');
     const tStr = lastAutoSaveAt
-      ? lastAutoSaveAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      ? lastAutoSaveAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
       : '';
-    badge.textContent = msg || `✅ บันทึกอัตโนมัติแล้ว${tStr ? ' (' + tStr + ')' : ''}`;
+    badge.textContent = msg || `✅ บันทึกแล้ว${tStr ? ' ' + tStr : ''}`;
   } else if (state === 'error') {
     badge.classList.add('is-error');
-    badge.textContent = msg || '⚠️ บันทึกอัตโนมัติไม่สำเร็จ';
+    badge.textContent = msg || '⚠️ บันทึกไม่สำเร็จ';
   } else {
-    badge.textContent = msg || '💾 Auto Save: เบื้องหลัง';
+    badge.textContent = msg || '💾 Auto Save';
   }
 }
 
@@ -1409,6 +1409,14 @@ function autoCalculateWindow(w, sh) {
       if (!mf.boN) w.blackout.n = '';
       if (!mf.boT) w.blackout.t = '';
     }
+    // กรณีม่านม้วน/มู่ลี่มีการกำหนดขนาดต่อผืนเอง (blindPieces) ให้สรุปจำนวนผืนและพื้นที่รวม (ตร.ม.) ลงใน w.blackout เพื่อรวมยอดลงตารางสินค้า
+    if (Array.isArray(w.blindPieces) && w.blindPieces.length && typeof calcBlindPiecesTotalSqm === 'function') {
+      const bpRes = calcBlindPiecesTotalSqm(w);
+      if (bpRes.count > 0) {
+        if (!mf.boN) w.blackout.n = String(bpRes.count);
+        if (!mf.boT) w.blackout.t = bpRes.totalSqmStr;
+      }
+    }
   }
 
   // Layer 2 (ม่านโปร่ง) — คำนวณจากรูปแบบผ้าม่านชั้นที่ 2 และเงื่อนไขของชั้นที่ 2 เอง แล้วลดเพิ่ม 1 ซม. (กรณีม่าน 2 ชั้น)
@@ -1481,6 +1489,54 @@ function autoCalculateWindow(w, sh) {
     autoUpdateSheetFabricTableQty(sh);
   }
 }
+function buildBlindPiecesSummaryText(w) {
+  const pieces = Array.isArray(w && w.blindPieces) ? w.blindPieces : [];
+  if (!pieces.length) return 'ยังไม่แบ่งผืนย่อย — กดปุ่มจำนวนผืนด้านบนเพื่อระบุขนาดแต่ละผืนเองได้ (เช่น 180 + 120)';
+  const rw = parseFloat(String(calcRailWidth(w) || w.width || 0).replace(/\*/g, '')) || 0;
+  const info = (typeof calcBlindPiecesTotalSqm === 'function') ? calcBlindPiecesTotalSqm(w) : { count: 0, totalWidth: 0, totalSqmStr: '' };
+  const wParts = pieces.map(p => parseFloat(p && p.w) || 0).filter(n => n > 0);
+  const sumExpr = wParts.length > 1 ? `${wParts.join(' + ')} = ${info.totalWidth}` : `${info.totalWidth}`;
+  let diffTxt = '';
+  if (rw > 0 && info.totalWidth > 0) {
+    const diff = Math.round((rw - info.totalWidth) * 100) / 100;
+    if (Math.abs(diff) < 0.01) diffTxt = ` (ตรงกับความกว้างรวม ${rw} ซม. ✔)`;
+    else if (diff > 0) diffTxt = ` (ยังขาดอีก ${diff} ซม. จาก ${rw} ซม.)`;
+    else diffTxt = ` (เกิน ${Math.abs(diff)} ซม. จาก ${rw} ซม.)`;
+  }
+  return `รวมกว้าง: ${sumExpr} ซม.${diffTxt}${info.totalSqmStr ? ` • พื้นที่รวม ${info.totalSqmStr} ตร.ม.` : ''}`;
+}
+
+function buildBlindPiecesEditorHTML(w, i) {
+  const pieces = Array.isArray(w && w.blindPieces) ? w.blindPieces : [];
+  const info = (typeof calcBlindPiecesTotalSqm === 'function') ? calcBlindPiecesTotalSqm(w) : { pieceSqms: [] };
+  const activeCnt = pieces.length;
+  return `
+    <div class="blind-pieces-box" style="margin-top:6px;padding:7px 9px;background:#f0f9ff;border:1px solid #7dd3fc;border-radius:6px">
+      <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:5px">
+        <b style="color:#0369a1;font-size:12px">🪟 กำหนดขนาดต่อผืนเอง (ม่านม้วน / มู่ลี่)</b>
+        <div class="inline" style="flex-wrap:wrap;gap:3px">
+          ${[1, 2, 3, 4].map(cnt => `<button type="button" class="${activeCnt === cnt ? 'primary' : ''}" data-act="setBlindPieceCount" data-i="${i}" data-li="${cnt}" style="padding:2px 7px;font-size:11px">${cnt} ผืน</button>`).join('')}
+          <button type="button" data-act="addBlindPiece" data-i="${i}" style="padding:2px 7px;font-size:11px">➕ เพิ่มผืน</button>
+          ${activeCnt >= 2 ? `<button type="button" data-act="balanceBlindPieces" data-i="${i}" style="padding:2px 7px;font-size:11px" title="คำนวณความกว้างที่เหลือให้ผืนสุดท้ายอัตโนมัติ">⚡ เติมส่วนที่เหลือ</button>` : ''}
+        </div>
+      </div>
+      ${pieces.map((bp, pi) => {
+        const sqm = (info.pieceSqms && info.pieceSqms[pi]) || '';
+        return `
+        <div class="inline" style="margin-bottom:4px;flex-wrap:wrap;gap:5px">
+          <span class="layer-tag">ผืนที่ ${pi + 1}</span>
+          <input type="number" step="0.5" data-halfcm="1" data-sheet="windows.${i}.blindPieces.${pi}.w" value="${esc(bp.w || '')}" placeholder="กว้าง (ซม.)" style="width:92px">
+          <span>×</span>
+          <input type="number" step="0.5" data-halfcm="1" data-sheet="windows.${i}.blindPieces.${pi}.h" value="${esc(bp.h || '')}" placeholder="สูง (ซม.)" style="width:92px">
+          <span class="bp-sqm-tag" data-bp-sqm="${i}_${pi}" style="font-size:11.5px;color:#0369a1;font-weight:700;min-width:68px">${sqm ? `= ${esc(sqm)} ตร.ม.` : ''}</span>
+          <button type="button" class="danger" data-act="delBlindPiece" data-i="${i}" data-li="${pi}" style="padding:2px 6px">✕</button>
+        </div>`;
+      }).join('')}
+      <div class="blind-pieces-summary" data-bp-summary="${i}" style="font-size:11.5px;color:#0c4a6e;font-weight:600;margin-top:4px">${esc(buildBlindPiecesSummaryText(w))}</div>
+    </div>
+  `;
+}
+
 function windowEditorHTML(w, i, planOpenings) {
   const b = p => `data-sheet="windows.${i}.${p}"`;
   const sh = currentSheet();
@@ -1689,6 +1745,8 @@ function windowEditorHTML(w, i, planOpenings) {
         </span>
       </label>
     </div>
+
+    ${(isBlind1 || isBlind2 || (Array.isArray(w.blindPieces) && w.blindPieces.length > 0)) ? buildBlindPiecesEditorHTML(w, i) : ''}
 
     <div style="margin-top:6px;padding:7px 9px;background:#fff8f6;border:1px dashed #ef9a9a;border-radius:6px">
       <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
@@ -2284,6 +2342,21 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
             if (natRod && !w.rodType) w.rodType = natRod;
             if (!w.pieces1 && !isBlindOrRollerStyle(w.curtainStyle1)) w.pieces1 = '2';
           }
+          if (field === 'pieces1' && isBlindOrRollerStyle(w.curtainStyle1) && +w.pieces1 >= 2) {
+            const cnt = Math.min(12, Math.max(1, +w.pieces1));
+            if (!Array.isArray(w.blindPieces) || w.blindPieces.length !== cnt) {
+              const totalW = parseFloat(String(calcRailWidth(w) || w.width || 0).replace(/\*/g, '')) || 0;
+              const defH = String(calcRailHeight(w) || w.height || '').replace(/\*/g, '');
+              const eachW = totalW > 0 ? Math.round((totalW / cnt) * 10) / 10 : '';
+              w.blindPieces = Array.from({ length: cnt }, (_, k) => {
+                if (totalW > 0 && k === cnt - 1) {
+                  const used = Math.round(eachW * (cnt - 1) * 10) / 10;
+                  return { w: String(Math.round((totalW - used) * 10) / 10), h: defH };
+                }
+                return { w: eachW ? String(eachW) : '', h: defH };
+              });
+            }
+          }
           if (!curtainNeedsHook(w.curtainStyle1, w.curtainStyle2)) w.hookSize = '';
           w.paneStyle = String(getPaneCount(w));
           if (field === 'unequalSplit' && w.unequalSplit) {
@@ -2338,6 +2411,18 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
           if (winCard) syncSheetInputs(winCard);
           const popEl = document.getElementById('pdfQuickPopover');
           if (popEl && !popEl.hidden) syncSheetInputs(popEl);
+        } else if (/^blindPieces\.(\d+)\.(w|h)$/.test(field)) {
+          autoCalculateWindow(w, sh);
+          autoUpdateSheetFabricTableQty(sh);
+          const info = (typeof calcBlindPiecesTotalSqm === 'function') ? calcBlindPiecesTotalSqm(w) : { pieceSqms: [] };
+          document.querySelectorAll(`[data-bp-summary="${idx}"]`).forEach(el => {
+            el.textContent = buildBlindPiecesSummaryText(w);
+          });
+          (info.pieceSqms || []).forEach((sqm, pi) => {
+            document.querySelectorAll(`[data-bp-sqm="${idx}_${pi}"]`).forEach(el => {
+              el.textContent = sqm ? `= ${sqm} ตร.ม.` : '';
+            });
+          });
         } else if (/^(width|height|extL|extR|extT|extB|sideWidthCenter|sideWidthLeft|sideWidthRight|fullHLeft|fullHMid|fullHRight|fullH|fullW|customRailW|customRailH|railW1|railW2|railH1|railH2|railMinLength|floorAdjust|noRailDeductCustom|extraYards1|extraYards2|gable\..+|sideJoin\..+)$/.test(field)) {
           if (field === 'gable.title' && w.gable) {
             w.gable.titleManual = !!String(w.gable.title || '').trim();
@@ -2849,13 +2934,62 @@ const actions = {
     if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
   },
+  setBlindPieceCount(i, count) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    const cnt = Math.max(1, Math.min(12, +count || 1));
+    const totalW = parseFloat(String(calcRailWidth(w) || w.width || 0).replace(/\*/g, '')) || 0;
+    const defH = String(calcRailHeight(w) || w.height || '').replace(/\*/g, '');
+    const prev = Array.isArray(w.blindPieces) ? w.blindPieces : [];
+    const eachW = totalW > 0 ? Math.round((totalW / cnt) * 10) / 10 : '';
+    w.blindPieces = Array.from({ length: cnt }, (_, k) => {
+      if (prev[k] && (prev[k].w || prev[k].h) && prev.length === cnt) return prev[k];
+      if (totalW > 0 && k === cnt - 1) {
+        const used = Math.round(eachW * (cnt - 1) * 10) / 10;
+        return { w: String(Math.round((totalW - used) * 10) / 10), h: defH };
+      }
+      return { w: eachW ? String(eachW) : '', h: defH };
+    });
+    w.pieces1 = String(cnt);
+    autoCalculateWindow(w, sh);
+    autoUpdateSheetFabricTableQty(sh);
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
+  balanceBlindPieces(i) {
+    const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
+    const w = sh.windows[i];
+    if (!Array.isArray(w.blindPieces) || w.blindPieces.length < 2) return;
+    const totalW = parseFloat(String(calcRailWidth(w) || w.width || 0).replace(/\*/g, '')) || 0;
+    if (totalW <= 0) return;
+    let sumBefore = 0;
+    for (let k = 0; k < w.blindPieces.length - 1; k++) {
+      sumBefore += parseFloat(w.blindPieces[k] && w.blindPieces[k].w) || 0;
+    }
+    const rem = Math.max(0, Math.round((totalW - sumBefore) * 10) / 10);
+    const last = w.blindPieces[w.blindPieces.length - 1];
+    last.w = rem > 0 ? String(rem) : '';
+    if (!last.h) last.h = String(calcRailHeight(w) || w.height || '').replace(/\*/g, '');
+    autoCalculateWindow(w, sh);
+    autoUpdateSheetFabricTableQty(sh);
+    renderWindowsEditor();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    changed();
+  },
   addBlindPiece(i) {
     const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
     const w = sh.windows[i];
     if (!Array.isArray(w.blindPieces)) w.blindPieces = [];
-    const defW = w.width || '';
-    const defH = w.height || '';
+    const totalW = parseFloat(String(calcRailWidth(w) || w.width || 0).replace(/\*/g, '')) || 0;
+    const usedW = w.blindPieces.reduce((s, p) => s + (parseFloat(p && p.w) || 0), 0);
+    const remW = totalW > usedW ? Math.round((totalW - usedW) * 10) / 10 : totalW;
+    const defW = remW > 0 ? String(remW) : (w.width || '');
+    const defH = String(calcRailHeight(w) || w.height || '').replace(/\*/g, '');
     w.blindPieces.push({ w: defW, h: defH });
+    w.pieces1 = String(w.blindPieces.length);
+    autoCalculateWindow(w, sh);
+    autoUpdateSheetFabricTableQty(sh);
     renderWindowsEditor();
     if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
@@ -2865,6 +2999,9 @@ const actions = {
     const w = sh.windows[i];
     if (!Array.isArray(w.blindPieces)) return;
     w.blindPieces.splice(pi, 1);
+    if (w.blindPieces.length) w.pieces1 = String(w.blindPieces.length);
+    autoCalculateWindow(w, sh);
+    autoUpdateSheetFabricTableQty(sh);
     renderWindowsEditor();
     if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
@@ -3036,8 +3173,8 @@ function setRightOnlyMode(on) {
   if (btn) {
     btn.classList.toggle('primary', rightOnlyMode);
     btn.innerHTML = rightOnlyMode
-      ? '📋 แสดงแผงข้อมูลด้านซ้าย'
-      : '🖥️ ซ่อนแผงซ้าย (คลิกแก้ไขบนใบงานด้านขวา)';
+      ? '📋 แผงซ้าย'
+      : '🖥️ ซ่อนแผงซ้าย';
   }
   setTimeout(() => { fitZoomWidth(); }, 60);
 }
@@ -3862,8 +3999,9 @@ function renderActivePopoverContent(opts = {}) {
     `;
 
     const hasAdvDims = !!(w.customRailW || w.customRailH || w.unequalLayerRail || w.fullHLeft || w.fullHMid || w.fullHRight);
-    const hasAdvCalc = !!(w.railCountUnit || w.railUnit || w.railMinLength || w.rowLabel1 || w.rowLabel2 || w.rowLabel3 || (Array.isArray(w.blindPieces) && w.blindPieces.length > 0));
+    const hasAdvCalc = !!(w.railCountUnit || w.railUnit || w.railMinLength || w.rowLabel1 || w.rowLabel2 || w.rowLabel3);
     const showLayer2Box = !!(w.curtainStyle2 || isTwoLayer || w.fabricCol2 || (w.sheer && (w.sheer.a || w.sheer.t)));
+    const showBlindPiecePanel = !!(isBlind1 || isBlind2 || (Array.isArray(w.blindPieces) && w.blindPieces.length > 0));
 
     bodyHTML = `
       ${(subTab === 'dims' && fMeta) ? `
@@ -4015,6 +4153,8 @@ function renderActivePopoverContent(opts = {}) {
           ` : `<div></div>`}
         </div>
 
+        ${showBlindPiecePanel ? buildBlindPiecesEditorHTML(w, i) : ''}
+
         <div class="opts" style="margin-top:6px">
           <div><span class="olbl">กล่องม่าน</span>
             <label><input type="radio" name="pop_box${i}" value="no" ${b('box')}>ไม่มี</label>
@@ -4145,7 +4285,9 @@ function renderActivePopoverContent(opts = {}) {
           </div>
         </div>
 
-        <div class="pop-layer-box">
+        ${showBlindPiecePanel ? buildBlindPiecesEditorHTML(w, i) : ''}
+
+        <div class="pop-layer-box" style="margin-top:6px">
           <div class="pop-layer-hd">ชั้นที่ 1: ${esc(style1 || 'ผ้าม่านทึบ (กรุณาเลือกรูปแบบม่านและรายการผ้าก่อนคำนวณ)')}</div>
           <div class="grid2">
             <label>เลือกผ้าชั้นที่ 1 (ใช้เกรนจากตารางผ้าอัตโนมัติ)
@@ -4262,23 +4404,6 @@ function renderActivePopoverContent(opts = {}) {
               </span>
             </label>
           </div>
-          ${(isBlind1 || isBlind2 || (Array.isArray(w.blindPieces) && w.blindPieces.length > 0)) ? `
-            <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">
-              <div class="inline" style="justify-content:space-between;margin-bottom:4px">
-                <b>🪟 ม่านม้วน/มู่ลี่ แบ่งหลายผืน (ขนาดเท่ากันรวมอัตโนมัติ)</b>
-                <button type="button" data-act="addBlindPiece" data-i="${i}">➕ เพิ่มผืน</button>
-              </div>
-              ${(w.blindPieces || []).map((bp, pi) => `
-                <div class="inline" style="margin-bottom:4px">
-                  <span class="layer-tag">ผืนที่ ${pi + 1}</span>
-                  <input type="number" step="any" data-sheet="windows.${i}.blindPieces.${pi}.w" value="${esc(bp.w || '')}" placeholder="กว้าง (ซม.)" style="width:95px">
-                  <span>x</span>
-                  <input type="number" step="any" data-sheet="windows.${i}.blindPieces.${pi}.h" value="${esc(bp.h || '')}" placeholder="สูง (ซม.)" style="width:95px">
-                  <button type="button" class="danger" data-act="delBlindPiece" data-i="${i}" data-li="${pi}">✕</button>
-                </div>
-              `).join('')}
-            </div>
-          ` : ''}
         </details>
       </section>
       ` : ''}

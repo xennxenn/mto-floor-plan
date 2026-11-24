@@ -7,30 +7,30 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=21">
+  <link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
   <header class="topbar no-print" id="mainTopbar" hidden>
     <div class="brand">
-      <button id="btnHome" class="ghost" hidden title="กลับหน้ารายการออเดอร์">⬅ รายการออเดอร์</button>
-      <span>📋 ระบบใบงานสั่งผลิตผ้าม่าน</span>
+      <button id="btnHome" class="ghost" hidden title="กลับหน้ารายการออเดอร์">⬅ ออเดอร์</button>
+      <span class="brand-title">📋 ใบงานผ้าม่าน</span>
       <span id="topOrderBadge" class="badge" hidden></span>
     </div>
     <div class="actions">
       <span id="userBadge" class="badge"></span>
-      <span id="autoSaveBadge" class="badge autosave-badge" title="ระบบบันทึกข้อมูลอัตโนมัติ (Auto Save)">💾 Auto Save: พร้อมใช้งาน</span>
+      <span id="autoSaveBadge" class="badge autosave-badge" title="ระบบบันทึกข้อมูลอัตโนมัติ (Auto Save)">💾 Auto Save</span>
       <button id="btnCloudSync" class="sync-btn" title="ตั้งค่าการซิงค์ข้อมูลร่วมกันทั้งทีม">
         <span id="syncStatusDot" class="sync-dot sync-connecting"></span>
-        <span id="syncStatusText">กำลังเชื่อมต่อ...</span>
+        <span id="syncStatusText">เชื่อมต่อ...</span>
       </button>
       <button id="btnMasterDb" class="admin-only-db" hidden title="ตั้งค่าฐานข้อมูลระบบ (เฉพาะผู้ดูแลระบบ)">🗄️ ฐานข้อมูล</button>
       <span id="orderActions" class="actions" hidden>
-        <button id="btnSaveJson" title="ส่งออกออเดอร์นี้เป็นไฟล์">💾 ส่งออกไฟล์</button>
+        <button id="btnSaveJson" title="ส่งออกออเดอร์นี้เป็นไฟล์ JSON">💾 ส่งออก</button>
         <button id="btnPrint" title="พิมพ์ / บันทึกเป็น PDF ผ่านเบราว์เซอร์">🖨️ พิมพ์</button>
-        <button id="btnPdf" class="primary" title="ดาวน์โหลดไฟล์ PDF">📄 ดาวน์โหลด PDF</button>
+        <button id="btnPdf" class="primary" title="ดาวน์โหลดไฟล์ PDF">📄 PDF</button>
       </span>
-      <button id="btnLogout" class="ghost" title="ออกจากระบบ">🚪 ออกจากระบบ</button>
+      <button id="btnLogout" class="ghost" title="ออกจากระบบ">🚪 ออก</button>
     </div>
   </header>
 
@@ -56,12 +56,12 @@
     <div id="sheetTabs" class="sheet-tabs-scroll"></div>
     <button type="button" id="btnNextSheet" class="nav-arrow" title="หน้าถัดไป">▶</button>
     <div class="sheet-nav-actions">
-      <button type="button" id="btnMoveSheetLeft" title="เลื่อนใบแปลนหน้านี้ไปทางซ้าย">⬅ ย้ายซ้าย</button>
-      <button type="button" id="btnMoveSheetRight" title="เลื่อนใบแปลนหน้านี้ไปทางขวา">ย้ายขวา ➡</button>
-      <button type="button" id="btnReorderSheets" title="จัดลำดับใบแปลนงาน (หน้าต่อกันจะถูกล็อกต่อจากหน้าเริ่มต้นเสมอ)">📑 จัดลำดับใบแปลน</button>
+      <button type="button" id="btnMoveSheetLeft" title="เลื่อนใบแปลนหน้านี้ไปทางซ้าย">⬅</button>
+      <button type="button" id="btnMoveSheetRight" title="เลื่อนใบแปลนหน้านี้ไปทางขวา">➡</button>
+      <button type="button" id="btnReorderSheets" title="จัดลำดับใบแปลนงาน (หน้าต่อกันจะถูกล็อกต่อจากหน้าเริ่มต้นเสมอ)">📑 จัดลำดับ</button>
       <button type="button" id="btnAddSheet" class="primary" title="เพิ่มหน้าห้องใหม่ในออเดอร์นี้">➕ เพิ่มหน้า</button>
       <button type="button" id="btnDupSheet" title="คัดลอกหน้าห้องปัจจุบัน">⧉ คัดลอก</button>
-      <button type="button" id="btnDelSheet" class="danger" title="ลบหน้าห้องปัจจุบัน">🗑️ ลบหน้า</button>
+      <button type="button" id="btnDelSheet" class="danger" title="ลบหน้าห้องปัจจุบัน">🗑️ ลบ</button>
     </div>
   </nav>
 
@@ -389,8 +389,8 @@
           </span>
         </div>
         <div class="inline" style="margin-left:auto">
-          <button type="button" id="btnToggleLeftPanel" title="ซ่อน/แสดงแผงซ้าย เพื่อคลิกใช้งานและแก้ไขข้อมูลบนใบงานด้านขวาอย่างเดียว">🖥️ ซ่อนแผงซ้าย (คลิกแก้ไขบนใบงานด้านขวา)</button>
-          <button type="button" id="btnAddNoteBox" class="primary" title="เพิ่มกล่องข้อความอิสระลงในส่วนหน้าต่าง/ประตู (ลากย้ายและย่อ-ขยายได้)">➕ เพิ่มกล่องข้อความในแปลนหน้าต่าง</button>
+          <button type="button" id="btnToggleLeftPanel" title="ซ่อน/แสดงแผงซ้าย เพื่อคลิกใช้งานและแก้ไขข้อมูลบนใบงานด้านขวาอย่างเดียว">📋 แผงซ้าย</button>
+          <button type="button" id="btnAddNoteBox" class="primary" title="เพิ่มกล่องข้อความอิสระลงในส่วนหน้าต่าง/ประตู (ลากย้ายและย่อ-ขยายได้)">➕ กล่องข้อความ</button>
           <span style="font-size:12px;opacity:.85" id="pageCountInfo"></span>
         </div>
       </div>
@@ -403,24 +403,24 @@
     <div class="modal-box">
       <div class="plan-toolbar">
         <div class="tools">
-          <button type="button" data-tool="select" title="เลือก / ย้าย / ลากจุด (ดับเบิลคลิกเพื่อแก้เลขลำดับ/ข้อความ)">🖱️ เลือก/แก้ไข</button>
-          <button type="button" data-tool="rect" title="ลากเพื่อวาดกรอบแปลนห้องสี่เหลี่ยม">⬜ กรอบห้องสี่เหลี่ยม</button>
-          <button type="button" data-tool="wall" title="คลิกหรือลากเพื่อวาดเส้นผนังห้องอิสระ">▬ ผนังห้อง</button>
-          <button type="button" data-tool="window" title="คลิกจุดตามแนวผนัง (2 จุดสำหรับบานตรง หรือคลิกเลี้ยวเข้ามุมตามผนังได้อิสระ กดปุ่มตกลง/ดับเบิลคลิกเพื่อจบ)">🪟 จุดหน้าต่าง (ตรง/ดัดโค้งตามผนัง)</button>
-          <button type="button" data-tool="door" title="คลิกจุดตามแนวผนัง (2 จุดสำหรับบานตรง หรือคลิกเลี้ยวเข้ามุมตามผนังได้อิสระ กดปุ่มตกลง/ดับเบิลคลิกเพื่อจบ)">🚪 จุดประตู (ตรง/ดัดโค้งตามผนัง)</button>
-          <button type="button" data-tool="entrance" title="กดลากเพื่อกำหนดทิศทางลูกศรทางเข้า หรือคลิกเพื่อวางลูกศรทางเข้าห้อง">⬆️ ลูกศรทางเข้า</button>
+          <button type="button" data-tool="select" title="เลือก / ย้าย / ลากจุด (ดับเบิลคลิกเพื่อแก้เลขลำดับ/ข้อความ)">🖱️ เลือก</button>
+          <button type="button" data-tool="rect" title="ลากเพื่อวาดกรอบแปลนห้องสี่เหลี่ยม">⬜ กรอบห้อง</button>
+          <button type="button" data-tool="wall" title="คลิกหรือลากเพื่อวาดเส้นผนังห้องอิสระ">▬ ผนัง</button>
+          <button type="button" data-tool="window" title="คลิกจุดตามแนวผนัง (2 จุดสำหรับบานตรง หรือคลิกเลี้ยวเข้ามุมตามผนังได้อิสระ กดปุ่มตกลง/ดับเบิลคลิกเพื่อจบ)">🪟 หน้าต่าง</button>
+          <button type="button" data-tool="door" title="คลิกจุดตามแนวผนัง (2 จุดสำหรับบานตรง หรือคลิกเลี้ยวเข้ามุมตามผนังได้อิสระ กดปุ่มตกลง/ดับเบิลคลิกเพื่อจบ)">🚪 ประตู</button>
+          <button type="button" data-tool="entrance" title="กดลากเพื่อกำหนดทิศทางลูกศรทางเข้า หรือคลิกเพื่อวางลูกศรทางเข้าห้อง">⬆️ ทางเข้า</button>
           <button type="button" data-tool="text" title="คลิกเพื่อใส่ข้อความในแปลน">🔤 ข้อความ</button>
           <button type="button" data-tool="erase" title="คลิกที่วัตถุเพื่อลบ">🧽 ลบ</button>
         </div>
         <div class="tools">
-          <label class="chk"><input type="checkbox" id="planSnap" checked> เกาะแนวผนังอัตโนมัติ</label>
-          <button type="button" id="planFinishPoly" class="primary" hidden>✔ จบบานที่กำลังวาด</button>
+          <label class="chk"><input type="checkbox" id="planSnap" checked> เกาะแนวผนัง</label>
+          <button type="button" id="planFinishPoly" class="primary" hidden>✔ จบบาน</button>
           <button type="button" id="planDel" title="ลบวัตถุที่เลือก">🗑️</button>
           <button type="button" id="planUndo" title="ย้อนกลับ">↶</button>
           <button type="button" id="planRedo" title="ทำซ้ำ">↷</button>
-          <button type="button" id="planClear" class="danger">ล้างทั้งหมด</button>
+          <button type="button" id="planClear" class="danger">ล้าง</button>
           <button type="button" id="planCancel">ยกเลิก</button>
-          <button type="button" id="planOk" class="primary">✔ บันทึกแปลน & ซิงค์จุดตามลำดับ</button>
+          <button type="button" id="planOk" class="primary" title="บันทึกแปลนและซิงค์จุดหน้าต่าง/ประตูตามลำดับ">✔ บันทึกแปลน</button>
         </div>
       </div>
       <div class="plan-hint" id="planHint"></div>
@@ -432,21 +432,21 @@
   <div id="dbModal" class="modal no-print" hidden>
     <div class="modal-box" style="width:96vw;max-width:1480px">
       <div class="dash-head" style="margin-bottom:8px">
-        <h3>🗄️ ตั้งค่าฐานข้อมูลระบบ (เฉพาะผู้ดูแลระบบ)</h3>
+        <h3>🗄️ ตั้งค่าฐานข้อมูลระบบ</h3>
         <button type="button" id="dbClose" class="primary">✔ เสร็จสิ้น</button>
       </div>
       <div class="db-tabs">
         <button type="button" data-dbtab="staff" id="dbTabStaffBtn" class="active">👤 พนักงาน</button>
-        <button type="button" data-dbtab="fabrics">🧵 ฐานข้อมูลผ้า</button>
-        <button type="button" data-dbtab="widthFormulas">📐 ขนาดความกว้างผ้าม่าน</button>
-        <button type="button" data-dbtab="heightFormulas">📏 ขนาดความสูงผ้าม่าน</button>
-        <button type="button" data-dbtab="fabricCalcRules">🧮 คำนวณปริมาณผ้า (เกรนทึบ/โปร่ง)</button>
-        <button type="button" data-dbtab="rails">🛤️ ฐานข้อมูลรางม่าน</button>
-        <button type="button" data-dbtab="accessories">🪝 อุปกรณ์เสริม (ขายเป็นชิ้น)</button>
-        <button type="button" data-dbtab="blinds">🪟 มู่ลี่และม่านม้วน (ตร.ม.)</button>
-        <button type="button" data-dbtab="curtains">🎀 รูปแบบผ้าม่าน (ค่ามาตรฐานกลาง)</button>
-        <button type="button" data-dbtab="hooks">🪝 ขนาดตะขอ</button>
-        <button type="button" data-dbtab="remarks">🏷️ ข้อความหมายเหตุรอบบาน</button>
+        <button type="button" data-dbtab="fabrics">🧵 ผ้า</button>
+        <button type="button" data-dbtab="widthFormulas">📐 กว้างม่าน</button>
+        <button type="button" data-dbtab="heightFormulas">📏 สูงม่าน</button>
+        <button type="button" data-dbtab="fabricCalcRules">🧮 ปริมาณผ้า</button>
+        <button type="button" data-dbtab="rails">🛤️ รางม่าน</button>
+        <button type="button" data-dbtab="accessories">🪝 อุปกรณ์เสริม</button>
+        <button type="button" data-dbtab="blinds">🪟 มู่ลี่/ม่านม้วน</button>
+        <button type="button" data-dbtab="curtains">🎀 รูปแบบม่าน</button>
+        <button type="button" data-dbtab="hooks">🪝 ตะขอ</button>
+        <button type="button" data-dbtab="remarks">🏷️ หมายเหตุ</button>
       </div>
       <div id="dbBody" class="db-body"></div>
     </div>
@@ -538,10 +538,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=21"></script>
-  <script src="js/plan.js?v=21"></script>
-  <script src="js/render.js?v=21"></script>
-  <script src="js/sync.js?v=21"></script>
-  <script src="js/app.js?v=21"></script>
+  <script src="js/db.js?v=22"></script>
+  <script src="js/plan.js?v=22"></script>
+  <script src="js/render.js?v=22"></script>
+  <script src="js/sync.js?v=22"></script>
+  <script src="js/app.js?v=22"></script>
 </body>
 </html>

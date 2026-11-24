@@ -329,16 +329,16 @@ function defaultMasterDB() {
         branch: 'สาขาเซ็นทรัลลาดพร้าว',
       },
     ],
-    // รูปแบบผ้าม่าน พร้อมค่ามาตรฐานประจำแต่ละรูปแบบ (การคิดย่อย: ย่นสำเร็จ/ขึงตึง, ระยะย่น, เผื่อพับบนล่างมาตรฐาน, เผื่อพับบนล่างประหยัดสำหรับม่านโปร่ง, เผื่อพับริม=10, เกย=8, อ้อมข้าง=8)
+    // รูปแบบผ้าม่าน พร้อมค่ามาตรฐานประจำแต่ละรูปแบบ (โหมดคิดขนาด: curtain=ตามสูตรผ้าม่าน / blind_piece=กำหนดขนาดต่อผืนเองแบบม่านม้วน-มู่ลี่)
     curtains: [
-      { id: 'c1', name: 'ม่านจีบ', subCalcType: 'gathered', useHook: true, stdGatherRatio: 2.5, stdTopBottomHem: 35, econTopBottomHem: 25, stdSideHem: 10, stdOverlap: 8, stdSideReturn: 8 },
-      { id: 'c2', name: 'ม่านลอน', subCalcType: 'gathered', useHook: true, stdGatherRatio: 2.2, stdTopBottomHem: 30, econTopBottomHem: 20, stdSideHem: 10, stdOverlap: 8, stdSideReturn: 8 },
-      { id: 'c3', name: 'ม่านตาไก่', subCalcType: 'stretched', useHook: false, stdGatherRatio: 2.2, stdTopBottomHem: 35, econTopBottomHem: 25, stdSideHem: 10, stdOverlap: 8, stdSideReturn: 8 },
-      { id: 'c4', name: 'ม่านพับ', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 40, econTopBottomHem: 0, stdSideHem: 10, stdOverlap: 0, stdSideReturn: 0 },
-      { id: 'c5', name: 'ม่านม้วน', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
-      { id: 'c6', name: 'มู่ลี่ไม้', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
-      { id: 'c7', name: 'มู่ลี่อลูมิเนียม', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
-      { id: 'c8', name: 'ม่านปรับแสง', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
+      { id: 'c1', name: 'ม่านจีบ', calcBehavior: 'curtain', subCalcType: 'gathered', useHook: true, stdGatherRatio: 2.5, stdTopBottomHem: 35, econTopBottomHem: 25, stdSideHem: 10, stdOverlap: 8, stdSideReturn: 8 },
+      { id: 'c2', name: 'ม่านลอน', calcBehavior: 'curtain', subCalcType: 'gathered', useHook: true, stdGatherRatio: 2.2, stdTopBottomHem: 30, econTopBottomHem: 20, stdSideHem: 10, stdOverlap: 8, stdSideReturn: 8 },
+      { id: 'c3', name: 'ม่านตาไก่', calcBehavior: 'curtain', subCalcType: 'stretched', useHook: false, stdGatherRatio: 2.2, stdTopBottomHem: 35, econTopBottomHem: 25, stdSideHem: 10, stdOverlap: 8, stdSideReturn: 8 },
+      { id: 'c4', name: 'ม่านพับ', calcBehavior: 'curtain', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 40, econTopBottomHem: 0, stdSideHem: 10, stdOverlap: 0, stdSideReturn: 0 },
+      { id: 'c5', name: 'ม่านม้วน', calcBehavior: 'blind_piece', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
+      { id: 'c6', name: 'มู่ลี่ไม้', calcBehavior: 'blind_piece', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
+      { id: 'c7', name: 'มู่ลี่อลูมิเนียม', calcBehavior: 'blind_piece', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
+      { id: 'c8', name: 'ม่านปรับแสง', calcBehavior: 'blind_piece', subCalcType: 'stretched', useHook: false, stdGatherRatio: 1.0, stdTopBottomHem: 0, econTopBottomHem: 0, stdSideHem: 0, stdOverlap: 0, stdSideReturn: 0 },
     ],
     hooks: [
       { id: 'h1', name: 'No.5' },
@@ -818,12 +818,22 @@ function getStdCurtainParams(styleName) {
   };
 }
 
+const CALC_BEHAVIOR_MODES = [
+  ['curtain', 'คำนวณตามสูตรผ้าม่าน (หลา)'],
+  ['blind_piece', 'กำหนดขนาดต่อผืนเอง (แบบม่านม้วน/มู่ลี่ • ตร.ม.)'],
+];
+
+function getDefaultCalcBehavior(styleName) {
+  return /ม่านม้วน|มู่ลี่|ม่านปรับแสง/.test(String(styleName || '').trim()) ? 'blind_piece' : 'curtain';
+}
+
 function normalizeCurtainItem(c, idx) {
   const defList = defaultMasterDB().curtains;
   const defMatch = defList.find(d => d.name === (c && c.name)) || defList[0];
   const item = Object.assign({
     id: 'c_' + (idx + 1),
     name: '',
+    calcBehavior: (c && c.calcBehavior) || defMatch.calcBehavior || getDefaultCalcBehavior(c && c.name),
     subCalcType: defMatch.subCalcType || getDefaultSubCalcType(c && c.name),
     useHook: false,
     stdGatherRatio: defMatch.stdGatherRatio ?? 2.5,
@@ -833,6 +843,9 @@ function normalizeCurtainItem(c, idx) {
     stdOverlap: defMatch.stdOverlap ?? 8,
     stdSideReturn: defMatch.stdSideReturn ?? 8,
   }, c || {});
+  if (!item.calcBehavior || !['curtain', 'blind_piece'].includes(item.calcBehavior)) {
+    item.calcBehavior = getDefaultCalcBehavior(item.name);
+  }
   if (!item.subCalcType || !['gathered', 'stretched'].includes(item.subCalcType)) {
     item.subCalcType = getDefaultSubCalcType(item.name);
   }
@@ -1337,7 +1350,54 @@ function getBlindsForStyle(curtainStyle) {
 
 function isBlindOrRollerStyle(styleName) {
   const s = String(styleName || '').trim();
+  if (!s) return false;
+  if (typeof masterDB !== 'undefined' && Array.isArray(masterDB.curtains)) {
+    const matched = masterDB.curtains.find(c => c && String(c.name || '').trim() === s);
+    if (matched && matched.calcBehavior) {
+      return matched.calcBehavior === 'blind_piece';
+    }
+  }
   return /ม่านม้วน|มู่ลี่|ม่านปรับแสง/.test(s);
+}
+
+/**
+ * คำนวณพื้นที่รวม (ตร.ม.) และจำนวนผืนจากรายการกำหนดขนาดต่อผืนเองของม่านม้วน/มู่ลี่ (w.blindPieces)
+ * - ขั้นต่ำ 1.5 ตร.ม./ผืน ตามฐานข้อมูล
+ */
+function calcBlindPiecesTotalSqm(w) {
+  const pieces = Array.isArray(w && w.blindPieces) ? w.blindPieces : [];
+  if (!pieces.length) return { count: 0, totalWidth: 0, totalSqm: 0, totalSqmStr: '', pieceSqms: [] };
+  const style = String((w && (w.curtainStyle1 || w.curtainStyle2)) || '').trim();
+  const blindRule = (typeof masterDB !== 'undefined' && masterDB.blinds || []).find(bl => bl.curtainStyle === style)
+    || { minSqm: 1.5, roundMode: 'ceil_1dec' };
+  const minSqm = Math.max(1.5, parseFloat(blindRule.minSqm) || 1.5);
+  const roundMode = blindRule.roundMode || 'ceil_1dec';
+  let totalWidth = 0;
+  let totalSqm = 0;
+  let validCount = 0;
+  const pieceSqms = pieces.map(p => {
+    const wn = parseFloat(p && p.w) || 0;
+    const hn = parseFloat(p && p.h) || 0;
+    if (wn > 0) totalWidth += wn;
+    if (wn > 0 && hn > 0) {
+      validCount++;
+      const sqm = Math.max(minSqm, (wn / 100) * (hn / 100));
+      const rounded = parseFloat(applyRoundMode(sqm, roundMode)) || sqm;
+      totalSqm += rounded;
+      return applyRoundMode(sqm, roundMode);
+    }
+    return '';
+  });
+  totalWidth = Math.round(totalWidth * 100) / 100;
+  totalSqm = Math.round(totalSqm * 100) / 100;
+  return {
+    count: validCount,
+    totalWidth,
+    totalSqm,
+    totalSqmStr: totalSqm > 0 ? String(totalSqm) : '',
+    pieceSqms,
+    minSqm,
+  };
 }
 
 /**
@@ -2974,25 +3034,27 @@ const MasterDBModal = (() => {
         <button type="button" class="primary" style="margin-top:8px" data-db-add="blinds">➕ เพิ่มรายการมู่ลี่ / ม่านม้วน</button>
       `;
     } else if (activeTab === 'curtains') {
+      const calcBehaviorOpts = sel => CALC_BEHAVIOR_MODES.map(([v, t]) => `<option value="${escH(v)}" ${(sel || 'curtain') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
       body.innerHTML = renderStdParamsBanner() + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px;background:#eef6ff;border:1px solid #93c5fd">
-          <b>🎀 ฐานข้อมูลกลาง (แหล่งเดียวที่ใช้คำนวณทั้งระบบ): ระยะย่น • เผื่อพับริม • เผื่อพับขอบบนล่างแบบมาตรฐาน • เผื่อพับขอบบนล่างแบบประหยัด</b><br>
-          • <b>แก้ไขค่าที่นี่ที่เดียว</b> แล้วระบบจะนำไปใช้ทั้ง <b>สูตรขนาดความกว้างผ้าม่าน</b> และ <b>สูตรคำนวณปริมาณผ้า (ทั้งเกรนม่านทึบและเกรนม่านโปร่ง)</b> อัตโนมัติ<br>
-          • <b>การคิดย่อยแบบย่นสำเร็จ (<code>gathered</code>)</b>: มีเฉพาะ <b>ม่านจีบ</b> และ <b>ม่านลอน</b> | ที่เหลือใช้ <b>แบบขึงตึง (<code>stretched</code>)</b>
+          <b>🎀 ฐานข้อมูลกลาง (แหล่งเดียวที่ใช้คำนวณทั้งระบบ): โหมดการคิดขนาด • ระยะย่น • เผื่อพับริม • เผื่อพับขอบบนล่างมาตรฐาน/ประหยัด</b><br>
+          • <b>โหมดการคิดขนาด/จำนวนผืน</b>: กำหนดได้แต่ละรูปแบบว่าจะให้ <b>คำนวณตามสูตรผ้าม่าน (หลา)</b> หรือ <b>กำหนดขนาดต่อผืนเองแบบม่านม้วน/มู่ลี่ (ตร.ม.)</b><br>
+          • <b>การคิดย่อยแบบย่นสำเร็จ (<code>gathered</code>)</b>: ม่านจีบ / ม่านลอน | ที่เหลือใช้ <b>แบบขึงตึง (<code>stretched</code>)</b>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1180px">
+          <table class="ed-tbl" style="min-width:1360px">
             <thead>
               <tr>
-                <th style="min-width:150px">ชื่อรูปแบบผ้าม่าน</th>
-                <th style="width:185px">การคิดย่อย (ย่นสำเร็จ/ขึงตึง)</th>
-                <th style="width:85px">ใช้ตะขอ</th>
-                <th style="width:110px">ระยะย่น G (เท่า)</th>
-                <th style="width:135px">พับบนล่างมาตรฐาน HEM_TB (ซม.)</th>
-                <th style="width:145px">พับบนล่างประหยัด HEM_TB_ECON (ซม.)</th>
-                <th style="width:115px">พับริมผ้า HEM_SIDE (ซม.)</th>
-                <th style="width:105px">เผื่อเกย OV (ซม.)</th>
-                <th style="width:110px">อ้อมข้าง SR (ซม.)</th>
+                <th style="min-width:140px">ชื่อรูปแบบผ้าม่าน</th>
+                <th style="width:235px">โหมดการคิดขนาด / กำหนดต่อผืน</th>
+                <th style="width:170px">การคิดย่อย (ย่นสำเร็จ/ขึงตึง)</th>
+                <th style="width:75px">ใช้ตะขอ</th>
+                <th style="width:95px">ระยะย่น G</th>
+                <th style="width:115px">พับบนล่าง HEM_TB</th>
+                <th style="width:125px">พับประหยัด HEM_ECON</th>
+                <th style="width:100px">พับริม HEM_SIDE</th>
+                <th style="width:90px">เกย OV</th>
+                <th style="width:95px">อ้อมข้าง SR</th>
                 <th style="width:45px">ลบ</th>
               </tr>
             </thead>
@@ -3000,6 +3062,7 @@ const MasterDBModal = (() => {
               ${masterDB.curtains.map((c, i) => `
                 <tr>
                   <td><input data-db-edit="curtains.${i}.name" value="${escH(c.name)}" placeholder="เช่น ม่านจีบ"></td>
+                  <td><select data-db-edit="curtains.${i}.calcBehavior">${calcBehaviorOpts(c.calcBehavior || getDefaultCalcBehavior(c.name))}</select></td>
                   <td><select data-db-edit="curtains.${i}.subCalcType">${subCalcSelectOpts(c.subCalcType || getDefaultSubCalcType(c.name))}</select></td>
                   <td class="c"><input type="checkbox" data-db-edit="curtains.${i}.useHook" ${c.useHook ? 'checked' : ''}></td>
                   <td><input type="number" step="any" data-db-edit="curtains.${i}.stdGatherRatio" value="${escH(c.stdGatherRatio ?? 2.5)}"></td>
@@ -3239,7 +3302,7 @@ const MasterDBModal = (() => {
           masterDB.blinds.push({ id, group: '', name: '', curtainStyle: 'ม่านม้วน', cordColors: '', valanceColors: '', minSqm: 1.5, roundMode: 'ceil_1dec' });
         } else if (t === 'curtains') {
           masterDB.curtains.push({
-            id, name: '', subCalcType: 'stretched', useHook: false,
+            id, name: '', calcBehavior: 'curtain', subCalcType: 'stretched', useHook: false,
             stdGatherRatio: 2.0, stdTopBottomHem: 35, econTopBottomHem: 25,
             stdSideHem: sp.stdSideHem ?? 10, stdOverlap: 0, stdSideReturn: 0,
           });
