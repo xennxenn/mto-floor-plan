@@ -82,11 +82,14 @@ function newWindow(planNo = '') {
     yardMode2: 'exact',
     extraYards2: '',
     railModel: '',
+    railModel2: '',
     curtainStyle1: '',
     curtainStyle2: '',
     curtainType: '',
     rodType: '',
+    rodType2: '',
     hookSize: '',
+    hookSize2: '',
     widthFormulaId1: '',
     heightFormulaId1: '',
     fabricId1: '',
@@ -135,9 +138,9 @@ function newWindow(planNo = '') {
   };
 }
 
-const fab = (defGrain = 'opaque') => ({
-  grain: defGrain === 'sheer' ? 'sheer' : 'opaque',
-  isOpaque: defGrain !== 'sheer',
+const fab = (defGrain = '') => ({
+  grain: (defGrain === 'opaque' || defGrain === 'sheer') ? defGrain : '',
+  isOpaque: defGrain === 'opaque',
   isSheer: defGrain === 'sheer',
   group: '',
   name: '', design: '', color: '', qty: '',
@@ -171,11 +174,11 @@ function newSheet(index = 1) {
     ],
     noteBoxes: [], // Req #12: กล่องข้อความอิสระในหน้าข้อมูลหน้าต่าง/ประตู
     fabrics: {
-      blackout: fab('opaque'),
-      sheer: fab('sheer'),
-      roller: fab('opaque'),
-      blinds: fab('opaque'),
-      other: Object.assign(fab('opaque'), { label: 'อื่นๆ' }),
+      blackout: fab(''),
+      sheer: fab(''),
+      roller: fab(''),
+      blinds: fab(''),
+      other: Object.assign(fab(''), { label: 'อื่นๆ' }),
     },
     rods: {
       typeNo: false,
@@ -346,14 +349,15 @@ function normalizeWindow(w, idx) {
   return nw;
 }
 
-function normalizeSheetFabricSingleGrain(cell, defGrain = 'opaque') {
+function normalizeSheetFabricSingleGrain(cell, defGrain = '') {
   if (!cell) return;
   let g = cell.grain;
-  if (g !== 'opaque' && g !== 'sheer') {
+  if (g !== 'opaque' && g !== 'sheer' && g !== '') {
     if (cell.isSheer && !cell.isOpaque) g = 'sheer';
     else if (cell.isOpaque && !cell.isSheer) g = 'opaque';
     else g = defGrain;
   }
+  if (g !== 'opaque' && g !== 'sheer') g = '';
   cell.grain = g;
   cell.isOpaque = (g === 'opaque');
   cell.isSheer = (g === 'sheer');
@@ -385,9 +389,9 @@ function normalizeSheet(sh, idx) {
   if (!Array.isArray(ns.notes) || !ns.notes.length) ns.notes = [''];
   if (!Array.isArray(ns.noteBoxes)) ns.noteBoxes = [];
   if (ns.fabrics) {
-    normalizeSheetFabricSingleGrain(ns.fabrics.blackout, 'opaque');
-    normalizeSheetFabricSingleGrain(ns.fabrics.sheer, 'sheer');
-    normalizeSheetFabricSingleGrain(ns.fabrics.other, 'opaque');
+    normalizeSheetFabricSingleGrain(ns.fabrics.blackout, '');
+    normalizeSheetFabricSingleGrain(ns.fabrics.sheer, '');
+    normalizeSheetFabricSingleGrain(ns.fabrics.other, '');
   }
   if (typeof dedupeSheetWindowPositions === 'function') {
     dedupeSheetWindowPositions(ns);
@@ -774,8 +778,10 @@ function syncSheetInputs(root = document) {
     const colKey = el.dataset.fabGrain;
     const cell = sh.fabrics && sh.fabrics[colKey];
     if (!cell) return;
-    const g = cell.isSheer ? 'sheer' : 'opaque';
-    el.checked = (el.value === g);
+    const g = (cell.grain === 'opaque' || cell.grain === 'sheer')
+      ? cell.grain
+      : (cell.isSheer ? 'sheer' : (cell.isOpaque ? 'opaque' : ''));
+    el.checked = !!g && (el.value === g);
   });
 }
 
@@ -1020,10 +1026,12 @@ function resolveWindowFabricChoice(w, sh, layerNo) {
       if (matched.grainType) w[grainField] = matched.grainType;
       return matched.fabricObj;
     }
-    // แม้ยังไม่ได้กรอกชื่อผ้าในคอลัมน์นั้น แต่ให้ซิงค์เกรนตามที่ติ๊กในตารางสินค้า
+    // แม้ยังไม่ได้กรอกชื่อผ้าในคอลัมน์นั้น แต่ให้ซิงค์เกรนตามที่ติ๊กในตารางสินค้า (หากยังไม่ติ๊ก ใช้ค่าภายในตามชั้นโดยไม่ติ๊กบนแปลน)
     if (sh && sh.fabrics && sh.fabrics[w[colField]]) {
       const cell = sh.fabrics[w[colField]];
-      w[grainField] = (cell.grain === 'sheer' || (cell.isSheer && !cell.isOpaque)) ? 'sheer' : 'opaque';
+      if (cell.grain === 'sheer' || (cell.grain !== '' && cell.isSheer && !cell.isOpaque)) w[grainField] = 'sheer';
+      else if (cell.grain === 'opaque' || (cell.grain !== '' && cell.isOpaque && !cell.isSheer)) w[grainField] = 'opaque';
+      else w[grainField] = layerNo === 2 ? 'sheer' : 'opaque';
     }
   }
   if (w[idField]) {
@@ -1216,6 +1224,59 @@ function autoCalculateGable(w, sh) {
   if (maxFullH > 0 && !w.height) w.height = String(maxFullH);
 }
 
+/**
+ * แยกเงื่อนไขการคำนวณของแต่ละชั้น (ชั้น 1 ม่านทึบ / ชั้น 2 ม่านโปร่ง) อย่างอิสระ
+ * รองรับกรณี 2 ชั้นคนละรูปแบบ/ราง/ตะขอ เช่น ม่านทึบ=ม่านลอน(รางลอน/No.8) + ม่านโปร่ง=ม่านจีบ(รางจีบ/No.6)
+ */
+function resolveWindowLayerConfig(w, sh, layerNo) {
+  const style1 = String((w && w.curtainStyle1) || '').trim();
+  const style2Raw = String((w && w.curtainStyle2) || '').trim();
+  const isLayer2 = layerNo === 2;
+  const style = isLayer2 ? (style2Raw || style1) : style1;
+  const isMixedStyle = !!(style1 && style2Raw && style1 !== style2Raw);
+  const natRod = (typeof inferNaturalRodTypeForStyle === 'function') ? inferNaturalRodTypeForStyle(style) : '';
+
+  let rodType = '';
+  let railModel = '';
+  let hookSize = '';
+
+  if (!isLayer2) {
+    railModel = String((w && w.railModel) || '').trim();
+    const rm1 = (typeof resolveRailMetaByName === 'function') ? resolveRailMetaByName(railModel) : { rodCategory: '' };
+    rodType = String((w && w.rodType) || '').trim() || rm1.rodCategory || natRod;
+    hookSize = String((w && w.hookSize) || '').trim();
+  } else {
+    railModel = String((w && w.railModel2) || '').trim();
+    const rm2 = (typeof resolveRailMetaByName === 'function') ? resolveRailMetaByName(railModel) : { rodCategory: '' };
+    rodType = String((w && w.rodType2) || '').trim()
+      || rm2.rodCategory
+      || (isMixedStyle ? natRod : (String((w && w.rodType) || '').trim() || natRod));
+    hookSize = String((w && w.hookSize2) || '').trim()
+      || (curtainNeedsHook(style, '') ? String((w && w.hookSize) || '').trim() : '');
+  }
+
+  // ดึงรุ่นรางจากตารางรางของหน้าแปลน (sh.rods) ให้ตรงกับประเภทรางของชั้นนั้นๆ โดยตรง (ไม่มั่วดึงรางม่านจีบมาให้ม่านลอน!)
+  if (!railModel && sh && sh.rods) {
+    const r = sh.rods;
+    const rt = rodType || natRod;
+    if (rt === 'รางม่านจีบ' && r.pleat && r.pleat.model) railModel = String(r.pleat.model).trim();
+    else if (rt === 'รางโชว์' && r.show && r.show.model) railModel = String(r.show.model).trim();
+    else if (rt === 'รางม่านลอน' && r.wave && r.wave.model) railModel = String(r.wave.model).trim();
+    else if (rt === 'รางม่านพับ' && r.fold && r.fold.model) railModel = String(r.fold.model).trim();
+    else if (!rt) {
+      railModel = String((r.pleat && r.pleat.model) || (r.wave && r.wave.model) || (r.show && r.show.model) || (r.fold && r.fold.model) || '').trim();
+    }
+  }
+  if (!railModel && isLayer2 && !isMixedStyle && w && String(w.railModel || '').trim()) {
+    railModel = String(w.railModel).trim();
+  }
+
+  const finalMeta = (typeof resolveRailMetaByName === 'function') ? resolveRailMetaByName(railModel) : { name: railModel, railGroup: '', rodCategory: '' };
+  if (!rodType && finalMeta.rodCategory) rodType = finalMeta.rodCategory;
+
+  return { style, rodType, railModel, railGroup: finalMeta.railGroup || '', hookSize, isMixedStyle };
+}
+
 function autoCalculateWindow(w, sh) {
   if (!w) return;
   if (!w.manualFields || typeof w.manualFields !== 'object') w.manualFields = {};
@@ -1350,18 +1411,8 @@ function autoCalculateWindow(w, sh) {
   const blindAll = masterDB.blinds || [];
   const ruleAll = masterDB.fabricCalcRules || [];
 
-  const resolveEffectiveRailModel = (winObj, sheetObj, rodTypeVal) => {
-    if (winObj && String(winObj.railModel || '').trim()) return String(winObj.railModel).trim();
-    const r = sheetObj && sheetObj.rods;
-    if (!r) return '';
-    const rt = String(rodTypeVal || (winObj && winObj.rodType) || '').trim();
-    if (rt === 'รางม่านจีบ' && r.pleat && r.pleat.model) return String(r.pleat.model).trim();
-    if (rt === 'รางโชว์' && r.show && r.show.model) return String(r.show.model).trim();
-    if (rt === 'รางม่านลอน' && r.wave && r.wave.model) return String(r.wave.model).trim();
-    if (rt === 'รางม่านพับ' && r.fold && r.fold.model) return String(r.fold.model).trim();
-    return String((r.pleat && r.pleat.model) || (r.wave && r.wave.model) || (r.show && r.show.model) || (r.fold && r.fold.model) || '').trim();
-  };
-  const effRailModel = resolveEffectiveRailModel(w, sh, w.rodType);
+  const cfg1 = resolveWindowLayerConfig(w, sh, 1);
+  const cfg2 = resolveWindowLayerConfig(w, sh, 2);
 
   // ต้องเลือกข้อมูล (เช่น รูปแบบผ้าม่าน ชั้นที่ 1) และต้องมีขนาดหน้าต่าง/ประตูของบานนี้ก่อน จึงจะเริ่มคำนวณ
   const fab1 = resolveWindowFabricChoice(w, sh, 1);
@@ -1370,9 +1421,9 @@ function autoCalculateWindow(w, sh) {
   if (!isAllManual) {
     if (hasLayer1Selection && (rw1 > 0 || rh1 > 0)) {
       const wf1 = (w.widthFormulaId1 && wfAll.find(f => f.id === w.widthFormulaId1))
-        || (style1 ? getWidthFormulasForStyle(style1, w.pieces1, effTracks, w.rodType, 'opaque')[0] : null);
+        || (style1 ? getWidthFormulasForStyle(style1, w.pieces1, effTracks, cfg1.rodType, 'opaque')[0] : null);
       const hf1 = (w.heightFormulaId1 && hfAll.find(f => f.id === w.heightFormulaId1))
-        || findAutoHeightFormulaForWindow(style1, w.rodType, w.hookSize, effTracks, effRailModel);
+        || findAutoHeightFormulaForWindow(style1, cfg1.rodType, cfg1.hookSize, effTracks, cfg1.railModel);
       if (fab1 && !canFabricUseSheerGrain(fab1.fabricWidth)) {
         w.grainType1 = 'opaque';
       }
@@ -1417,16 +1468,16 @@ function autoCalculateWindow(w, sh) {
     }
   }
 
-  // Layer 2 (ม่านโปร่ง) — คำนวณจากรูปแบบผ้าม่านชั้นที่ 2 และเงื่อนไขของชั้นที่ 2 เอง แล้วลดเพิ่ม 1 ซม. (กรณีม่าน 2 ชั้น)
+  // Layer 2 (ม่านโปร่ง) — คำนวณแยกอิสระตามรูปแบบผ้าม่าน ราง ตะขอ และสูตรของชั้นที่ 2 เอง (เช่น ทึบ=ม่านลอน, โปร่ง=ม่านจีบ)
   const fab2 = resolveWindowFabricChoice(w, sh, 2);
   const hasLayer2Selection = !isSingleBlindWindow && !!(style2 || w.widthFormulaId2 || w.heightFormulaId2 || (isTwoLayer && (style1 || fab2)));
   if (!isAllManual) {
     if (hasLayer2Selection && (rw2 > 0 || rh2 > 0)) {
-      const effStyle2 = style2 || style1;
+      const effStyle2 = cfg2.style;
       const wf2 = (w.widthFormulaId2 && wfAll.find(f => f.id === w.widthFormulaId2))
-        || (effStyle2 ? getWidthFormulasForStyle(effStyle2, w.pieces2 || w.pieces1, effTracks, w.rodType, 'sheer')[0] : null);
+        || (effStyle2 ? getWidthFormulasForStyle(effStyle2, w.pieces2 || w.pieces1, effTracks, cfg2.rodType, 'sheer')[0] : null);
       const hf2 = (w.heightFormulaId2 && hfAll.find(f => f.id === w.heightFormulaId2))
-        || findAutoHeightFormulaForWindow(effStyle2, w.rodType, w.hookSize, effTracks, effRailModel);
+        || findAutoHeightFormulaForWindow(effStyle2, cfg2.rodType, cfg2.hookSize, effTracks, cfg2.railModel);
       if (fab2 && !canFabricUseSheerGrain(fab2.fabricWidth)) {
         w.grainType2 = 'opaque';
       }
@@ -2342,12 +2393,28 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
           const typingInWinEd = actEl && actEl.closest('#windowsEditor') && (actEl.tagName === 'INPUT' || actEl.tagName === 'TEXTAREA') && actEl.type !== 'checkbox' && actEl.type !== 'radio';
           if (!typingInWinEd) renderWindowsEditor();
           syncSheetInputs();
-        } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|floorMode|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|cornerShape|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|unequalSplit|unequalSplitTarget|unequalLayerRail)$/.test(field)) {
-          // Req #6: เลือกรูปแบบม่านแล้วเติมประเภทราง/จำนวนผืนมาตรฐานให้อัตโนมัติเพื่อให้เลือกข้อมูลน้อยที่สุด
+        } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|rodType2|hookSize|hookSize2|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|floorMode|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|cornerShape|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|railModel2|unequalSplit|unequalSplitTarget|unequalLayerRail)$/.test(field)) {
+          // เลือกรูปแบบม่านแล้วปรับประเภทราง/จำนวนผืนมาตรฐานให้อัตโนมัติ และล้างสูตรความสูงที่เลือกค้างไว้เพื่อให้จับคู่สูตรใหม่อัตโนมัติ
           if (field === 'curtainStyle1' && w.curtainStyle1) {
             const natRod = (typeof inferNaturalRodTypeForStyle === 'function') ? inferNaturalRodTypeForStyle(w.curtainStyle1) : '';
-            if (natRod && !w.rodType) w.rodType = natRod;
+            if (natRod && !(w.rodType === 'รางโชว์' && /ม่านจีบ|ม่านตาไก่|หูกระเช้า/.test(w.curtainStyle1))) {
+              w.rodType = natRod;
+            }
             if (!w.pieces1 && !isBlindOrRollerStyle(w.curtainStyle1)) w.pieces1 = '2';
+            w.heightFormulaId1 = '';
+          }
+          if (field === 'curtainStyle2') {
+            const natRod2 = (typeof inferNaturalRodTypeForStyle === 'function') ? inferNaturalRodTypeForStyle(w.curtainStyle2) : '';
+            w.rodType2 = natRod2 || '';
+            w.heightFormulaId2 = '';
+          }
+          if (field === 'railModel' && w.railModel && typeof resolveRailMetaByName === 'function') {
+            const rm = resolveRailMetaByName(w.railModel);
+            if (rm.rodCategory) w.rodType = rm.rodCategory;
+          }
+          if (field === 'railModel2' && w.railModel2 && typeof resolveRailMetaByName === 'function') {
+            const rm2 = resolveRailMetaByName(w.railModel2);
+            if (rm2.rodCategory) w.rodType2 = rm2.rodCategory;
           }
           if (field === 'pieces1' && isBlindOrRollerStyle(w.curtainStyle1) && +w.pieces1 >= 2) {
             const cnt = Math.min(12, Math.max(1, +w.pieces1));
@@ -2746,9 +2813,28 @@ function onFieldInput(e) {
 document.addEventListener('input', onFieldInput);
 document.addEventListener('change', onFieldInput);
 
-// คลิกซ้ำที่ radio เพื่อยกเลิกการเลือกได้
+// คลิกซ้ำที่ radio เพื่อยกเลิกการเลือกได้ (รวมถึงเกรนม่าน data-fab-grain)
 document.addEventListener('click', e => {
   const el = e.target;
+  if (el.type === 'radio' && el.dataset.fabGrain) {
+    if (el.dataset.was === '1') {
+      const sh = currentSheet();
+      const colKey = el.dataset.fabGrain;
+      const cell = sh && sh.fabrics && sh.fabrics[colKey];
+      if (cell) {
+        el.checked = false;
+        cell.grain = '';
+        cell.isOpaque = false;
+        cell.isSheer = false;
+        (sh.windows || []).forEach(w => { if (w && w.calcMode !== 'manual') autoCalculateWindow(w, sh); });
+        autoUpdateSheetFabricTableQty(sh);
+        syncSheetInputs();
+        changed(`fabrics.${colKey}.grain`, null, !!el.closest('#pdfQuickPopover'));
+      }
+    }
+    document.querySelectorAll(`input[type=radio][name="${el.name}"]`).forEach(r => { r.dataset.was = r.checked ? '1' : ''; });
+    return;
+  }
   if (el.type === 'radio' && (el.dataset.shared || el.dataset.sheet)) {
     const isFromPopover = !!el.closest('#pdfQuickPopover');
     if (el.dataset.was === '1') {
@@ -3393,15 +3479,15 @@ const MtoCombo = (() => {
       const assigned = (typeof getStaffBranchList === 'function') ? getStaffBranchList(staffName) : [];
       const curUser = getCurrentUser();
       const userBranches = (curUser && typeof getStaffBranchList === 'function') ? getStaffBranchList(curUser) : [];
-      let branchList = assigned.length ? assigned : userBranches;
-      if (!branchList.length) {
-        const allSet = new Set();
-        (masterDB.staff || []).forEach(s => {
-          if (typeof getStaffBranchList === 'function') getStaffBranchList(s).forEach(b => allSet.add(b));
-        });
-        branchList = Array.from(allSet);
-      }
-      return branchList.map(b => ({ value: b, label: b, sub: assigned.length ? 'สาขาที่กำหนดให้พนักงาน' : 'สาขาในระบบ' }));
+      const primary = assigned.length ? assigned : userBranches;
+      const allBranches = (typeof getAllBranchesList === 'function') ? getAllBranchesList() : [];
+      const primarySet = new Set(primary);
+      const out = [];
+      primary.forEach(b => out.push({ value: b, label: b, sub: 'สาขาที่กำหนดให้พนักงาน' }));
+      allBranches.forEach(b => {
+        if (!primarySet.has(b)) out.push({ value: b, label: b, sub: 'สาขาในระบบ' });
+      });
+      return out;
     }
     if (kind === 'rail') {
       const catMap = { pleat: 'รางม่านจีบ', show: 'รางโชว์', wave: 'รางม่านลอน', fold: 'รางม่านพับ' };
@@ -3612,6 +3698,11 @@ const MtoCombo = (() => {
     document.addEventListener('focusin', e => {
       const wrap = e.target && e.target.closest && e.target.closest('.mto-combo');
       if (wrap && e.target.tagName === 'INPUT') {
+        // หากเป็นการ autofocus อัตโนมัติตอนเปิด Popover ไม่ต้องเด้งเมนูมาบังช่องรางอื่น
+        if (e.target.dataset.skipAutoCombo === '1') {
+          delete e.target.dataset.skipAutoCombo;
+          return;
+        }
         open(wrap, false);
       }
     });
@@ -3633,6 +3724,11 @@ const MtoCombo = (() => {
           inp.focus();
           open(wrap, true); // คลิก ▾ แสดงรายการทั้งหมดให้เลือกได้ทันที
         }
+        return;
+      }
+      const comboInp = e.target && e.target.tagName === 'INPUT' && e.target.closest && e.target.closest('.mto-combo');
+      if (comboInp) {
+        open(comboInp.closest('.mto-combo'), true);
         return;
       }
       if (!e.target.closest('.mto-combo') && !e.target.closest('#mtoComboMenu')) {
@@ -3903,7 +3999,8 @@ function applyFabricPickFromDb(pop, col, pickedId) {
   } else {
     sh.fabrics[col].name = item.name || '';
     sh.fabrics[col].design = item.design || '';
-    if (typeof canFabricUseSheerGrain === 'function' && !canFabricUseSheerGrain(item.fabricWidth)) {
+    // หากผู้ใช้ติ๊กเกรนโปร่งไว้กับผ้าหน้าแคบ (<= 270) ให้ปรับเป็นทึบ แต่ถ้ายังไม่ได้เลือกเกรน (ว่าง) ไม่ต้องติ๊กเอง
+    if (sh.fabrics[col].grain === 'sheer' && typeof canFabricUseSheerGrain === 'function' && !canFabricUseSheerGrain(item.fabricWidth)) {
       sh.fabrics[col].grain = 'opaque';
       sh.fabrics[col].isOpaque = true;
       sh.fabrics[col].isSheer = false;
@@ -3932,15 +4029,34 @@ function closePdfQuickPopover() {
 }
 
 function positionPopoverNear(pop) {
-  // แสดงตรงกลางหน้าจอเห็นทั้งหมดเป็นค่าเริ่มต้น (Default) แล้วสามารถลากขยับหัวหน้าต่างทีหลังได้
-  const pw = Math.min(820, window.innerWidth - 24);
+  // แสดงตรงกลางหน้าจอเห็นทั้งหมดเป็นค่าเริ่มต้น รองรับทั้งคอมพิวเตอร์และ iPad (รวมกรณีคีย์บอร์ดหน้าจอเปิด)
+  const vv = window.visualViewport;
+  const vw = vv ? vv.width : window.innerWidth;
+  const vh = vv ? vv.height : window.innerHeight;
+  const pw = Math.min(820, Math.max(300, vw - 20));
   pop.style.width = pw + 'px';
+  pop.style.maxHeight = Math.max(260, vh - 20) + 'px';
   const rect = pop.getBoundingClientRect();
-  const ph = rect.height || Math.min(680, window.innerHeight - 40);
-  const left = Math.max(12, Math.round((window.innerWidth - pw) / 2));
-  const top = Math.max(14, Math.round((window.innerHeight - ph) / 2));
+  const ph = Math.min(rect.height || 640, vh - 20);
+  const left = Math.max(10, Math.round((vw - pw) / 2));
+  const top = Math.max(10, Math.round((vh - ph) / 2));
   pop.style.left = left + 'px';
   pop.style.top = top + 'px';
+}
+
+// รองรับการหมุนหน้าจอ iPad / เปลี่ยนขนาดหน้าจอให้ปรับตำแหน่ง Popover และซูมใบงานพอดีจออัตโนมัติ
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    const pop = document.getElementById('pdfQuickPopover');
+    if (pop && !pop.hidden) positionPopoverNear(pop);
+    if (typeof fitZoomWidth === 'function' && window.innerWidth <= 1180) fitZoomWidth();
+  }, 220);
+});
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    const pop = document.getElementById('pdfQuickPopover');
+    if (pop && !pop.hidden) positionPopoverNear(pop);
+  });
 }
 
 function refreshActivePopover() {
@@ -3952,7 +4068,7 @@ function refreshActivePopover() {
 function refreshActivePopoverIfStructural(changedField) {
   const pop = document.getElementById('pdfQuickPopover');
   if (!pop || pop.hidden || !activePopoverCtx) return;
-  if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|hookSize|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|cornerShape|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|unequalSplit|unequalSplitTarget|unequalLayerRail|floorMode)$/.test(changedField)) {
+  if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|rodType2|railModel|railModel2|hookSize|hookSize2|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|cornerShape|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|unequalSplit|unequalSplitTarget|unequalLayerRail|floorMode)$/.test(changedField)) {
     renderActivePopoverContent({ preserveScroll: true });
   }
 }
@@ -4043,16 +4159,16 @@ function renderActivePopoverContent(opts = {}) {
     const isTwoLayer = effTracks >= 2 || !!(w.curtainStyle1 && w.curtainStyle2);
     const isBlind1 = isBlindOrRollerStyle(style1);
     const isBlind2 = isBlindOrRollerStyle(style2);
-    const effRailModelPop = (w.railModel && String(w.railModel).trim())
-      || (sh.rods && ((w.rodType === 'รางม่านจีบ' && sh.rods.pleat && sh.rods.pleat.model)
-        || (w.rodType === 'รางโชว์' && sh.rods.show && sh.rods.show.model)
-        || (w.rodType === 'รางม่านลอน' && sh.rods.wave && sh.rods.wave.model)
-        || (w.rodType === 'รางม่านพับ' && sh.rods.fold && sh.rods.fold.model)
-        || (sh.rods.pleat && sh.rods.pleat.model) || '')) || '';
-    const wfList1 = sortListByDropdownMode(getWidthFormulasForStyle(style1, w.pieces1, effTracks, w.rodType, 'opaque'), f => f.label);
-    const hfList1 = sortListByDropdownMode(getHeightFormulasForWindow(style1, w.rodType, w.hookSize, effTracks, effRailModelPop), f => f.label);
-    const wfList2 = sortListByDropdownMode(getWidthFormulasForStyle(style2, w.pieces2 || w.pieces1, effTracks, w.rodType, 'sheer'), f => f.label);
-    const hfList2 = sortListByDropdownMode(getHeightFormulasForWindow(style2, w.rodType, w.hookSize, effTracks, effRailModelPop), f => f.label);
+    const cfg1 = resolveWindowLayerConfig(w, sh, 1);
+    const cfg2 = resolveWindowLayerConfig(w, sh, 2);
+    const railModelOpts1 = `<option value="">-- อัตโนมัติตามตารางราง (${esc(cfg1.railModel || 'ไม่ระบุ')}) --</option>` +
+      sortListByDropdownMode(getRailsForStyle(style1, cfg1.rodType), r => r.name).map(r => `<option value="${esc(r.name)}">${esc(r.name)}${r.railGroup ? ' [' + esc(r.railGroup) + ']' : ''}</option>`).join('');
+    const railModelOpts2 = `<option value="">-- อัตโนมัติตามรางชั้น 2 (${esc(cfg2.railModel || 'ไม่ระบุ')}) --</option>` +
+      sortListByDropdownMode(getRailsForStyle(style2, cfg2.rodType), r => r.name).map(r => `<option value="${esc(r.name)}">${esc(r.name)}${r.railGroup ? ' [' + esc(r.railGroup) + ']' : ''}</option>`).join('');
+    const wfList1 = sortListByDropdownMode(getWidthFormulasForStyle(style1, w.pieces1, effTracks, cfg1.rodType, 'opaque'), f => f.label);
+    const hfList1 = sortListByDropdownMode(getHeightFormulasForWindow(style1, cfg1.rodType, cfg1.hookSize, effTracks, cfg1.railModel), f => f.label);
+    const wfList2 = sortListByDropdownMode(getWidthFormulasForStyle(style2, w.pieces2 || w.pieces1, effTracks, cfg2.rodType, 'sheer'), f => f.label);
+    const hfList2 = sortListByDropdownMode(getHeightFormulasForWindow(style2, cfg2.rodType, cfg2.hookSize, effTracks, cfg2.railModel), f => f.label);
 
     const sheetFabChoices = getSheetTableFabricChoices(sh);
     const sheetFabOpts = sheetFabChoices.length
@@ -4094,11 +4210,22 @@ function renderActivePopoverContent(opts = {}) {
     `;
 
     const autoMatchedHf1 = (!w.heightFormulaId1 && style1 && typeof findAutoHeightFormulaForWindow === 'function')
-      ? findAutoHeightFormulaForWindow(style1, w.rodType, w.hookSize, effTracks, effRailModelPop)
+      ? findAutoHeightFormulaForWindow(style1, cfg1.rodType, cfg1.hookSize, effTracks, cfg1.railModel)
+      : null;
+    const autoMatchedHf2 = (!w.heightFormulaId2 && isTwoLayer && style2 && typeof findAutoHeightFormulaForWindow === 'function')
+      ? findAutoHeightFormulaForWindow(style2, cfg2.rodType, cfg2.hookSize, effTracks, cfg2.railModel)
       : null;
     const activeHf1Obj = (w.heightFormulaId1 && (masterDB.heightFormulas || []).find(f => f.id === w.heightFormulaId1)) || autoMatchedHf1;
-    const autoHfBadgeHtml = (activeHf1Obj && !isBlind1)
-      ? `<div style="margin-bottom:6px;padding:4px 8px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:6px;color:#065f46;font-size:11.5px;font-weight:600">✔ ลดความสูงอัตโนมัติตามเงื่อนไข: ${esc(activeHf1Obj.label)} (แก้ไขตัวเลขสูงเองได้ในช่องตาราง)</div>`
+    const activeHf2Obj = (w.heightFormulaId2 && (masterDB.heightFormulas || []).find(f => f.id === w.heightFormulaId2)) || autoMatchedHf2;
+    const autoHfLines = [];
+    if (activeHf1Obj && !isBlind1) {
+      autoHfLines.push(`ชั้น 1 (${esc(style1 || 'ทึบ')}${cfg1.railModel ? ' • ' + esc(cfg1.railModel) : ''}${cfg1.hookSize ? ' • ' + esc(cfg1.hookSize) : ''}): ${esc(activeHf1Obj.label)}`);
+    }
+    if (isTwoLayer && activeHf2Obj && !isBlind2) {
+      autoHfLines.push(`ชั้น 2 (${esc(style2 || 'โปร่ง')}${cfg2.railModel ? ' • ' + esc(cfg2.railModel) : ''}${cfg2.hookSize ? ' • ' + esc(cfg2.hookSize) : ''}): ${esc(activeHf2Obj.label)}`);
+    }
+    const autoHfBadgeHtml = autoHfLines.length
+      ? `<div style="margin-bottom:6px;padding:5px 8px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:6px;color:#065f46;font-size:11.5px;font-weight:600;line-height:1.45">✔ ลดความสูงอัตโนมัติตามเงื่อนไข:<br>${autoHfLines.join('<br>')}</div>`
       : '';
     const hasAdvDims = !!(w.customRailW || w.customRailH || w.unequalLayerRail || w.fullHLeft || w.fullHMid || w.fullHRight);
     const hasAdvCalc = !!(w.railCountUnit || w.railUnit || w.railMinLength || w.rowLabel1 || w.rowLabel2 || w.rowLabel3);
@@ -4239,7 +4366,7 @@ function renderActivePopoverContent(opts = {}) {
             <select ${b('hookSize')} ${needHook ? '' : 'disabled'}>${hookOpts}</select>
           </label>
           `}
-          <label>จำนวนชั้นรางม่าน & ประเภทรางม่าน
+          <label>จำนวนชั้นราง & ประเภทราง ชั้นที่ 1
             <span class="inline">
               <select ${b('railTracks')} style="max-width:95px">
                 <option value="">อัตโนมัติ</option>
@@ -4249,11 +4376,29 @@ function renderActivePopoverContent(opts = {}) {
               <select ${b('rodType')}>${rodTypeOpts}</select>
             </span>
           </label>
+          <label>รุ่นราง ชั้นที่ 1
+            <select ${b('railModel')}>${railModelOpts1}</select>
+          </label>
           ${showLayer2Box ? `
-          <label>ขนาดตะขอ ${needHook ? '<b>(ม่านจีบ/ลอน)</b>' : '<small>(เฉพาะม่านจีบ/ลอน)</small>'}
+          <label>ประเภทราง ชั้นที่ 2 <small>(แยกจากชั้น 1 ได้)</small>
+            <select ${b('rodType2')}>
+              <option value="">อัตโนมัติ (${esc(cfg2.rodType || 'ตามรูปแบบชั้น 2')})</option>
+              ${['รางม่านจีบ', 'รางโชว์', 'รางม่านลอน', 'รางม่านพับ'].map(rt => `<option value="${esc(rt)}">${esc(rt)}</option>`).join('')}
+            </select>
+          </label>
+          <label>รุ่นราง ชั้นที่ 2
+            <select ${b('railModel2')}>${railModelOpts2}</select>
+          </label>
+          <label>ขนาดตะขอ ชั้นที่ 1 ${curtainNeedsHook(w.curtainStyle1, '') ? '<b>(ม่านจีบ/ลอน)</b>' : '<small>(ถ้ามี)</small>'}
             <select ${b('hookSize')} ${needHook ? '' : 'disabled'}>${hookOpts}</select>
           </label>
-          ` : `<div></div>`}
+          <label>ขนาดตะขอ ชั้นที่ 2 <small>(ถ้าต่างจากชั้น 1)</small>
+            <select ${b('hookSize2')} ${curtainNeedsHook(w.curtainStyle2 || w.curtainStyle1, '') ? '' : 'disabled'}>
+              <option value="">ตามชั้นที่ 1 (${esc(w.hookSize || '-')})</option>
+              ${sortListByDropdownMode(masterDB.hooks, h => h.name).map(h => `<option value="${esc(h.name)}">${esc(h.name)}</option>`).join('')}
+            </select>
+          </label>
+          ` : `<div></div><div></div>`}
         </div>
 
         ${showBlindPiecePanel ? buildBlindPiecesEditorHTML(w, i) : ''}
@@ -4823,8 +4968,10 @@ function renderActivePopoverContent(opts = {}) {
     `;
   } else if (ctx.type === 'rod') {
     const part = ctx.rodPart || 'rodType';
+    const slot = ctx.rodSlot || '';
+    const slotHl = key => (slot && slot === key) ? ' style="margin-bottom:6px;padding:6px 8px;background:#eff6ff;border:1px solid #93c5fd;border-radius:6px"' : ' style="margin-bottom:6px"';
     const rodPartTitles = {
-      rodType: '🛤️ แก้ไขประเภทรางม่าน',
+      rodType: '🛤️ แก้ไขประเภทรางม่าน (คลิกเลือกรางใดก็ได้อิสระ)',
       holdBack: '🪝 แก้ไขตะขอสายรวบ',
       drawRod: '🦯 แก้ไขก้านจูง',
       grommet: '⭕ แก้ไขห่วงตาไก่',
@@ -4834,26 +4981,26 @@ function renderActivePopoverContent(opts = {}) {
       ${part === 'rodType' ? `
         <section class="pop-sec-card">
           <label class="inline" style="margin:2px 0 8px;font-weight:700"><input type="checkbox" data-sheet="rods.typeNo"> ไม่รับรางม่าน</label>
-          <div class="grid2" style="margin-bottom:6px">
+          <div class="grid2"${slotHl('pleat')}>
             <label>รางม่านจีบ
-              ${comboInputHTML({ kind: 'rail', col: 'pleat', sheetPath: 'rods.pleat.model', placeholder: 'เลือกรางม่านจีบ หรือพิมพ์ระบุเอง...', autofocus: true })}
+              ${comboInputHTML({ kind: 'rail', col: 'pleat', sheetPath: 'rods.pleat.model', placeholder: 'เลือกรางม่านจีบ หรือพิมพ์ระบุเอง...' })}
             </label>
             <label>สี <input data-sheet="rods.pleat.color"></label>
           </div>
-          <div class="grid3" style="margin-bottom:6px">
+          <div class="grid3"${slotHl('show')}>
             <label>รางโชว์
               ${comboInputHTML({ kind: 'rail', col: 'show', sheetPath: 'rods.show.model', placeholder: 'เลือกรางโชว์ หรือพิมพ์ระบุเอง...' })}
             </label>
             <label>สี <input data-sheet="rods.show.color"></label>
             <label>หัวปิดราง <input data-sheet="rods.show.cap"></label>
           </div>
-          <div class="grid2" style="margin-bottom:6px">
+          <div class="grid2"${slotHl('wave')}>
             <label>รางม่านลอน
               ${comboInputHTML({ kind: 'rail', col: 'wave', sheetPath: 'rods.wave.model', placeholder: 'เลือกรางม่านลอน หรือพิมพ์ระบุเอง...' })}
             </label>
             <label>สี <input data-sheet="rods.wave.color"></label>
           </div>
-          <div class="grid2">
+          <div class="grid2"${slot === 'fold' ? ' style="padding:6px 8px;background:#eff6ff;border:1px solid #93c5fd;border-radius:6px"' : ''}>
             <label>รางม่านพับ
               ${comboInputHTML({ kind: 'rail', col: 'fold', sheetPath: 'rods.fold.model', placeholder: 'เลือกรางม่านพับ หรือพิมพ์ระบุเอง...' })}
             </label>
@@ -4982,7 +5129,11 @@ function renderActivePopoverContent(opts = {}) {
     const af = pop.querySelector('[data-pop-autofocus="1"]');
     if (af) {
       setTimeout(() => {
-        try { af.focus({ preventScroll: true }); if (af.select) af.select(); } catch (e) {}
+        try {
+          if (af.closest && af.closest('.mto-combo')) af.dataset.skipAutoCombo = '1';
+          af.focus({ preventScroll: true });
+          if (af.select) af.select();
+        } catch (e) {}
       }, 30);
     }
   }
@@ -5185,8 +5336,10 @@ document.getElementById('preview').addEventListener('click', e => {
   if (e.target.closest('.s-rod')) {
     const partEl = e.target.closest('[data-rod-part]');
     const rodPart = partEl ? partEl.dataset.rodPart : 'rodType';
-    switchToSheetSection(sIdx, 'secRods', '[data-sheet="rods.pleat.model"]');
-    openPdfQuickPopover({ type: 'rod', sIdx, rodPart }, e.clientX, e.clientY);
+    const slotEl = e.target.closest('[data-rod-slot]');
+    const rodSlot = slotEl ? slotEl.dataset.rodSlot : '';
+    switchToSheetSection(sIdx, 'secRods', rodSlot ? `[data-sheet="rods.${rodSlot}.model"]` : null);
+    openPdfQuickPopover({ type: 'rod', sIdx, rodPart, rodSlot }, e.clientX, e.clientY);
     return;
   }
 });

@@ -318,6 +318,10 @@ function defaultMasterDB() {
       stdSideReturn: 8,   // อ้อมข้างมาตรฐาน = 8 ซม.
       stdFloorFloat: 1,   // ระยะลอยจากพื้นมาตรฐาน = 1 ซม.
     },
+    branches: [
+      'สำนักงานใหญ่',
+      'สาขาเซ็นทรัลลาดพร้าว',
+    ],
     staff: [
       {
         id: 'admin_t58121',
@@ -1081,14 +1085,36 @@ function parseBlindCodesList(codesStr) {
 
 function getStaffBranchList(staffNameOrObj) {
   let st = null;
+  const allStaff = (typeof masterDB !== 'undefined' && Array.isArray(masterDB.staff)) ? masterDB.staff : [];
   if (staffNameOrObj && typeof staffNameOrObj === 'object') {
-    st = staffNameOrObj;
-  } else if (staffNameOrObj && typeof masterDB !== 'undefined' && Array.isArray(masterDB.staff)) {
+    const uname = String(staffNameOrObj.username || '').trim().toLowerCase();
+    const sname = String(staffNameOrObj.name || '').trim().toLowerCase();
+    // ดึงข้อมูลล่าสุดจาก masterDB.staff เสมอ เพื่อให้สาขาที่เพิ่งเพิ่มใหม่มีผลทันทีโดยไม่ต้องล็อกอินใหม่
+    const live = allStaff.find(s =>
+      (uname && String(s.username || '').trim().toLowerCase() === uname) ||
+      (sname && String(s.name || '').trim().toLowerCase() === sname)
+    );
+    st = live || staffNameOrObj;
+  } else if (staffNameOrObj && allStaff.length) {
     const target = String(staffNameOrObj).trim().toLowerCase();
-    st = masterDB.staff.find(s => String(s.name || '').trim().toLowerCase() === target || String(s.username || '').trim().toLowerCase() === target);
+    st = allStaff.find(s => String(s.name || '').trim().toLowerCase() === target || String(s.username || '').trim().toLowerCase() === target);
   }
   const rawBranch = st ? String(st.branch || '') : '';
   return Array.from(new Set(rawBranch.split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean)));
+}
+
+function getAllBranchesList() {
+  const set = new Set();
+  if (typeof masterDB !== 'undefined') {
+    (Array.isArray(masterDB.branches) ? masterDB.branches : []).forEach(b => {
+      const s = String(b || '').trim();
+      if (s) set.add(s);
+    });
+    (Array.isArray(masterDB.staff) ? masterDB.staff : []).forEach(st => {
+      String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => set.add(b));
+    });
+  }
+  return Array.from(set);
 }
 
 function normalizeAccessoryItem(ac, idx) {
@@ -1120,10 +1146,21 @@ function normalizeMasterDBObject(raw) {
     ? raw.accessories
     : (migratedAcc.length ? migratedAcc : def.accessories);
 
+  const normalizedStaff = ensureDefaultAdmin(Array.isArray(raw.staff) ? raw.staff : def.staff);
+  const branchSet = new Set();
+  (Array.isArray(raw.branches) ? raw.branches : []).forEach(b => {
+    const s = String(b || '').trim();
+    if (s) branchSet.add(s);
+  });
+  normalizedStaff.forEach(st => {
+    String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => branchSet.add(b));
+  });
+
   return {
     schemaVersion: 10,
     stdParams: Object.assign({}, def.stdParams, raw.stdParams || {}),
-    staff: ensureDefaultAdmin(Array.isArray(raw.staff) ? raw.staff : def.staff),
+    branches: Array.from(branchSet),
+    staff: normalizedStaff,
     curtains: Array.isArray(raw.curtains) && raw.curtains.length
       ? raw.curtains.map((c, i) => normalizeCurtainItem(c, i))
       : def.curtains,
@@ -1169,10 +1206,32 @@ let masterDB = (() => {
 
 function saveMasterDB() {
   masterDB.staff = ensureDefaultAdmin(masterDB.staff);
+  // ซิงค์รายการสาขาทั้งหมดจาก masterDB.branches + masterDB.staff
+  const bSet = new Set(Array.isArray(masterDB.branches) ? masterDB.branches.map(b => String(b || '').trim()).filter(Boolean) : []);
+  (masterDB.staff || []).forEach(st => {
+    String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => bSet.add(b));
+  });
+  masterDB.branches = Array.from(bSet);
   masterDB.fabrics = (masterDB.fabrics || []).map((f, i) => normalizeFabricItem(f, i));
   masterDB.rails = (masterDB.rails || []).map((rl, i) => normalizeRailItem(rl, i));
   masterDB.accessories = (masterDB.accessories || []).map((ac, i) => normalizeAccessoryItem(ac, i));
   try { localStorage.setItem(DB_KEY, JSON.stringify(masterDB)); } catch (e) { console.warn(e); }
+  // อัปเดต session ของผู้ใช้ที่ล็อกอินอยู่ทันทีเมื่อแก้ไขสาขา/ข้อมูลพนักงาน
+  try {
+    const sessRaw = sessionStorage.getItem('mto-auth-user');
+    if (sessRaw) {
+      const sess = JSON.parse(sessRaw);
+      const liveSt = (masterDB.staff || []).find(s => String(s.username || '').toLowerCase() === String(sess.username || '').toLowerCase());
+      if (liveSt) {
+        sessionStorage.setItem('mto-auth-user', JSON.stringify(Object.assign({}, sess, {
+          name: liveSt.name || sess.name,
+          dept: liveSt.dept || sess.dept,
+          branch: liveSt.branch || '',
+          role: liveSt.role || sess.role,
+        })));
+      }
+    }
+  } catch (e) {}
   refreshRemarksDatalist();
   if (typeof RealtimeSync !== 'undefined') RealtimeSync.schedulePush();
 }
@@ -1304,9 +1363,18 @@ function inferNaturalRodTypeForStyle(curtainStyle) {
 
 function resolveRailMetaByName(railModelName) {
   const n = String(railModelName || '').trim();
-  if (!n) return { name: '', railGroup: '' };
-  const rl = (masterDB.rails || []).find(r => String(r.name || '').trim() === n);
-  return { name: n, railGroup: rl ? String(rl.railGroup || '').trim() : '' };
+  if (!n) return { name: '', railGroup: '', rodCategory: '' };
+  const nLow = n.toLowerCase();
+  const rl = (masterDB.rails || []).find(r => String(r.name || '').trim().toLowerCase() === nLow)
+    || (masterDB.rails || []).find(r => {
+      const rn = String(r.name || '').trim().toLowerCase();
+      return rn && (nLow.includes(rn) || rn.includes(nLow));
+    });
+  return {
+    name: rl ? String(rl.name || '').trim() : n,
+    railGroup: rl ? String(rl.railGroup || '').trim() : '',
+    rodCategory: rl ? String(rl.rodCategory || '').trim() : '',
+  };
 }
 
 function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks = '', railModel = '') {
@@ -1315,11 +1383,12 @@ function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks 
   const hKey = normalizeHookKey(hookSize);
   const naturalRod = inferNaturalRodTypeForStyle(curtainStyle);
   const rm = resolveRailMetaByName(railModel);
+  const effRod = rodType || rm.rodCategory || naturalRod;
   const matched = all.filter(f => {
     const matchStyle = !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
-    const matchRod = !rodType || !f.rodType || f.rodType === '*' || f.rodType === rodType || (rodType !== 'รางโชว์' && naturalRod && f.rodType === naturalRod);
-    const matchRailGroup = !rm.railGroup || !f.railGroup || f.railGroup === '*' || f.railGroup === rm.railGroup;
-    const matchRailName = !rm.name || !f.railName || f.railName === '*' || f.railName === rm.name;
+    const matchRod = !effRod || !f.rodType || f.rodType === '*' || f.rodType === effRod || (effRod !== 'รางโชว์' && naturalRod && f.rodType === naturalRod);
+    const matchRailGroup = !rm.railGroup || !f.railGroup || f.railGroup === '*' || f.railGroup.trim().toLowerCase() === rm.railGroup.toLowerCase();
+    const matchRailName = !rm.name || !f.railName || f.railName === '*' || f.railName.trim().toLowerCase() === rm.name.toLowerCase();
     const fHookKey = normalizeHookKey(f.hookSize);
     const matchHook = !hookSize || !f.hookSize || f.hookSize === '*' || f.hookSize === hookSize || (hKey !== '*' && fHookKey === hKey);
     const matchTracks = !railTracks || !f.railTracks || String(f.railTracks) === '*' || String(f.railTracks) === String(railTracks);
@@ -1329,62 +1398,105 @@ function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks 
 }
 
 /**
- * ค้นหาสูตรลดความสูงผ้าม่านอัตโนมัติตามรูปแบบผ้าม่าน, รายการรางม่าน, กลุ่มรางม่าน, และเงื่อนไขของชั้นนั้นๆ
+ * ค้นหาสูตรลดความสูงผ้าม่านอัตโนมัติอย่างฉลาดตามเงื่อนไขจริง:
+ * รูปแบบผ้าม่าน + ประเภทรางม่าน + กลุ่มรางม่าน + รายการรางม่าน + ขนาดตะขอ + จำนวนชั้นราง (1 ชั้น / 2 ชั้น)
+ * - จับคู่แบบแบ่งระดับความแม่นยำ (Tiered Scoring) เพื่อให้ได้สูตรที่ตรงที่สุดทั้งแบบ 1 ชั้น และ 2 ชั้น (รวมถึง 2 ชั้นคนละแบบ เช่น ม่านลอน+ม่านจีบ)
  */
 function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTracks = '', railModel = '') {
   if (!curtainStyle) return null;
   const all = masterDB.heightFormulas || [];
+  const styleTrim = String(curtainStyle || '').trim();
   const hKey = normalizeHookKey(hookSize);
-  const naturalRod = inferNaturalRodTypeForStyle(curtainStyle);
+  const naturalRod = inferNaturalRodTypeForStyle(styleTrim);
   const rm = resolveRailMetaByName(railModel);
-  const isBlindStyle = isBlindOrRollerStyle(curtainStyle);
+  const isBlindStyle = isBlindOrRollerStyle(styleTrim);
+  const primaryRod = String(rodType || '').trim() || rm.rodCategory || naturalRod;
 
-  const tryMatchWithRod = (effRod, relaxRailIfUnset = false) => all.filter(f => {
-    const reqStyle = f.curtainStyle && f.curtainStyle !== '*';
-    const reqRod = f.rodType && f.rodType !== '*';
-    const reqRailGroup = f.railGroup && f.railGroup !== '*';
-    const reqRailName = f.railName && f.railName !== '*';
-    const reqHook = f.hookSize && f.hookSize !== '*';
-    const reqTracks = f.railTracks && String(f.railTracks) !== '*';
+  const filterFormulas = (effRod, { relaxRail = false, relaxTracks = false, allowUnsetHookWildcard = true } = {}) => all.filter(f => {
+    const fStyle = String(f.curtainStyle || '*').trim();
+    const fRod = String(f.rodType || '*').trim();
+    const fGroup = String(f.railGroup || '*').trim();
+    const fRail = String(f.railName || '*').trim();
+    const fHook = String(f.hookSize || '*').trim();
+    const fTracks = String(f.railTracks || '*').trim();
 
-    if (reqStyle && f.curtainStyle !== curtainStyle && !curtainStyle.includes(f.curtainStyle)) return false;
-    if (isBlindStyle && !reqStyle) return false; // ม่านม้วน/มู่ลี่ หากไม่ได้กำหนดสูตรลดความสูงเฉพาะไว้ ห้ามนำสูตรผ้าม่านทั่วไปมาลดความสูง
-    if (reqRod && (!effRod || f.rodType !== effRod)) return false;
-    if (!relaxRailIfUnset || rm.name) {
-      if (reqRailName && (!rm.name || f.railName !== rm.name)) return false;
-      if (reqRailGroup && (!rm.railGroup || f.railGroup !== rm.railGroup)) return false;
+    const reqStyle = fStyle && fStyle !== '*';
+    const reqRod = fRod && fRod !== '*';
+    const reqRailGroup = fGroup && fGroup !== '*';
+    const reqRailName = fRail && fRail !== '*';
+    const reqHook = fHook && fHook !== '*';
+    const reqTracks = fTracks && fTracks !== '*';
+
+    if (reqStyle && fStyle !== styleTrim && !styleTrim.includes(fStyle)) return false;
+    if (isBlindStyle && !reqStyle) return false;
+    if (reqRod && (!effRod || fRod !== effRod)) return false;
+
+    if (!relaxRail) {
+      if (reqRailName && (!rm.name || fRail.toLowerCase() !== rm.name.toLowerCase())) return false;
+      if (reqRailGroup && (!rm.railGroup || fGroup.toLowerCase() !== rm.railGroup.toLowerCase())) return false;
+    } else {
+      // ในโหมดผ่อนคลาย: หากมี railModel ที่ระบุกลุ่มแล้ว ห้ามข้ามไปจับคู่กับสูตรของกลุ่มรางอื่นที่ขัดแย้งกัน
+      if (reqRailName && rm.name && fRail.toLowerCase() !== rm.name.toLowerCase()) return false;
+      if (reqRailGroup && rm.railGroup && fGroup.toLowerCase() !== rm.railGroup.toLowerCase()) return false;
     }
+
     if (reqHook) {
       if (!hookSize) return false;
-      const fHookKey = normalizeHookKey(f.hookSize);
-      if (f.hookSize !== hookSize && (hKey === '*' || fHookKey !== hKey)) return false;
+      const fHookKey = normalizeHookKey(fHook);
+      if (fHook !== hookSize && (hKey === '*' || fHookKey !== hKey)) return false;
+    } else if (!allowUnsetHookWildcard && hookSize) {
+      return false;
     }
-    if (reqTracks && (!railTracks || String(f.railTracks) !== String(railTracks))) return false;
+
+    if (!relaxTracks && reqTracks && (!railTracks || fTracks !== String(railTracks))) return false;
     return reqStyle || reqRod || reqRailName || reqRailGroup || reqHook;
   });
 
-  let exactMatched = tryMatchWithRod(rodType, false);
-  if (!exactMatched.length && naturalRod && rodType !== naturalRod) {
-    exactMatched = tryMatchWithRod(naturalRod, false);
-  }
-  if (!exactMatched.length && !rm.name) {
-    exactMatched = tryMatchWithRod(rodType || naturalRod, true);
-  }
+  const scoreFormula = x => {
+    const fStyle = String(x.curtainStyle || '*').trim();
+    const fRod = String(x.rodType || '*').trim();
+    const fGroup = String(x.railGroup || '*').trim();
+    const fRail = String(x.railName || '*').trim();
+    const fHook = String(x.hookSize || '*').trim();
+    const fTracks = String(x.railTracks || '*').trim();
+    let sc = 0;
+    if (fRail && fRail !== '*' && rm.name && fRail.toLowerCase() === rm.name.toLowerCase()) sc += 20;
+    if (fGroup && fGroup !== '*' && rm.railGroup && fGroup.toLowerCase() === rm.railGroup.toLowerCase()) sc += 14;
+    if (fStyle === styleTrim) sc += 10;
+    else if (fStyle && fStyle !== '*' && styleTrim.includes(fStyle)) sc += 5;
+    if (fHook && fHook !== '*' && hookSize && (fHook === hookSize || normalizeHookKey(fHook) === hKey)) sc += 8;
+    if (fRod && fRod !== '*' && (fRod === primaryRod || fRod === naturalRod)) sc += 6;
+    if (fTracks && fTracks !== '*' && railTracks && fTracks === String(railTracks)) sc += 4;
+    // หักคะแนนเล็กน้อยหากสูตรระบุเงื่อนไขที่ไม่ได้กรอกไว้ (เช่น สูตรเฉพาะรางอื่นเมื่อยังไม่เลือกราง)
+    if (fRail && fRail !== '*' && !rm.name) sc -= 3;
+    if (fGroup && fGroup !== '*' && !rm.railGroup) sc -= 2;
+    return sc;
+  };
 
-  if (exactMatched.length) {
-    exactMatched.sort((a, b) => {
-      const score = x =>
-        ((x.railName && x.railName !== '*') ? 10 : 0) +
-        ((x.railGroup && x.railGroup !== '*') ? 8 : 0) +
-        ((x.curtainStyle && x.curtainStyle !== '*') ? 4 : 0) +
-        ((x.rodType && x.rodType !== '*') ? 2 : 0) +
-        ((x.hookSize && x.hookSize !== '*') ? 2 : 0) +
-        ((x.railTracks && String(x.railTracks) !== '*') ? 1 : 0);
-      return score(b) - score(a);
-    });
-    return exactMatched[0];
+  const pickBest = list => {
+    if (!list.length) return null;
+    return list.slice().sort((a, b) => scoreFormula(b) - scoreFormula(a))[0];
+  };
+
+  // Tier 1: จับคู่ตรงทุกเงื่อนไขด้วย primaryRod (rodType ของชั้นนั้น / rodCategory ของรุ่นราง / naturalRod)
+  let hit = pickBest(filterFormulas(primaryRod, { relaxRail: false, relaxTracks: false }));
+  // Tier 2: หากยังไม่พบ ลองจับคู่ด้วย naturalRod ของรูปแบบผ้าม่านชั้นนั้น (เช่น ม่านลอน -> รางม่านลอน, ม่านจีบ -> รางม่านจีบ)
+  if (!hit && naturalRod && naturalRod !== primaryRod) {
+    hit = pickBest(filterFormulas(naturalRod, { relaxRail: false, relaxTracks: false }));
   }
-  if (isBlindStyle) return null; // ม่านม้วน/มู่ลี่ หากไม่ได้กำหนดสูตรลดความสูงไว้ ไม่ลดความสูงอัตโนมัติ
+  // Tier 3: หากยังไม่พบ ลองผ่อนคลายเฉพาะจำนวนชั้นราง (railTracks) แต่ยังยึดรูปแบบม่าน/ราง/กลุ่มราง/ตะขอเป๊ะ
+  if (!hit) {
+    hit = pickBest(filterFormulas(primaryRod, { relaxRail: false, relaxTracks: true }))
+      || (naturalRod ? pickBest(filterFormulas(naturalRod, { relaxRail: false, relaxTracks: true })) : null);
+  }
+  // Tier 4: หากยังไม่ได้กำหนดรุ่นรางหรือกลุ่มรางบนบาน ลองจับคู่แบบผ่อนคลายรางแต่ยึดรูปแบบม่าน + ตะขอ
+  if (!hit && (!rm.name || !rm.railGroup)) {
+    hit = pickBest(filterFormulas(primaryRod, { relaxRail: true, relaxTracks: true }))
+      || (naturalRod ? pickBest(filterFormulas(naturalRod, { relaxRail: true, relaxTracks: true })) : null);
+  }
+  if (hit) return hit;
+
+  if (isBlindStyle) return null;
   return all.find(f => (!f.curtainStyle || f.curtainStyle === '*') && (!f.rodType || f.rodType === '*') && (!f.hookSize || f.hookSize === '*')) || null;
 }
 
@@ -1905,14 +2017,17 @@ function computeWindowRailRow(w, sh = null) {
   const rh1 = hasUnequalLayerH ? (num(w.railH1) || RH) : RH;
   const rh2 = hasUnequalLayerH ? (num(w.railH2) || RH) : RH;
 
+  // ปัดความยาวรางเป็นเต็ม 10 ซม. (0.1 เมตร) เช่น 184 ซม. -> 1.9 เมตร (ขั้นต่ำตาม minLenPerRail)
+  const roundUpRailMeters10cm = cm => (cm > 0 ? Math.ceil((cm - 1e-9) / 10) / 10 : 0);
   const rawM1 = rw1 > 0 ? (rw1 / 100) : 0;
   const rawM2 = rw2 > 0 ? (rw2 / 100) : 0;
   const effM1 = rw1 > 0 ? Math.max(minLenPerRail, rawM1) : 0;
   const effM2 = rw2 > 0 ? Math.max(minLenPerRail, rawM2) : 0;
-  const singleMeters = Math.round(effM1 * 100) / 100;
+  const effM10_1 = rw1 > 0 ? Math.max(minLenPerRail, roundUpRailMeters10cm(rw1)) : 0;
+  const effM10_2 = rw2 > 0 ? Math.max(minLenPerRail, roundUpRailMeters10cm(rw2)) : 0;
   const totalMeters = effTracks >= 2
-    ? Math.round((effM1 + effM2) * 100) / 100
-    : Math.round(effM1 * effTracks * 100) / 100;
+    ? Math.round((effM10_1 + effM10_2) * 10) / 10
+    : Math.round(effM10_1 * effTracks * 10) / 10;
   const sets1 = rw1 > 0 ? (evalRailSetBrackets(effM1, setRanges).sets || 1) : 0;
   const sets2 = rw2 > 0 ? (evalRailSetBrackets(effM2, setRanges).sets || 1) : 0;
   const singleSets = sets1;
@@ -1927,9 +2042,9 @@ function computeWindowRailRow(w, sh = null) {
       const mDisp = (hasUnequalLayerW && rw1 !== rw2) ? `${fmtM1}/${fmtM2}` : fmtM1;
       t = `${mDisp} ${totalSets}`;
     } else if (totalUnit === 'ชุด/เมตร') {
-      t = `${singleSets}/${effM1.toFixed(2)}`;
+      t = `${singleSets}/${effM10_1}`;
     } else if (totalUnit === 'เมตร/ชุด') {
-      t = `${effM1.toFixed(2)}/${singleSets}`;
+      t = `${effM10_1}/${singleSets}`;
     } else if (totalUnit === 'ตร.ม.') {
       const blindRule = (masterDB.blinds || []).find(bl => bl.curtainStyle === (s1 || s2)) || { minSqm: 1.5, roundMode: 'ceil_1dec' };
       const minSqm = Math.max(1.5, num(blindRule.minSqm) || 1.5);
@@ -2754,23 +2869,41 @@ const MasterDBModal = (() => {
     document.querySelectorAll('[data-dbtab]').forEach(b => b.classList.toggle('active', b.dataset.dbtab === activeTab));
 
     if (activeTab === 'staff') {
+      const allBranches = getAllBranchesList();
       body.innerHTML = `
-        <p class="hint" style="margin-bottom:8px">จัดการบัญชีผู้ใช้งานและรายชื่อพนักงาน (เฉพาะแอดมินเท่านั้นที่สามารถเข้าถึงและแก้ไขฐานข้อมูลได้)</p>
+        <p class="hint" style="margin-bottom:8px">จัดการบัญชีผู้ใช้งาน รายชื่อพนักงาน และสาขาทั้งหมดในระบบ (เฉพาะแอดมินเท่านั้นที่สามารถเข้าถึงและแก้ไขฐานข้อมูลได้)</p>
+        <div class="subcard" style="margin-bottom:8px;background:#f0f7ff;border:1px solid #bfdbfe;font-size:12px">
+          <b>🏢 จัดการรายชื่อสาขาทั้งหมดในระบบ (${allBranches.length} สาขา):</b>
+          <div class="inline" style="margin-top:5px;flex-wrap:wrap;gap:6px">
+            <input id="dbNewBranchInput" placeholder="พิมพ์ชื่อสาขาใหม่ เช่น สาขาเมกาบางนา" style="max-width:280px">
+            <button type="button" class="primary" data-db-add-branch="1">➕ เพิ่มสาขา</button>
+          </div>
+          <div class="inline" style="margin-top:6px;flex-wrap:wrap;gap:5px">
+            ${allBranches.length ? allBranches.map(br => `
+              <span class="pill" style="background:#fff;border:1px solid #93c5fd;color:#1e3a8a;padding:2px 8px;display:inline-flex;align-items:center;gap:5px">
+                ${escH(br)}
+                <button type="button" data-db-del-branch="${escH(br)}" style="border:none;background:transparent;color:#b91c1c;padding:0 2px;font-size:11px" title="ลบสาขานี้">✕</button>
+              </span>
+            `).join('') : '<span style="color:#64748b">ยังไม่มีสาขา — พิมพ์ชื่อสาขาด้านบนแล้วกด ➕ เพิ่มสาขา</span>'}
+          </div>
+        </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:860px">
+          <table class="ed-tbl" style="min-width:920px">
             <thead>
               <tr>
-                <th style="width:120px">ชื่อผู้ใช้</th>
-                <th style="width:120px">รหัสผ่าน</th>
-                <th style="width:130px">สิทธิ์การใช้งาน</th>
-                <th style="min-width:180px">ชื่อพนักงาน</th>
-                <th style="width:140px">แผนก</th>
-                <th style="min-width:220px">สาขา (ใส่ได้หลายสาขาคั่นด้วย ,)</th>
-                <th style="width:50px">ลบ</th>
+                <th style="width:110px">ชื่อผู้ใช้</th>
+                <th style="width:110px">รหัสผ่าน</th>
+                <th style="width:115px">สิทธิ์การใช้งาน</th>
+                <th style="min-width:160px">ชื่อพนักงาน</th>
+                <th style="width:120px">แผนก</th>
+                <th style="min-width:260px">สาขา (คลิกเลือกได้หลายสาขา หรือพิมพ์คั่นด้วย ,)</th>
+                <th style="width:45px">ลบ</th>
               </tr>
             </thead>
             <tbody>
-              ${masterDB.staff.map((st, i) => `
+              ${masterDB.staff.map((st, i) => {
+                const stBranches = String(st.branch || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean);
+                return `
                 <tr>
                   <td><input data-db-edit="staff.${i}.username" value="${escH(st.username || '')}" placeholder="ชื่อผู้ใช้"></td>
                   <td><input data-db-edit="staff.${i}.password" value="${escH(st.password || '')}" placeholder="รหัสผ่าน"></td>
@@ -2782,9 +2915,20 @@ const MasterDBModal = (() => {
                   </td>
                   <td><input data-db-edit="staff.${i}.name" value="${escH(st.name)}" placeholder="ชื่อพนักงาน"></td>
                   <td><input data-db-edit="staff.${i}.dept" value="${escH(st.dept)}" placeholder="แผนก"></td>
-                  <td><input data-db-edit="staff.${i}.branch" value="${escH(st.branch)}" placeholder="เช่น สำนักงานใหญ่, พารากอน, เมกาบางนา"></td>
+                  <td>
+                    <input data-db-edit="staff.${i}.branch" value="${escH(st.branch)}" placeholder="เช่น สำนักงานใหญ่, พารากอน">
+                    ${allBranches.length ? `
+                      <div class="inline" style="margin-top:4px;flex-wrap:wrap;gap:3px">
+                        ${allBranches.map(br => {
+                          const on = stBranches.includes(br);
+                          return `<button type="button" data-db-toggle-stbranch="${i}" data-br="${escH(br)}" style="padding:1px 6px;font-size:10.5px;border-radius:999px;${on ? 'background:#1d4ed8;color:#fff;border-color:#1d4ed8;font-weight:700' : 'background:#f8fafc;color:#475569;border-color:#cbd5e1'}">${on ? '✓ ' : '+ '}${escH(br)}</button>`;
+                        }).join('')}
+                      </div>
+                    ` : ''}
+                  </td>
                   <td class="c"><button type="button" class="danger" data-db-del="staff.${i}">✕</button></td>
-                </tr>`).join('')}
+                </tr>`;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -3471,6 +3615,50 @@ const MasterDBModal = (() => {
       const dlSampleBtn = e.target.closest('[data-db-dl-sample]');
       if (dlSampleBtn) {
         downloadSampleForTab(dlSampleBtn.dataset.dbDlSample || activeTab);
+        return;
+      }
+      const addBranchBtn = e.target.closest('[data-db-add-branch]');
+      if (addBranchBtn) {
+        const inp = document.getElementById('dbNewBranchInput');
+        const val = String((inp && inp.value) || '').trim();
+        if (!val) return;
+        if (!Array.isArray(masterDB.branches)) masterDB.branches = [];
+        val.split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => {
+          if (!masterDB.branches.includes(b)) masterDB.branches.push(b);
+        });
+        saveMasterDB();
+        render();
+        if (typeof onUpdated === 'function') onUpdated();
+        return;
+      }
+      const delBranchBtn = e.target.closest('[data-db-del-branch]');
+      if (delBranchBtn) {
+        const br = delBranchBtn.dataset.dbDelBranch;
+        masterDB.branches = (masterDB.branches || []).filter(b => b !== br);
+        (masterDB.staff || []).forEach(st => {
+          const list = String(st.branch || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(b => b && b !== br);
+          st.branch = list.join(', ');
+        });
+        saveMasterDB();
+        render();
+        if (typeof onUpdated === 'function') onUpdated();
+        return;
+      }
+      const togStBr = e.target.closest('[data-db-toggle-stbranch]');
+      if (togStBr) {
+        const si = +togStBr.dataset.dbToggleStbranch;
+        const br = togStBr.dataset.br;
+        const st = masterDB.staff && masterDB.staff[si];
+        if (st && br) {
+          const cur = String(st.branch || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean);
+          const idx = cur.indexOf(br);
+          if (idx >= 0) cur.splice(idx, 1);
+          else cur.push(br);
+          st.branch = cur.join(', ');
+          saveMasterDB();
+          render();
+          if (typeof onUpdated === 'function') onUpdated();
+        }
         return;
       }
       const add = e.target.closest('[data-db-add]');

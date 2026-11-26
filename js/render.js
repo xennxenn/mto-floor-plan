@@ -973,7 +973,9 @@ function rWinCell(w, n, winIdx = 0) {
   w = w || {};
   const cType = formatCurtainType(w);
   const showHook = curtainNeedsHook(w.curtainStyle1, w.curtainStyle2);
-  const hookTxt = showHook ? (w.hookSize || '') : '';
+  const h1 = String(w.hookSize || '').trim();
+  const h2 = String(w.hookSize2 || '').trim();
+  const hookTxt = showHook ? ((h1 && h2 && h1 !== h2) ? `${h1} / ${h2}` : (h1 || h2)) : '';
   const boxSizeTxt = w.box === 'yes' ? (w.boxSize || '') : '';
   const ceilAttachTxt = (w.mount === 'wall' && w.wallCeilingAttach)
     ? `ผนังชิดเพดาน${w.wallCeilingNote ? ' (' + w.wallCeilingNote + ')' : ''}`
@@ -1174,15 +1176,15 @@ function rFabric(sheet, pageWins) {
         <th>PRODUCT (สินค้า) :</th>
         <th class="th-split" data-fab-col="blackout">
           <div class="split-box">
-            <div>${chkMini(f.blackout.isOpaque)}<span>ทึบ</span></div>
-            <div>${chkMini(f.blackout.isSheer)}<span>โปร่ง</span></div>
+            <div>${chkMini(f.blackout.grain === 'opaque' || (f.blackout.grain !== '' && !!f.blackout.isOpaque))}<span>ทึบ</span></div>
+            <div>${chkMini(f.blackout.grain === 'sheer' || (f.blackout.grain !== '' && !!f.blackout.isSheer))}<span>โปร่ง</span></div>
           </div>
           <div class="split-title">CURTAIN<br>ผ้าม่านทึบ</div>
         </th>
         <th class="th-split" data-fab-col="sheer">
           <div class="split-box">
-            <div>${chkMini(f.sheer.isOpaque)}<span>ทึบ</span></div>
-            <div>${chkMini(f.sheer.isSheer)}<span>โปร่ง</span></div>
+            <div>${chkMini(f.sheer.grain === 'opaque' || (f.sheer.grain !== '' && !!f.sheer.isOpaque))}<span>ทึบ</span></div>
+            <div>${chkMini(f.sheer.grain === 'sheer' || (f.sheer.grain !== '' && !!f.sheer.isSheer))}<span>โปร่ง</span></div>
           </div>
           <div class="split-title">SHEER<br>ผ้าม่านโปร่ง</div>
         </th>
@@ -1233,12 +1235,12 @@ function rRods(sheet) {
         <td colspan="2">
           <div class="rod-top-grid">
             <div>
-              <div class="r">${L('รางม่านจีบ')}${F(r.pleat.model)}${L('สี')}${F(r.pleat.color, 'w80')}</div>
-              <div class="r">${L('รางโชว์')}${F(r.show.model)}${L('สี')}${F(r.show.color, 'w65')}${L('หัวปิดราง')}${F(r.show.cap, 'w70')}</div>
+              <div class="r" data-rod-slot="pleat">${L('รางม่านจีบ')}${F(r.pleat.model)}${L('สี')}${F(r.pleat.color, 'w80')}</div>
+              <div class="r" data-rod-slot="show">${L('รางโชว์')}${F(r.show.model)}${L('สี')}${F(r.show.color, 'w65')}${L('หัวปิดราง')}${F(r.show.cap, 'w70')}</div>
             </div>
             <div>
-              <div class="r">${L('รางม่านลอน')}${F(r.wave.model)}${L('สี')}${F(r.wave.color, 'w80')}</div>
-              <div class="r">${L('รางม่านพับ')}${F(r.fold.model)}${L('สี')}${F(r.fold.color, 'w80')}</div>
+              <div class="r" data-rod-slot="wave">${L('รางม่านลอน')}${F(r.wave.model)}${L('สี')}${F(r.wave.color, 'w80')}</div>
+              <div class="r" data-rod-slot="fold">${L('รางม่านพับ')}${F(r.fold.model)}${L('สี')}${F(r.fold.color, 'w80')}</div>
             </div>
           </div>
         </td>

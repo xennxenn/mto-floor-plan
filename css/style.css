@@ -1364,6 +1364,122 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
   .pdf-imp-layout { grid-template-columns: 1fr; }
 }
 
+/* Hover highlight for individual rail slots on plan (Free rail selection) */
+@media screen {
+  [data-rod-slot] {
+    border-radius: 3px;
+    padding: 1px 2px;
+    transition: background-color 0.12s ease;
+  }
+  [data-rod-slot]:hover {
+    background: rgba(31, 111, 235, 0.12);
+    cursor: pointer;
+  }
+}
+
+/* =========================================================
+   iPad & Touch Tablet Optimization (Portrait & Landscape)
+   ========================================================= */
+.preview-wrap, .editor, .pop-body, .modal-box, .db-tbl-scroll,
+.sheet-tabs-scroll, .tbl-wrap, .pdf-imp-preview, .pdf-imp-review {
+  -webkit-overflow-scrolling: touch;
+}
+#planSvg, .pop-hd-drag, .fnb-drag, .fnb-resize, .pdf-imp-img-wrap {
+  touch-action: none;
+}
+
+@media (pointer: coarse), (max-width: 1180px) {
+  html, body {
+    height: 100dvh;
+    min-height: 100dvh;
+    -webkit-text-size-adjust: 100%;
+  }
+  button, .btn, input, select, textarea, label {
+    touch-action: manipulation;
+  }
+  /* ป้องกัน Safari บน iPad ซูมหน้าจออัตโนมัติเมื่อแตะช่องกรอก + เพิ่มขนาดปุ่มให้แตะง่ายด้วยนิ้ว */
+  .editor input:not([type="checkbox"]):not([type="radio"]),
+  .editor select,
+  .editor textarea,
+  .pdf-quick-popover input:not([type="checkbox"]):not([type="radio"]),
+  .pdf-quick-popover select,
+  .pdf-quick-popover textarea,
+  .modal-box input:not([type="checkbox"]):not([type="radio"]),
+  .modal-box select,
+  .modal-box textarea,
+  .dash-filter input,
+  .login-field input {
+    font-size: 16px !important;
+    min-height: 36px;
+  }
+  .topbar button, .topbar .btn,
+  .top-sheet-nav button, .sheet-tab,
+  .zoombar button, .pop-tabs button, .db-tabs button {
+    min-height: 34px;
+    padding: 5px 10px;
+  }
+  .mto-combo > input {
+    padding-right: 36px !important;
+  }
+  .mto-combo-toggle {
+    width: 34px;
+    font-size: 14px;
+  }
+  .mto-combo-menu {
+    max-height: 46dvh;
+  }
+  .mto-combo-item {
+    padding: 9px 11px;
+    font-size: 14.5px;
+  }
+  .pdf-quick-popover {
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+  .modal-box {
+    max-height: calc(100dvh - 16px);
+    padding: 12px;
+  }
+  .editor {
+    width: 390px;
+  }
+  .dashboard {
+    padding: 0 10px;
+    margin: 12px auto;
+  }
+  .dash-box {
+    padding: 12px;
+    overflow-x: auto;
+  }
+  .dash-tbl {
+    min-width: 720px;
+  }
+}
+
+@media (max-width: 900px) {
+  .layout {
+    flex-direction: column;
+  }
+  .editor {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-right: none;
+    border-bottom: 2px solid #cbd5e1;
+    max-height: 55dvh;
+  }
+  .grid3 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dim-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .zoombar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+}
+
 @keyframes jumpFlashAnim {
   0%   { box-shadow: 0 0 0 3px #1f6feb, 0 0 14px rgba(31, 111, 235, 0.45); background-color: #eef5ff; }
   100% { box-shadow: 0 0 0 0 rgba(31, 111, 235, 0); }
