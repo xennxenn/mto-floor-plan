@@ -334,11 +334,11 @@ const PdfHandwritingImporter = (() => {
   function blueInkStrength(r, g, b) {
     const br = b - r;
     const bg = b - g;
-    if (b < 42 || r >= 228 || br < 11 || bg < 2) return 0;
-    // บูสต์ความเข้มให้แกนหมึกเป็น 255 (ดำสนิท) แม้เป็นหมึกน้ำเงินค่อนข้างอ่อน
-    const chrom = Math.min(255, (br - 8) * 7.2);
-    const dark = Math.min(255, (242 - r) * 2.3);
-    return Math.max(115, Math.min(255, Math.round(0.68 * chrom + 0.32 * dark)));
+    if (b < 45 || r >= 224 || br < 12 || bg < 3) return 0;
+    // สมดุลความเข้มหมึกน้ำเงิน (4.6x) — คมชัดไม่จางและไม่พองจนถมรูเลข 0/4/6/8/9
+    const chrom = Math.min(255, (br - 9) * 4.6);
+    const dark = Math.min(255, (240 - r) * 1.75);
+    return Math.max(85, Math.min(255, Math.round(0.64 * chrom + 0.36 * dark)));
   }
 
   function detectHasBlueInk(canvas) {
@@ -718,7 +718,7 @@ const PdfHandwritingImporter = (() => {
     }
     tctx.putImageData(timg, 0, 0);
 
-    const effScale = Math.max(1.2, Math.min(3.0, targetH / Math.max(12, th)));
+    const effScale = Math.max(1.15, Math.min(2.8, targetH / Math.max(12, th)));
     const drawW = Math.round(tw * effScale);
     const drawH = Math.round(th * effScale);
     const out = document.createElement('canvas');
@@ -730,20 +730,23 @@ const PdfHandwritingImporter = (() => {
     ctx.imageSmoothingEnabled = true;
     if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(tmp, 0, 0, tw, th, pad, pad, out.width - pad * 2, out.height - pad * 2);
-
-    // เพิ่มคอนทราสต์อ่อนๆ หลัง scale เพื่อให้เส้นปากกาคมชัดในสายตา Tesseract 5 LSTM
-    const fimg = ctx.getImageData(0, 0, out.width, out.height);
-    const fd = fimg.data;
-    for (let i = 0; i < out.width * out.height; i++) {
-      const o = i * 4;
-      const g = fd[o];
-      if (g < 245) {
-        const boosted = g < 170 ? Math.max(0, Math.round(g * 0.35)) : Math.min(255, Math.round((g - 170) * 3.0));
-        fd[o] = boosted; fd[o + 1] = boosted; fd[o + 2] = boosted;
-      }
-    }
-    ctx.putImageData(fimg, 0, 0);
     return out;
+  }
+
+  /**
+   * กรองข้อความขยะที่ OCR อ่านผิดจากลายมือหวัด (เช่น "TVW NTE r IWF FF gl") เพื่อไม่ให้รกช่องรางม่าน/ผ้าม่าน
+   */
+  function isLikelyOcrGarbage(str) {
+    const s = String(str || '').trim();
+    if (!s || s.length < 2) return true;
+    // ถ้ามีคำสั้นๆ 1-2 ตัวอักษรแยกกันตั้งแต่ 4 คำขึ้นไป มักเป็น noise
+    const toks = s.split(/\s+/).filter(Boolean);
+    const shortToks = toks.filter(t => t.length <= 2).length;
+    if (toks.length >= 4 && shortToks / toks.length >= 0.65) return true;
+    // ถ้ามีอักขระแปลกปลอมเกิน 30%
+    const cleanLen = s.replace(/[^ก-๙A-Za-z0-9.\-/\s()]/g, '').length;
+    if (cleanLen / s.length < 0.72) return true;
+    return false;
   }
 
   /**
@@ -985,28 +988,32 @@ const PdfHandwritingImporter = (() => {
       used.add(widthCand);
     }
 
-    // ซ้ายของ width -> extL (ชิดกรอบ) และ wallL (ชิดซ้ายสุด)
+    // ซ้ายของ width -> extL (ชิดกรอบ, ค่าเผื่อต้อง <= 150 ซม.) และ wallL (ชิดซ้ายสุด)
     const leftTop = topBand.filter(b => !used.has(b) && b.rx < (widthCand ? widthCand.rx - 0.05 : 0.35)).sort((a, b) => a.rx - b.rx);
     if (leftTop.length >= 2) {
       wObj.wallL = fixLikelyDecimal(leftTop[0].val, 'wall');
-      wObj.extL = fixLikelyDecimal(leftTop[leftTop.length - 1].val, 'ext');
+      const candExtL = fixLikelyDecimal(leftTop[leftTop.length - 1].val, 'ext');
+      if (parseFloat(candExtL) <= 150) wObj.extL = candExtL;
       leftTop.forEach(b => used.add(b));
     } else if (leftTop.length === 1) {
       const b = leftTop[0];
-      if (b.rx >= 0.18 || b.n <= 40) wObj.extL = fixLikelyDecimal(b.val, 'ext');
+      const candExtL = fixLikelyDecimal(b.val, 'ext');
+      if ((b.rx >= 0.18 || parseFloat(candExtL) <= 40) && parseFloat(candExtL) <= 150) wObj.extL = candExtL;
       else wObj.wallL = fixLikelyDecimal(b.val, 'wall');
       used.add(b);
     }
 
-    // ขวาของ width (ry <= 0.38) -> extR (rx 0.54..0.72) และ wallR (rx > 0.72)
+    // ขวาของ width (ry <= 0.38) -> extR (rx 0.54..0.72, <= 150 ซม.) และ wallR (rx > 0.72)
     const rightTop = topBand.filter(b => !used.has(b) && b.rx > (widthCand ? widthCand.rx + 0.05 : 0.54) && b.ry <= 0.38).sort((a, b) => a.rx - b.rx);
     if (rightTop.length >= 2) {
-      wObj.extR = fixLikelyDecimal(rightTop[0].val, 'ext');
+      const candExtR = fixLikelyDecimal(rightTop[0].val, 'ext');
+      if (parseFloat(candExtR) <= 150) wObj.extR = candExtR;
       wObj.wallR = fixLikelyDecimal(rightTop[rightTop.length - 1].val, 'wall');
       rightTop.forEach(b => used.add(b));
     } else if (rightTop.length === 1) {
       const b = rightTop[0];
-      if (b.rx <= 0.70 || b.n <= 45) wObj.extR = fixLikelyDecimal(b.val, 'ext');
+      const candExtR = fixLikelyDecimal(b.val, 'ext');
+      if ((b.rx <= 0.70 || parseFloat(candExtR) <= 45) && parseFloat(candExtR) <= 150) wObj.extR = candExtR;
       else wObj.wallR = fixLikelyDecimal(b.val, 'wall');
       used.add(b);
     }
@@ -1384,19 +1391,23 @@ const PdfHandwritingImporter = (() => {
         // แยกอ่านแถวที่ 1 ของตารางคำนวณ (รางม่าน: railW x railH = tracks) ที่ ry = 0.778..0.858
         // เพื่อตัดแถวผ้าทึบ/โปร่งที่ซ้อนติดกันด้านล่างออก 100% (แก้ปัญหา 500/166/266 แตะกัน!)
         const railCells = [
-          { key: 'railW',      rx: 0.15, rw: 0.21, range: { min: 20, max: 6505 }, fType: 'dim',  aspect: 2.0 },
-          { key: 'railH',      rx: 0.37, rw: 0.19, range: { min: 20, max: 6505 }, fType: 'dim',  aspect: 2.0 },
+          { key: 'railW',      rx: 0.15, rw: 0.21, range: { min: 20, max: 1200 }, fType: 'dim',  aspect: 2.0 },
+          { key: 'railH',      rx: 0.37, rw: 0.19, range: { min: 20, max: 900 },  fType: 'dim',  aspect: 2.0 },
           { key: 'railTracks', rx: 0.56, rw: 0.12, range: { min: 1,  max: 6 },    fType: 'int',  aspect: 0.8 },
         ];
         for (const rc of railCells) {
           const meta = cropAndPreprocess(pg.canvas, rel(rc.rx, 0.778, rc.rw, 0.080), inkMode, 2.2, {
-            hasBlueInk: pg.hasBlueInk, autoTrim: true, targetTextH: 48, minInkPixels: 14, padding: 26, returnMeta: true,
+            hasBlueInk: pg.hasBlueInk, autoTrim: true, targetTextH: 44, minInkPixels: 14, padding: 26, returnMeta: true,
           });
           if (!meta || !meta.canvas) continue;
-          const v = await recognizeNumericCanvas(workerEng, meta.canvas, rc.aspect, rc.range);
+          const v = await recognizeNumericCanvas(workerEng, meta.canvas, rc.aspect, { min: rc.range.min, max: 6505 });
           if (v) {
-            wObj[rc.key] = rc.fType === 'int' ? String(Math.round(parseFloat(v))) : fixLikelyDecimal(v, rc.fType);
-            blobDebug.push(`${rc.key}=${wObj[rc.key]}`);
+            const cleaned = rc.fType === 'int' ? String(Math.round(parseFloat(v))) : fixLikelyDecimal(v, rc.fType);
+            const cn = parseFloat(cleaned);
+            if (!isNaN(cn) && cn >= rc.range.min && cn <= rc.range.max) {
+              wObj[rc.key] = cleaned;
+              blobDebug.push(`${rc.key}=${wObj[rc.key]}`);
+            }
           }
         }
 
@@ -1473,19 +1484,21 @@ const PdfHandwritingImporter = (() => {
         }
       }
 
-      // แถบรางม่าน (ใช้ workerEng + fuzzyMatch masterDB.rails)
+      // แถบรางม่าน (ใช้ workerEng + fuzzyMatch masterDB.rails + กรองข้อความขยะ)
       const railList = (typeof masterDB !== 'undefined' && Array.isArray(masterDB.rails)) ? masterDB.rails : [];
       const waveRaw = await ocrZoneText(workerEng, pg.canvas, { ...fx(0.68, 0.21), y: fabBaseY + 0.088, h: 0.028 }, inkMode, pg.hasBlueInk, '7', engCodeWL);
       if (waveRaw) {
         const rHit = fuzzyMatchDbItem(waveRaw, railList, ['name'], 0.60);
-        shObj.rods.wave = rHit ? rHit.name : waveRaw;
-        logs.push(`[รางลอน] "${shObj.rods.wave}" (ดิบ: ${waveRaw})`);
+        if (rHit) shObj.rods.wave = rHit.name;
+        else if (!isLikelyOcrGarbage(waveRaw)) shObj.rods.wave = waveRaw;
+        logs.push(`[รางลอน] "${shObj.rods.wave || '-'}" (ดิบ: ${waveRaw})`);
       }
       const pleatRaw = await ocrZoneText(workerEng, pg.canvas, { ...fx(0.68, 0.21), y: fabBaseY + 0.114, h: 0.028 }, inkMode, pg.hasBlueInk, '7', engCodeWL);
       if (pleatRaw) {
         const rHit = fuzzyMatchDbItem(pleatRaw, railList, ['name'], 0.60);
-        shObj.rods.pleat = rHit ? rHit.name : pleatRaw;
-        logs.push(`[รางจีบ/พับ] "${shObj.rods.pleat}" (ดิบ: ${pleatRaw})`);
+        if (rHit) shObj.rods.pleat = rHit.name;
+        else if (!isLikelyOcrGarbage(pleatRaw)) shObj.rods.pleat = pleatRaw;
+        logs.push(`[รางจีบ/พับ] "${shObj.rods.pleat || '-'}" (ดิบ: ${pleatRaw})`);
       }
     }
 
