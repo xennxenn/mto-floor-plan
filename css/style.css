@@ -1340,6 +1340,18 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
   outline: 2px solid #2563eb !important;
   background: #eff6ff !important;
 }
+.pdf-imp-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.pdf-imp-badge.blue { background: #dbeafe; color: #1d4ed8; }
+.pdf-imp-badge.green { background: #dcfce7; color: #15803d; }
+.pdf-imp-badge.amber { background: #fef3c7; color: #b45309; }
+.pdf-imp-badge.gray { background: #e2e8f0; color: #475569; }
 .pdf-imp-review {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
