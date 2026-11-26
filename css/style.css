@@ -526,13 +526,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
 .calc-group { display: flex; flex-direction: column; gap: 1px; }
 .calc-row {
   display: grid;
-  grid-template-columns: 52px 1fr 11px 1fr 11px 28px 18px 11px 82px 22px;
+  grid-template-columns: 52px 1fr 11px 1fr 11px 28px 18px 11px 92px 22px;
   align-items: flex-end;
   min-height: 15px;
   line-height: 1.38;
 }
 .calc-row .c-lbl { text-align: left; white-space: nowrap; }
 .calc-row .fl { font-size: 10.8px; line-height: 1.25; }
+.calc-row .fl.has-lining { font-size: 9.2px; letter-spacing: -0.25px; white-space: nowrap; }
 .calc-row .c-op { text-align: center; font-weight: 600; }
 .calc-row .c-unit { text-align: center; white-space: nowrap; }
 .calc-row .c-unit2 { text-align: right; white-space: nowrap; }

@@ -1532,10 +1532,12 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
 }
 
 /**
- * แยกเฉพาะตัวเลขจำนวนหลา (หลังเครื่องหมาย /) ออกจากข้อความช่องจำนวนหลา เช่น "5/8.9" -> 8.9 หรือ "8.9" -> 8.9
+ * แยกเฉพาะตัวเลขจำนวนหลาของผืนด้านหน้า (ตัดส่วนในวงเล็บผ้าเย็บประกบออกก่อน) เช่น "3/7.5 (1/4.0)" -> 7.5 หรือ "5/8.9" -> 8.9
  */
 function extractYardsFromCalcText(val) {
-  const s = String(val ?? '').trim();
+  const raw = String(val ?? '').trim();
+  if (!raw) return 0;
+  const s = raw.replace(/\([^)]*\)/g, '').trim();
   if (!s) return 0;
   if (s.includes('/')) {
     const parts = s.split('/');
@@ -1543,6 +1545,24 @@ function extractYardsFromCalcText(val) {
     return (!isNaN(afterSlash) && Number.isFinite(afterSlash)) ? afterSlash : 0;
   }
   const n = parseFloat(s.replace(/[^\d.-]/g, ''));
+  return (!isNaN(n) && Number.isFinite(n)) ? n : 0;
+}
+
+/**
+ * แยกตัวเลขจำนวนหลาของผ้าเย็บประกบจากวงเล็บด้านหลัง เช่น "3/7.5 (1/4.0)" -> 4.0 หรือ "1/4.0" -> 4.0
+ */
+function extractLiningYardsFromCalcText(val) {
+  const raw = String(val ?? '').trim();
+  if (!raw) return 0;
+  const m = /\(([^)]+)\)/.exec(raw);
+  const target = m ? m[1].trim() : raw;
+  if (!target) return 0;
+  if (target.includes('/')) {
+    const parts = target.split('/');
+    const afterSlash = parseFloat(parts[parts.length - 1].replace(/[^\d.-]/g, ''));
+    return (!isNaN(afterSlash) && Number.isFinite(afterSlash)) ? afterSlash : 0;
+  }
+  const n = parseFloat(target.replace(/[^\d.-]/g, ''));
   return (!isNaN(n) && Number.isFinite(n)) ? n : 0;
 }
 
@@ -2143,11 +2163,14 @@ function curtainNeedsHook(style1, style2) {
 
 /**
  * Combine opaque and sheer curtain style names with " / " when different.
+ * หากเลือกเย็บประกบ (lining1 / lining2) จะเติมคำว่า "เย็บประกบ" ต่อท้ายรูปแบบผ้าม่านของชั้นที่เลือก เช่น ม่านจีบเย็บประกบ หรือ ม่านลอนเทปเย็บประกบ / ม่านจีบ
  * หากเลือกบานนั้นๆ เป็นม่านจั่ว (w.specialType === 'gable') จะแสดง "ม่านจั่ว" กำกับไว้ด้วยเสมอ
  */
 function formatCurtainType(w) {
-  const s1 = (w.curtainStyle1 || '').trim();
-  const s2 = (w.curtainStyle2 || '').trim();
+  const s1Raw = (w.curtainStyle1 || '').trim();
+  const s2Raw = (w.curtainStyle2 || '').trim();
+  const s1 = (s1Raw && w.lining1 && !s1Raw.includes('เย็บประกบ')) ? `${s1Raw}เย็บประกบ` : s1Raw;
+  const s2 = (s2Raw && w.lining2 && !s2Raw.includes('เย็บประกบ')) ? `${s2Raw}เย็บประกบ` : s2Raw;
   let base = '';
   if (s1 && s2 && s1 !== s2) base = `${s1} / ${s2}`;
   else if (s1) base = s1;

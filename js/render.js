@@ -899,16 +899,21 @@ function rMap(sheet) {
   </div>`;
 }
 
-function rCalc(t, r, u1, u2, rowKey = '', manualFlags = null) {
+function rCalc(t, r, u1, u2, rowKey = '', manualFlags = null, liningT = '') {
   r = r || {};
   const mf = manualFlags || {};
   const valA = withManualStar(r.a, mf.a);
   const valB = withManualStar(r.b, mf.b);
   const valN = withManualStar(r.n, mf.n);
-  const valT = withManualStar(r.t, mf.t);
+  const baseT = withManualStar(r.t, mf.t);
+  const linStr = String(liningT ?? '').trim();
+  const valT = linStr
+    ? (String(baseT ?? '').trim() ? `${baseT} (${linStr})` : `(${linStr})`)
+    : baseT;
   const tRaw = String(valT ?? '').trim();
   const isTextOnlyT = !tRaw || tRaw === '-' || tRaw === 'ใช้รางเดิม' || tRaw === 'ไม่เอาราง' || tRaw === 'ไม่รับราง';
   const showU2 = (isTextOnlyT || tRaw.endsWith('หลา') || tRaw.endsWith('ตร.ม.') || tRaw.endsWith('เมตร') || tRaw.endsWith('ชุด')) ? '' : u2;
+  const hasLiningCls = linStr ? ' has-lining' : '';
   return `<div class="calc-row" data-calc-row="${esc(rowKey)}">
     <span class="c-lbl">${esc(t)}</span>
     <span class="fl" data-calc-col="a">${esc(valA)}</span>
@@ -918,7 +923,7 @@ function rCalc(t, r, u1, u2, rowKey = '', manualFlags = null) {
     <span class="fl" data-calc-col="n">${esc(valN)}</span>
     <span class="c-unit">${esc(u1)}</span>
     <span class="c-op">=</span>
-    <span class="fl" data-calc-col="t">${esc(valT)}</span>
+    <span class="fl${hasLiningCls}" data-calc-col="t" title="${esc(valT)}">${esc(valT)}</span>
     <span class="c-unit2">${esc(showU2)}</span>
   </div>`;
 }
@@ -1035,10 +1040,12 @@ function rWinCell(w, n, winIdx = 0) {
       ${rCalc(lbl2, singleBlindRow, 'ผืน', 'ตร.ม.', 'blackout', boMF)}
     `;
   } else {
+    const lin1Disp = (w.lining1 && !isBlind1) ? withManualStar(w.lining1T, mf.boLinT) : '';
+    const lin2Disp = (w.lining2 && !isBlind2) ? withManualStar(w.lining2T, mf.shLinT) : '';
     calcHtml = `
       ${rCalc(lbl1, w.rail, railUnit1, railUnit2, 'rail', railMF)}
-      ${rCalc(lbl2, w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา', 'blackout', boMF)}
-      ${rCalc(lbl3, w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา', 'sheer', shMF)}
+      ${rCalc(lbl2, w.blackout, 'ผืน', isBlind1 ? 'ตร.ม.' : 'หลา', 'blackout', boMF, lin1Disp)}
+      ${rCalc(lbl3, w.sheer, 'ผืน', isBlind2 ? 'ตร.ม.' : 'หลา', 'sheer', shMF, lin2Disp)}
     `;
   }
 
@@ -1167,6 +1174,26 @@ function computePageFabricQtySums(sheet, pageWins) {
         }
       }
     }
+    // รวมจำนวนหลาของผ้าเย็บประกบ (ชั้นที่ 1 และ/หรือ ชั้นที่ 2) ลงคอลัมน์ OTHER (อื่นๆ)
+    const parseLinYds = val => (typeof extractLiningYardsFromCalcText === 'function')
+      ? extractLiningYardsFromCalcText(val)
+      : parseYds(val);
+    if (w.lining1 && !isBlind1) {
+      const linY1 = parseLinYds(w.lining1T || (String(w.blackout && w.blackout.t || '').includes('(') ? w.blackout.t : ''));
+      if (linY1 > 0 && hasProductInCol(f.other)) {
+        sums.other = Math.round((sums.other + linY1) * 100) / 100;
+      }
+    }
+    if (w.lining2) {
+      const style2 = String(w.curtainStyle2 || '').trim();
+      const isBlind2 = /ม่านม้วน|มู่ลี่|ม่านปรับแสง/.test(style2);
+      if (!isBlind2) {
+        const linY2 = parseLinYds(w.lining2T || (String(w.sheer && w.sheer.t || '').includes('(') ? w.sheer.t : ''));
+        if (linY2 > 0 && hasProductInCol(f.other)) {
+          sums.other = Math.round((sums.other + linY2) * 100) / 100;
+        }
+      }
+    }
   });
   return sums;
 }
@@ -1226,7 +1253,13 @@ function rFabric(sheet, pageWins) {
         </th>
         <th data-fab-col="roller">ROLLER BLINDS<br>ม่านม้วน</th>
         <th data-fab-col="blinds">BAMBOO BLINDS<br>มู่ลี่</th>
-        <th data-fab-col="other">OTHER<br>${esc(f.other.label || 'อื่นๆ')}</th>
+        <th class="th-split" data-fab-col="other">
+          <div class="split-box">
+            <div>${chkMini(f.other.grain === 'opaque' || (f.other.grain !== '' && !!f.other.isOpaque))}<span>ทึบ</span></div>
+            <div>${chkMini(f.other.grain === 'sheer' || (f.other.grain !== '' && !!f.other.isSheer))}<span>โปร่ง</span></div>
+          </div>
+          <div class="split-title">OTHER<br>${esc(f.other.label || 'อื่นๆ')}</div>
+        </th>
       </tr>
     </thead>
     <tbody>
