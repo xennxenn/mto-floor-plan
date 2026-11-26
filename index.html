@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=34">
+  <link rel="stylesheet" href="css/style.css?v=35">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -287,7 +287,7 @@
               </thead>
               <tbody>
                 <tr>
-                  <th>ผ้าม่านทึบ</th>
+                  <th>ผ้าม่านทึบ <button type="button" data-act="clearFabricCol" data-col="blackout" title="ล้างข้อมูลผ้าม่านทึบ" style="padding:0 4px;font-size:10px;margin-left:2px">✕</button></th>
                   <td>
                     <label><input type="radio" name="ed_fab_grain_blackout" value="opaque" data-fab-grain="blackout">ทึบ</label>
                     <label><input type="radio" name="ed_fab_grain_blackout" value="sheer" data-fab-grain="blackout">โปร่ง</label>
@@ -298,7 +298,7 @@
                   <td><input data-sheet="fabrics.blackout.qty"></td>
                 </tr>
                 <tr>
-                  <th>ผ้าม่านโปร่ง</th>
+                  <th>ผ้าม่านโปร่ง <button type="button" data-act="clearFabricCol" data-col="sheer" title="ล้างข้อมูลผ้าม่านโปร่ง" style="padding:0 4px;font-size:10px;margin-left:2px">✕</button></th>
                   <td>
                     <label><input type="radio" name="ed_fab_grain_sheer" value="opaque" data-fab-grain="sheer">ทึบ</label>
                     <label><input type="radio" name="ed_fab_grain_sheer" value="sheer" data-fab-grain="sheer">โปร่ง</label>
@@ -309,7 +309,7 @@
                   <td><input data-sheet="fabrics.sheer.qty"></td>
                 </tr>
                 <tr>
-                  <th>ม่านม้วน</th>
+                  <th>ม่านม้วน <button type="button" data-act="clearFabricCol" data-col="roller" title="ล้างข้อมูลม่านม้วน" style="padding:0 4px;font-size:10px;margin-left:2px">✕</button></th>
                   <td class="c">-</td>
                   <td><input list="dlBlinds" data-sheet="fabrics.roller.name"></td>
                   <td><input data-sheet="fabrics.roller.design"></td>
@@ -317,7 +317,7 @@
                   <td><input data-sheet="fabrics.roller.qty"></td>
                 </tr>
                 <tr>
-                  <th>มู่ลี่</th>
+                  <th>มู่ลี่ <button type="button" data-act="clearFabricCol" data-col="blinds" title="ล้างข้อมูลมู่ลี่" style="padding:0 4px;font-size:10px;margin-left:2px">✕</button></th>
                   <td class="c">-</td>
                   <td><input list="dlBlinds" data-sheet="fabrics.blinds.name"></td>
                   <td><input data-sheet="fabrics.blinds.design"></td>
@@ -325,7 +325,7 @@
                   <td><input data-sheet="fabrics.blinds.qty"></td>
                 </tr>
                 <tr>
-                  <th><input class="th-in" data-sheet="fabrics.other.label" placeholder="อื่นๆ"></th>
+                  <th><span class="inline" style="gap:2px"><input class="th-in" data-sheet="fabrics.other.label" placeholder="อื่นๆ"><button type="button" data-act="clearFabricCol" data-col="other" title="ล้างข้อมูลช่องอื่นๆ" style="padding:0 4px;font-size:10px">✕</button></span></th>
                   <td>
                     <label><input type="radio" name="ed_fab_grain_other" value="opaque" data-fab-grain="other">ทึบ</label>
                     <label><input type="radio" name="ed_fab_grain_other" value="sheer" data-fab-grain="other">โปร่ง</label>
@@ -594,11 +594,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=34"></script>
-  <script src="js/plan.js?v=34"></script>
-  <script src="js/render.js?v=34"></script>
-  <script src="js/sync.js?v=34"></script>
-  <script src="js/pdf-import.js?v=34"></script>
-  <script src="js/app.js?v=34"></script>
+  <script src="js/db.js?v=35"></script>
+  <script src="js/plan.js?v=35"></script>
+  <script src="js/render.js?v=35"></script>
+  <script src="js/sync.js?v=35"></script>
+  <script src="js/pdf-import.js?v=35"></script>
+  <script src="js/app.js?v=35"></script>
 </body>
 </html>

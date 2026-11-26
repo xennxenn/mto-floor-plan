@@ -939,9 +939,12 @@ function normalizeWidthFormulaItem(wf, idx) {
 }
 
 function normalizeHeightFormulaItem(hf, idx) {
+  const rawStyle = (hf && hf.curtainStyle !== undefined) ? hf.curtainStyle : '*';
+  const styleList = parseCurtainStylesList(rawStyle);
+  const style = (String(rawStyle).trim() === '*' || !styleList.length) ? '*' : styleList.join(', ');
   const item = Object.assign({
     id: 'hf_' + (idx + 1),
-    curtainStyle: '*',
+    curtainStyle: style,
     rodType: '*',
     railGroup: '*',
     railName: '*',
@@ -953,6 +956,7 @@ function normalizeHeightFormulaItem(hf, idx) {
     heightExp: 'RH - FL_BASE',
     roundMode: 'none',
   }, hf || {});
+  item.curtainStyle = style;
   item.pieces = '*'; // ไม่ใช้จำนวนผืนในฐานข้อมูลความสูงผ้าม่าน ใช้กลุ่มรางม่านและรายการรางม่านแทน
   if (!item.railGroup) item.railGroup = '*';
   if (!item.railName) item.railName = '*';
@@ -1167,10 +1171,12 @@ function normalizeMasterDBObject(raw) {
   if (!raw || typeof raw !== 'object') return def;
   const isLegacy8 = !(Number(raw.schemaVersion) >= 8);
   const isLegacy9 = !(Number(raw.schemaVersion) >= 9);
-  const rawRails = Array.isArray(raw.rails) ? raw.rails : [];
+  const hasRawRails = Array.isArray(raw.rails);
+  const rawRails = hasRawRails ? raw.rails : [];
   const onlyRails = rawRails.filter(r => r && !isAccessoryCategory(r.rodCategory || r.category));
   const migratedAcc = rawRails.filter(r => r && isAccessoryCategory(r.rodCategory || r.category));
-  const rawAccessories = Array.isArray(raw.accessories) && raw.accessories.length
+  // เคารพ Array ว่าง ([]) เมื่อผู้ดูแลระบบลบข้อมูลออกหมดแล้ว ไม่ดึงค่าเริ่มต้นกลับมาทับอีก
+  const rawAccessories = Array.isArray(raw.accessories)
     ? raw.accessories
     : (migratedAcc.length ? migratedAcc : def.accessories);
 
@@ -1198,26 +1204,26 @@ function normalizeMasterDBObject(raw) {
     stdParams: Object.assign({}, def.stdParams, raw.stdParams || {}),
     branches: Array.from(branchSet),
     staff: normalizedStaff,
-    curtains: Array.isArray(raw.curtains) && raw.curtains.length
+    curtains: Array.isArray(raw.curtains)
       ? raw.curtains.map((c, i) => normalizeCurtainItem(c, i))
       : def.curtains,
-    hooks: Array.isArray(raw.hooks) && raw.hooks.length ? raw.hooks : def.hooks,
-    remarks: Array.isArray(raw.remarks) && raw.remarks.length ? raw.remarks : def.remarks,
-    fabrics: Array.isArray(raw.fabrics) && raw.fabrics.length
+    hooks: Array.isArray(raw.hooks) ? raw.hooks : def.hooks,
+    remarks: Array.isArray(raw.remarks) ? raw.remarks : def.remarks,
+    fabrics: Array.isArray(raw.fabrics)
       ? raw.fabrics.map((f, i) => normalizeFabricItem(f, i))
       : def.fabrics,
-    rails: (onlyRails.length ? onlyRails : def.rails).map((rl, i) => normalizeRailItem(rl, i)),
+    rails: (hasRawRails ? onlyRails : def.rails).map((rl, i) => normalizeRailItem(rl, i)),
     accessories: rawAccessories.map((ac, i) => normalizeAccessoryItem(ac, i)),
-    blinds: (Array.isArray(raw.blinds) && raw.blinds.length ? raw.blinds : def.blinds).map((bl, i) => normalizeBlindItem(bl, i)),
-    blindCords: (Array.isArray(raw.blindCords) && raw.blindCords.length ? raw.blindCords : def.blindCords).map((bc, i) => normalizeBlindCordItem(bc, i)),
-    blindValances: (Array.isArray(raw.blindValances) && raw.blindValances.length ? raw.blindValances : def.blindValances).map((bv, i) => normalizeBlindValanceItem(bv, i)),
-    widthFormulas: !isLegacy9 && Array.isArray(raw.widthFormulas) && raw.widthFormulas.length
+    blinds: (Array.isArray(raw.blinds) ? raw.blinds : def.blinds).map((bl, i) => normalizeBlindItem(bl, i)),
+    blindCords: (Array.isArray(raw.blindCords) ? raw.blindCords : def.blindCords).map((bc, i) => normalizeBlindCordItem(bc, i)),
+    blindValances: (Array.isArray(raw.blindValances) ? raw.blindValances : def.blindValances).map((bv, i) => normalizeBlindValanceItem(bv, i)),
+    widthFormulas: !isLegacy9 && Array.isArray(raw.widthFormulas)
       ? raw.widthFormulas.map((w, i) => normalizeWidthFormulaItem(w, i))
       : def.widthFormulas,
-    heightFormulas: !isLegacy9 && Array.isArray(raw.heightFormulas) && raw.heightFormulas.length
+    heightFormulas: !isLegacy9 && Array.isArray(raw.heightFormulas)
       ? raw.heightFormulas.map((h, i) => normalizeHeightFormulaItem(h, i))
       : def.heightFormulas,
-    fabricCalcRules: !isLegacy8 && Array.isArray(raw.fabricCalcRules) && raw.fabricCalcRules.length
+    fabricCalcRules: !isLegacy8 && Array.isArray(raw.fabricCalcRules)
       ? raw.fabricCalcRules.map((r, i) => normalizeFabricCalcRuleItem(r, i))
       : def.fabricCalcRules,
   };
@@ -1416,7 +1422,7 @@ function getHeightFormulasForWindow(curtainStyle, rodType, hookSize, railTracks 
   const rm = resolveRailMetaByName(railModel);
   const effRod = rodType || rm.rodCategory || naturalRod;
   const matched = all.filter(f => {
-    const matchStyle = !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
+    const matchStyle = matchesCurtainStyleRule(f.curtainStyle, curtainStyle);
     const matchRod = !effRod || !f.rodType || f.rodType === '*' || f.rodType === effRod || (effRod !== 'รางโชว์' && naturalRod && f.rodType === naturalRod);
     const matchRailGroup = !rm.railGroup || !f.railGroup || f.railGroup === '*' || f.railGroup.trim().toLowerCase() === rm.railGroup.toLowerCase();
     const matchRailName = !rm.name || !f.railName || f.railName === '*' || f.railName.trim().toLowerCase() === rm.name.toLowerCase();
@@ -1458,7 +1464,7 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
     const reqHook = fHook && fHook !== '*';
     const reqTracks = fTracks && fTracks !== '*';
 
-    if (reqStyle && fStyle !== styleTrim && !styleTrim.includes(fStyle)) return false;
+    if (reqStyle && !matchesCurtainStyleRule(fStyle, styleTrim)) return false;
     if (isBlindStyle && !reqStyle) return false;
     if (reqRod && (!effRod || fRod !== effRod)) return false;
 
@@ -1493,8 +1499,12 @@ function findAutoHeightFormulaForWindow(curtainStyle, rodType, hookSize, railTra
     let sc = 0;
     if (fRail && fRail !== '*' && rm.name && fRail.toLowerCase() === rm.name.toLowerCase()) sc += 20;
     if (fGroup && fGroup !== '*' && rm.railGroup && fGroup.toLowerCase() === rm.railGroup.toLowerCase()) sc += 14;
-    if (fStyle === styleTrim) sc += 10;
-    else if (fStyle && fStyle !== '*' && styleTrim.includes(fStyle)) sc += 5;
+    if (fStyle === styleTrim) sc += 12;
+    else if (fStyle && fStyle !== '*') {
+      const fList = parseCurtainStylesList(fStyle);
+      if (fList.includes(styleTrim)) sc += 10;
+      else if (matchesCurtainStyleRule(fStyle, styleTrim)) sc += 5;
+    }
     if (fHook && fHook !== '*' && hookSize && (fHook === hookSize || normalizeHookKey(fHook) === hKey)) sc += 8;
     if (fRod && fRod !== '*' && (fRod === primaryRod || fRod === naturalRod)) sc += 6;
     if (fTracks && fTracks !== '*' && railTracks && fTracks === String(railTracks)) sc += 4;
@@ -2929,20 +2939,108 @@ const MasterDBModal = (() => {
     return `<span class="db-row-acts"><button type="button" class="db-dup-btn" data-db-dup="${list}.${i}" title="ทำซ้ำรายการนี้">📋</button><button type="button" class="danger" data-db-del="${list}.${i}" title="ลบรายการนี้">✕</button></span>`;
   }
 
-  function renderWidthStylePicker(wf, i) {
-    const raw = String((wf && wf.curtainStyle) || '*').trim();
+  let msMenuEl = null;
+  let msActive = null; // { listKey, idx, btnEl }
+
+  function closeMultiStyleMenu() {
+    if (msMenuEl) msMenuEl.hidden = true;
+    msActive = null;
+  }
+
+  function renderMultiStyleDropdown(listKey, i, styleVal) {
+    const raw = String(styleVal || '*').trim();
+    const isAll = !raw || raw === '*';
+    const picked = isAll ? [] : parseCurtainStylesList(raw);
+    const label = isAll ? 'ทั้งหมด (*)' : picked.join(', ');
+    const badge = (!isAll && picked.length > 1) ? `<span class="db-ms-cnt">${picked.length}</span>` : '';
+    return `<button type="button" class="db-ms-btn" data-db-ms-open="${listKey}.${i}" title="${escH(label)}"><span class="db-ms-lbl">${escH(label)}</span>${badge}<span>▾</span></button>`;
+  }
+
+  function openMultiStyleMenu(listKey, idx, btnEl) {
+    if (!msMenuEl) {
+      msMenuEl = document.createElement('div');
+      msMenuEl.id = 'dbMultiStyleMenu';
+      msMenuEl.className = 'db-ms-menu no-print';
+      msMenuEl.hidden = true;
+      document.body.appendChild(msMenuEl);
+      msMenuEl.addEventListener('click', e => {
+        e.stopPropagation();
+        const cb = e.target.closest('input[type="checkbox"][data-ms-val]');
+        if (!cb || !msActive) return;
+        const { listKey: lk, idx: rowIdx } = msActive;
+        const arr = masterDB[lk];
+        const rowObj = arr && arr[rowIdx];
+        if (!rowObj) return;
+        const val = cb.dataset.msVal;
+        if (val === '*') {
+          rowObj.curtainStyle = '*';
+        } else {
+          const curList = (String(rowObj.curtainStyle || '').trim() === '*') ? [] : parseCurtainStylesList(rowObj.curtainStyle);
+          const pos = curList.indexOf(val);
+          if (cb.checked && pos < 0) curList.push(val);
+          else if (!cb.checked && pos >= 0) curList.splice(pos, 1);
+          rowObj.curtainStyle = curList.length ? curList.join(', ') : '*';
+        }
+        saveMasterDB();
+        // อัปเดตเฉพาะปุ่มในแถวเดิมและรายการติ๊กในเมนูโดยไม่ re-render ทั้งหน้าต่าง
+        const tr = document.querySelector(`tr[data-db-row="${lk}.${rowIdx}"]`);
+        const cell = tr && tr.querySelector('.db-ms-cell');
+        if (cell) {
+          cell.innerHTML = renderMultiStyleDropdown(lk, rowIdx, rowObj.curtainStyle);
+          msActive.btnEl = cell.querySelector('.db-ms-btn');
+        }
+        if (lk === 'widthFormulas') {
+          const gatherCell = tr && tr.querySelector('.wf-gather-cell');
+          if (gatherCell) gatherCell.textContent = formatWidthGatherText(rowObj.curtainStyle);
+        }
+        renderMultiStyleMenuItems(rowObj.curtainStyle);
+      });
+      document.addEventListener('click', e => {
+        if (msMenuEl && !msMenuEl.hidden && !e.target.closest('#dbMultiStyleMenu') && !e.target.closest('[data-db-ms-open]')) {
+          closeMultiStyleMenu();
+        }
+      });
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && msMenuEl && !msMenuEl.hidden) closeMultiStyleMenu();
+      });
+    }
+    if (msActive && msActive.listKey === listKey && msActive.idx === idx && !msMenuEl.hidden) {
+      closeMultiStyleMenu();
+      return;
+    }
+    const rowObj = masterDB[listKey] && masterDB[listKey][idx];
+    if (!rowObj) return;
+    msActive = { listKey, idx, btnEl };
+    renderMultiStyleMenuItems(rowObj.curtainStyle);
+    msMenuEl.hidden = false;
+    const rect = btnEl.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const mw = Math.max(210, Math.min(280, rect.width + 40));
+    let left = Math.max(8, Math.min(rect.left, vw - mw - 8));
+    let top = rect.bottom + 3;
+    if (top + 260 > vh && rect.top > 260) top = Math.max(8, rect.top - 265);
+    msMenuEl.style.left = left + 'px';
+    msMenuEl.style.top = top + 'px';
+    msMenuEl.style.width = mw + 'px';
+  }
+
+  function renderMultiStyleMenuItems(styleVal) {
+    if (!msMenuEl) return;
+    const raw = String(styleVal || '*').trim();
     const isAll = !raw || raw === '*';
     const picked = isAll ? [] : parseCurtainStylesList(raw);
     const curtainNames = Array.from(new Set((masterDB.curtains || []).map(c => String((c && c.name) || '').trim()).filter(Boolean)));
     picked.forEach(st => { if (!curtainNames.includes(st)) curtainNames.push(st); });
-    return `
-      <div class="wf-style-pills" data-wf-style-row="${i}">
-        <button type="button" class="wf-style-pill ${isAll ? 'is-on' : ''}" data-db-wf-style-all="${i}" title="ใช้กับรูปแบบผ้าม่านทั้งหมด">${isAll ? '✓ ' : ''}ทั้งหมด (*)</button>
-        ${curtainNames.map(name => {
-          const on = !isAll && picked.includes(name);
-          return `<button type="button" class="wf-style-pill ${on ? 'is-on' : ''}" data-db-wf-style="${i}" data-style="${escH(name)}">${on ? '✓ ' : '+ '}${escH(name)}</button>`;
-        }).join('')}
-      </div>
+    msMenuEl.innerHTML = `
+      <label class="db-ms-opt is-all">
+        <input type="checkbox" data-ms-val="*" ${isAll ? 'checked' : ''}> ทั้งหมด (*)
+      </label>
+      ${curtainNames.map(name => `
+        <label class="db-ms-opt">
+          <input type="checkbox" data-ms-val="${escH(name)}" ${(!isAll && picked.includes(name)) ? 'checked' : ''}> ${escH(name)}
+        </label>
+      `).join('')}
     `;
   }
 
@@ -3101,14 +3199,14 @@ const MasterDBModal = (() => {
               <button type="button" class="${widthLayerFilter === 'both' ? 'primary' : ''}" data-db-wlayer-filter="both">ทั้งม่านทึบและม่านโปร่ง</button>
             </div>
           </div>
-          • <b>รูปแบบผ้าม่าน</b>: คลิกเลือกได้หลายรูปแบบพร้อมกันใน 1 สูตร (เช่น <code>✓ ม่านจีบ</code> + <code>✓ ม่านลอน</code>) หรือเลือก <code>ทั้งหมด (*)</code><br>
+          • <b>รูปแบบผ้าม่าน</b>: กด Dropdown เพื่อติ๊กเลือกได้มากกว่า 1 รูปแบบพร้อมกัน (เช่น <code>ม่านจีบ, ม่านลอน</code>) หรือเลือก <code>ทั้งหมด (*)</code><br>
           • <b>แบบย่นสำเร็จ (ม่านจีบ / ม่านลอน)</b>: <code>((RW / P) + OV + SR)</code> | <b>แบบขึงตึง (รูปแบบม่านที่เหลือ)</b>: <code>((RW * G) / P)</code>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1540px">
+          <table class="ed-tbl" style="min-width:1480px">
             <thead>
               <tr>
-                <th style="min-width:215px">รูปแบบผ้าม่าน (เลือกได้หลายแบบ)</th>
+                <th style="width:175px">รูปแบบผ้าม่าน (เลือกได้หลายแบบ)</th>
                 <th style="width:175px">การคิดย่อย</th>
                 <th style="width:145px">ใช้คำนวณกับ</th>
                 <th style="width:115px">ประเภทรางม่าน</th>
@@ -3130,7 +3228,7 @@ const MasterDBModal = (() => {
                 const subCalc = wf.subCalcType || getDefaultSubCalcType(firstStyle);
                 return `
                 <tr data-db-row="widthFormulas.${i}">
-                  <td class="wf-style-cell">${renderWidthStylePicker(wf, i)}</td>
+                  <td class="db-ms-cell">${renderMultiStyleDropdown('widthFormulas', i, wf.curtainStyle)}</td>
                   <td><select data-db-edit="widthFormulas.${i}.subCalcType">${subCalcSelectOpts(subCalc)}</select></td>
                   <td><select data-db-edit="widthFormulas.${i}.layerType">${widthLayerSelectOpts(lt)}</select></td>
                   <td><select data-db-edit="widthFormulas.${i}.rodType">${rodSelectOpts(wf.rodType || '*')}</select></td>
@@ -3161,10 +3259,10 @@ const MasterDBModal = (() => {
           • <b>ความสูงราง (<code>RH</code>) = สูงเฟรม (<code>H</code>) + เผื่อบน (<code>ET</code>) + เผื่อล่าง (<code>EB</code>)</b>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1460px">
+          <table class="ed-tbl" style="min-width:1510px">
             <thead>
               <tr>
-                <th style="width:110px">รูปแบบผ้าม่าน</th>
+                <th style="width:175px">รูปแบบผ้าม่าน (เลือกได้หลายแบบ)</th>
                 <th style="width:115px">ประเภทรางม่าน</th>
                 <th style="width:145px">กลุ่มรางม่าน (ขนาดเดียวกัน)</th>
                 <th style="width:170px">รายการรางม่าน</th>
@@ -3185,7 +3283,7 @@ const MasterDBModal = (() => {
                   : [];
                 return `
                 <tr data-db-row="heightFormulas.${i}">
-                  <td><select data-db-edit="heightFormulas.${i}.curtainStyle">${curtainSelectOpts(hf.curtainStyle)}</select></td>
+                  <td class="db-ms-cell">${renderMultiStyleDropdown('heightFormulas', i, hf.curtainStyle)}</td>
                   <td><select data-db-edit="heightFormulas.${i}.rodType">${rodSelectOpts(hf.rodType)}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.railGroup">${railGroupSelectOpts(grp)}</select></td>
                   <td>
@@ -3707,6 +3805,7 @@ const MasterDBModal = (() => {
       return true;
     };
     document.getElementById('dbClose').addEventListener('click', () => {
+      closeMultiStyleMenu();
       // หากมีชื่อสาขาค้างอยู่ในช่องเพิ่มสาขาก่อนกดปิด ให้บันทึกให้อัตโนมัติด้วย
       commitNewBranchesFromInput(false);
       if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
@@ -3866,39 +3965,11 @@ const MasterDBModal = (() => {
         }
         return;
       }
-      const wfStyleAllBtn = e.target.closest('[data-db-wf-style-all]');
-      if (wfStyleAllBtn) {
-        const wi = +wfStyleAllBtn.dataset.dbWfStyleAll;
-        const wf = masterDB.widthFormulas && masterDB.widthFormulas[wi];
-        if (wf) {
-          wf.curtainStyle = '*';
-          const tr = wfStyleAllBtn.closest('tr');
-          const styleCell = tr && tr.querySelector('.wf-style-cell');
-          const gatherCell = tr && tr.querySelector('.wf-gather-cell');
-          if (styleCell) styleCell.innerHTML = renderWidthStylePicker(wf, wi);
-          if (gatherCell) gatherCell.textContent = formatWidthGatherText(wf.curtainStyle);
-          saveMasterDB();
-        }
-        return;
-      }
-      const wfStyleBtn = e.target.closest('[data-db-wf-style]');
-      if (wfStyleBtn) {
-        const wi = +wfStyleBtn.dataset.dbWfStyle;
-        const stName = wfStyleBtn.dataset.style;
-        const wf = masterDB.widthFormulas && masterDB.widthFormulas[wi];
-        if (wf && stName) {
-          const curList = (String(wf.curtainStyle || '').trim() === '*') ? [] : parseCurtainStylesList(wf.curtainStyle);
-          const idx = curList.indexOf(stName);
-          if (idx >= 0) curList.splice(idx, 1);
-          else curList.push(stName);
-          wf.curtainStyle = curList.length ? curList.join(', ') : '*';
-          const tr = wfStyleBtn.closest('tr');
-          const styleCell = tr && tr.querySelector('.wf-style-cell');
-          const gatherCell = tr && tr.querySelector('.wf-gather-cell');
-          if (styleCell) styleCell.innerHTML = renderWidthStylePicker(wf, wi);
-          if (gatherCell) gatherCell.textContent = formatWidthGatherText(wf.curtainStyle);
-          saveMasterDB();
-        }
+      const msOpenBtn = e.target.closest('[data-db-ms-open]');
+      if (msOpenBtn) {
+        e.stopPropagation();
+        const [lk, idxStr] = msOpenBtn.dataset.dbMsOpen.split('.');
+        openMultiStyleMenu(lk, +idxStr, msOpenBtn);
         return;
       }
       const dupBtn = e.target.closest('[data-db-dup]');
@@ -4021,7 +4092,11 @@ const MasterDBModal = (() => {
           return;
         }
         masterDB[list].splice(+idx, 1);
-        saveMasterDB(); render();
+        saveMasterDB();
+        if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
+          RealtimeSync.flushNow();
+        }
+        render();
       }
     });
   }

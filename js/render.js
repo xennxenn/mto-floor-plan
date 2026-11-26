@@ -1049,8 +1049,10 @@ function rWinCell(w, n, winIdx = 0) {
     `;
   }
 
+  const cTypeLen = String(cType || '').length;
+  const cTypeCls = cTypeLen > 32 ? 'ctype-xs' : (cTypeLen > 24 ? 'ctype-sm' : (cTypeLen > 17 ? 'ctype-md' : ''));
   return `<div class="wc" data-preview-win="${winIdx}" title="${isUnassigned ? `คลิกเพื่อกำหนดข้อมูลช่องที่ ${esc(n)}` : `คลิกที่ส่วนใดของจุดที่ ${esc(numLabel)} เพื่อแก้ไขตรงจุดนั้นทันที`}">
-    <div class="r" data-win-part="header"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(boxLabel)}</span>${L('ประเภทม่าน')}${F(cType)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
+    <div class="r" data-win-part="header"><span class="wn">${esc(numLabel)}</span><span class="wbox">${esc(boxLabel)}</span>${L('ประเภทม่าน')}${F(cType, cTypeCls)}${L('ขนาดตะขอ')}${F(hookTxt, 'w45')}</div>
     <div class="opt-align-row" data-win-part="box">
       <span class="opt-lbl">กล่องม่าน</span>
       <span class="opt-col1">${CB(w.box === 'no', 'No')}</span>
@@ -1203,6 +1205,7 @@ function rFabric(sheet, pageWins) {
   const colKeys = ['blackout', 'sheer', 'roller', 'blinds', 'other'];
   const cols = [f.blackout, f.sheer, f.roller, f.blinds, f.other];
   const sums = computePageFabricQtySums(sheet, pageWins);
+  const upperEn = s => String(s ?? '').replace(/[a-z]+/g, m => m.toUpperCase());
   const row = (label, key) => `<tr><th>${label}</th>${cols.map((c, ci) => {
     const ck = colKeys[ci];
     let val = c[key];
@@ -1214,10 +1217,12 @@ function rFabric(sheet, pageWins) {
       val = c.design || (c.group ? (c.name || '') : '');
     } else if (ck === 'blinds' && key === 'color') {
       const parts = [];
-      if (String(c.color || '').trim()) parts.push(String(c.color).trim());
-      if (String(c.cordColor || '').trim()) parts.push(`${c.cordType || 'เชือก'}:${String(c.cordColor).trim()}`);
-      if (String(c.valanceColor || '').trim()) parts.push(`กล่อง:${String(c.valanceColor).trim()}`);
+      if (String(c.color || '').trim()) parts.push(upperEn(String(c.color).trim()));
+      if (String(c.cordColor || '').trim()) parts.push(`${c.cordType || 'เชือก'}:${upperEn(String(c.cordColor).trim())}`);
+      if (String(c.valanceColor || '').trim()) parts.push(`กล่อง:${upperEn(String(c.valanceColor).trim())}`);
       val = parts.join(' / ');
+    } else if (key === 'color') {
+      val = upperEn(val);
     } else if (key === 'qty') {
       const autoSum = sums[ck];
       if (!c.manualQty) {
@@ -1291,6 +1296,7 @@ function rGrommet(title, g, colors) {
 
 function rRods(sheet) {
   const r = sheet.rods, h = r.hold;
+  const upperEn = s => String(s ?? '').replace(/[a-z]+/g, m => m.toUpperCase());
   // Req #8: ใช้ vTextSVG วาดตัวอักษรแนวตั้ง ("แบบ", "สี", "ห่วงตาไก่") เพื่อไม่ให้เพี้ยนเป็นแนวนอนตอน Export PDF
   return `<table class="s-rod">
     <colgroup>
@@ -1304,12 +1310,12 @@ function rRods(sheet) {
         <td colspan="2">
           <div class="rod-top-grid">
             <div>
-              <div class="r" data-rod-slot="pleat">${L('รางม่านจีบ')}${F(r.pleat.model)}${L('สี')}${F(r.pleat.color, 'w80')}</div>
-              <div class="r" data-rod-slot="show">${L('รางโชว์')}${F(r.show.model)}${L('สี')}${F(r.show.color, 'w65')}${L('หัวปิดราง')}${F(r.show.cap, 'w70')}</div>
+              <div class="r" data-rod-slot="pleat">${L('รางม่านจีบ')}${F(r.pleat.model)}${L('สี')}${F(upperEn(r.pleat.color), 'w80')}</div>
+              <div class="r" data-rod-slot="show">${L('รางโชว์')}${F(r.show.model)}${L('สี')}${F(upperEn(r.show.color), 'w65')}${L('หัวปิดราง')}${F(r.show.cap, 'w70')}</div>
             </div>
             <div>
-              <div class="r" data-rod-slot="wave">${L('รางม่านลอน')}${F(r.wave.model)}${L('สี')}${F(r.wave.color, 'w80')}</div>
-              <div class="r" data-rod-slot="fold">${L('รางม่านพับ')}${F(r.fold.model)}${L('สี')}${F(r.fold.color, 'w80')}</div>
+              <div class="r" data-rod-slot="wave">${L('รางม่านลอน')}${F(r.wave.model)}${L('สี')}${F(upperEn(r.wave.color), 'w80')}</div>
+              <div class="r" data-rod-slot="fold">${L('รางม่านพับ')}${F(r.fold.model)}${L('สี')}${F(upperEn(r.fold.color), 'w80')}</div>
             </div>
           </div>
         </td>

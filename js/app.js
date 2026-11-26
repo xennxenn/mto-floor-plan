@@ -1931,6 +1931,7 @@ function buildWindowLiningEditorHTML(w, i, sh, opts = {}) {
             <label><input type="radio" name="${radioName}" value="opaque" data-fab-grain="other"> เกรนทึบ</label>
             <label><input type="radio" name="${radioName}" value="sheer" data-fab-grain="other"> เกรนโปร่ง</label>
             <span style="font-size:11px;color:#64748b">(ใช้รูปแบบม่าน ขนาดผ้า และจำนวนผืนเหมือนผ้าด้านหน้า)</span>
+            ${hasOtherName ? `<button type="button" class="danger" data-act="clearFabricCol" data-col="other" style="margin-left:auto;padding:2px 7px;font-size:11px">🗑️ ล้างผ้า OTHER</button>` : ''}
           </div>
           <div class="grid3" style="gap:6px">
             <label>ชื่อผ้าเย็บประกบ (ดึงจากฐานข้อมูลผ้า → OTHER)
@@ -3205,7 +3206,23 @@ function onFieldInput(e) {
   let v;
   if (el.type === 'checkbox') v = el.checked;
   else if (el.type === 'radio') { if (!el.checked) return; v = el.value; }
-  else v = el.value;
+  else {
+    v = el.value;
+    // ช่องที่ระบุชื่อสีเอง: แปลงตัวอักษรภาษาอังกฤษพิมพ์เล็กเป็นพิมพ์ใหญ่อัตโนมัติ (คงภาษาไทยและตำแหน่งเคอร์เซอร์เดิมไว้)
+    const targetPath = el.dataset.sheet || el.dataset.shared || '';
+    if (typeof v === 'string' && /[a-z]/.test(v) && (el.dataset.upperEn === '1' || /\.(color|cordColor|valanceColor|boColor|shColor|mainColor|joinColor)$/.test(targetPath))) {
+      const upperVal = v.replace(/[a-z]+/g, m => m.toUpperCase());
+      if (upperVal !== v) {
+        const sStart = el.selectionStart;
+        const sEnd = el.selectionEnd;
+        el.value = upperVal;
+        v = upperVal;
+        if (typeof sStart === 'number' && typeof el.setSelectionRange === 'function') {
+          try { el.setSelectionRange(sStart, sEnd ?? sStart); } catch (err) {}
+        }
+      }
+    }
+  }
 
   const isFromPopover = !!el.closest('#pdfQuickPopover');
 
@@ -3519,6 +3536,31 @@ const actions = {
     if (typeof refreshActivePopover === 'function') refreshActivePopover();
     changed();
   },
+  clearFabricCol(_i, _li, btnEl) {
+    const sh = currentSheet(); if (!sh || !sh.fabrics) return;
+    const col = (btnEl && btnEl.dataset && btnEl.dataset.col)
+      || (activePopoverCtx && activePopoverCtx.type === 'fabric' && activePopoverCtx.fabCol)
+      || '';
+    if (!col || !sh.fabrics[col]) return;
+    const prevLabel = col === 'other' ? (sh.fabrics.other.label || 'อื่นๆ') : undefined;
+    sh.fabrics[col] = col === 'other'
+      ? Object.assign(fab(''), { label: prevLabel || 'อื่นๆ' })
+      : fab('');
+    sh.fabrics[col].manualQty = false;
+    sh.fabrics[col]._pickedDbId = '';
+    if (activePopoverCtx && activePopoverCtx.type === 'fabric') {
+      activePopoverCtx.lastPickedMsg = '✔ ล้างข้อมูลช่องนี้เป็นค่าว่างแล้ว';
+    }
+    (sh.windows || []).forEach(w => {
+      if (w && w.calcMode !== 'manual') autoCalculateWindow(w, sh);
+    });
+    autoUpdateSheetFabricTableQty(sh);
+    if (!rightOnlyMode) renderWindowsEditor();
+    syncSheetInputs();
+    renderPreview();
+    if (typeof refreshActivePopover === 'function') refreshActivePopover();
+    scheduleBackgroundAutoSave(400);
+  },
   addBlindPiece(i) {
     const sh = currentSheet(); if (!sh || !sh.windows[i]) return;
     const w = sh.windows[i];
@@ -3736,13 +3778,16 @@ function setDropdownSortMode(mode) {
   try { localStorage.setItem(DROPDOWN_SORT_KEY, m); } catch (e) {}
   return m;
 }
+const TH_COLLATOR = (typeof Intl !== 'undefined' && Intl.Collator)
+  ? new Intl.Collator('th', { numeric: true, sensitivity: 'base' })
+  : null;
 function sortListByDropdownMode(arr, labelFn) {
   const list = Array.isArray(arr) ? arr.slice() : [];
   if (getDropdownSortMode() !== 'az') return list;
   return list.sort((a, b) => {
     const la = String(labelFn ? labelFn(a) : (a && (a.label || a.name)) || a || '').trim();
     const lb = String(labelFn ? labelFn(b) : (b && (b.label || b.name)) || b || '').trim();
-    return la.localeCompare(lb, 'th', { numeric: true, sensitivity: 'base' });
+    return TH_COLLATOR ? TH_COLLATOR.compare(la, lb) : la.localeCompare(lb, 'th', { numeric: true, sensitivity: 'base' });
   });
 }
 
@@ -3754,10 +3799,37 @@ function comboInputHTML({ kind, col = '', sheetPath = '', sharedPath = '', place
 }
 
 const MtoCombo = (() => {
+  const COMBO_BATCH_SIZE = 80;
   let menuEl = null;
   let activeWrap = null;
   let activeInput = null;
   let lastItems = [];
+  let renderedCount = 0;
+  let fabCache = { ref: null, len: -1, mode: '', firstKey: '', lastKey: '', items: [] };
+
+  function buildItemRowHTML(it, idx, curVal) {
+    return `<div class="mto-combo-item ${curVal === it.value ? 'is-selected' : ''}" data-combo-idx="${idx}"><b>${esc(it.label)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</div>`;
+  }
+
+  function appendMoreItems() {
+    if (!menuEl || !activeInput || renderedCount >= lastItems.length) return;
+    const listEl = menuEl.querySelector('.mto-combo-list');
+    if (!listEl) return;
+    const curVal = String(activeInput.value || '').trim();
+    const end = Math.min(lastItems.length, renderedCount + COMBO_BATCH_SIZE);
+    let html = '';
+    for (let idx = renderedCount; idx < end; idx++) {
+      html += buildItemRowHTML(lastItems[idx], idx, curVal);
+    }
+    const oldMore = listEl.querySelector('.mto-combo-more');
+    if (oldMore) oldMore.remove();
+    listEl.insertAdjacentHTML('beforeend', html);
+    renderedCount = end;
+    if (renderedCount < lastItems.length) {
+      const rem = lastItems.length - renderedCount;
+      listEl.insertAdjacentHTML('beforeend', `<div class="mto-combo-more" data-combo-more="1">⬇ แสดงเพิ่มอีก ${Math.min(COMBO_BATCH_SIZE, rem)} รายการ (เหลืออีก ${rem} รายการ)</div>`);
+    }
+  }
 
   function ensureMenu() {
     if (menuEl) return menuEl;
@@ -3777,26 +3849,58 @@ const MtoCombo = (() => {
         renderMenu(activeInput ? activeInput.value : '');
         return;
       }
+      if (e.target.closest('[data-combo-more]')) {
+        appendMoreItems();
+        return;
+      }
       const itemEl = e.target.closest('[data-combo-idx]');
       if (itemEl) {
         const item = lastItems[+itemEl.dataset.comboIdx];
         if (item) selectItem(item);
       }
     });
+    menuEl.addEventListener('scroll', e => {
+      const listEl = e.target && e.target.classList && e.target.classList.contains('mto-combo-list') ? e.target : null;
+      if (listEl && renderedCount < lastItems.length && (listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - 40)) {
+        appendMoreItems();
+      }
+    }, true);
     return menuEl;
+  }
+
+  function getCachedFabricOptions() {
+    const arr = masterDB.fabrics || [];
+    const mode = getDropdownSortMode();
+    const len = arr.length;
+    const firstKey = len ? `${arr[0].id || ''}|${arr[0].name || ''}|${arr[0].design || ''}|${arr[0].fabricWidth || ''}` : '';
+    const lastKey = len ? `${arr[len - 1].id || ''}|${arr[len - 1].name || ''}|${arr[len - 1].design || ''}|${arr[len - 1].fabricWidth || ''}` : '';
+    if (fabCache.ref === arr && fabCache.len === len && fabCache.mode === mode && fabCache.firstKey === firstKey && fabCache.lastKey === lastKey) {
+      return fabCache.items;
+    }
+    const mapped = new Array(len);
+    for (let idx = 0; idx < len; idx++) {
+      const x = arr[idx];
+      const name = x.name || '';
+      const sub = `${x.design || '-'} • หน้าผ้า ${x.fabricWidth || 140} ซม.`;
+      mapped[idx] = {
+        value: name,
+        label: name,
+        sub,
+        _q: `${name} ${sub}`.toLowerCase(),
+        id: x.id || ('__idx_' + idx),
+        raw: x,
+      };
+    }
+    const sorted = (mode === 'az') ? sortListByDropdownMode(mapped, it => it.label) : mapped;
+    fabCache = { ref: arr, len, mode, firstKey, lastKey, items: sorted };
+    return sorted;
   }
 
   function buildOptions(kind, col) {
     const sh = currentSheet();
     const ord = currentOrder();
     if (kind === 'fabric') {
-      return (masterDB.fabrics || []).map((x, idx) => ({
-        value: x.name || '',
-        label: x.name || '',
-        sub: `${x.design || '-'} • หน้าผ้า ${x.fabricWidth || 140} ซม.`,
-        id: x.id || ('__idx_' + idx),
-        raw: x,
-      }));
+      return getCachedFabricOptions();
     }
     if (kind === 'blindGroup') {
       const allBlinds = masterDB.blinds || [];
@@ -3867,23 +3971,15 @@ const MtoCombo = (() => {
       const cell = (sh && sh.fabrics && sh.fabrics[col]) || {};
       const selType = cell.cordType === 'เชือกสลิง' ? 'เชือกสลิง' : 'เชือกเทป';
       const cordsAll = (masterDB.blindCords || []).filter(c => c && c.name && (c.cordType === selType));
-      const items = cordsAll.map(c => ({
+      return cordsAll.map(c => ({
         value: c.name,
         label: c.name,
         sub: `${c.cordType}${c.code ? ' • รหัส ' + c.code : ''}`,
       }));
-      if (items.length) return items;
-      const defaults = selType === 'เชือกสลิง'
-        ? ['สีขาว', 'สีครีม', 'สีเทา', 'สีน้ำตาล', 'สีดำ']
-        : ['สีครีม', 'สีขาว', 'สีน้ำตาลอ่อน', 'สีน้ำตาลเข้ม', 'สีดำ'];
-      return defaults.map(v => ({ value: v, label: v, sub: selType }));
     }
     if (kind === 'blindValance') {
       const vals = (masterDB.blindValances || []).filter(v => v && v.name);
-      if (vals.length) {
-        return vals.map(v => ({ value: v.name, label: v.name, sub: v.code ? `รหัส ${v.code}` : 'กล่องบังรางมู่ลี่' }));
-      }
-      return ['สีเดียวกับใบมู่ลี่', 'ขาว', 'ครีม', 'น้ำตาลเข้ม', 'เงิน', 'ดำ'].map(v => ({ value: v, label: v, sub: '' }));
+      return vals.map(v => ({ value: v.name, label: v.name, sub: v.code ? `รหัส ${v.code}` : 'กล่องบังรางมู่ลี่' }));
     }
     if (kind === 'staffBranch') {
       const allBranches = (typeof getAllBranchesList === 'function') ? getAllBranchesList() : [];
@@ -3971,24 +4067,37 @@ const MtoCombo = (() => {
     const kind = activeWrap.dataset.comboKind || '';
     const col = activeWrap.dataset.comboCol || '';
     const q = String(queryText || '').trim().toLowerCase();
-    const allOpts = sortListByDropdownMode(buildOptions(kind, col), it => it.label);
-    const filtered = !q ? allOpts : allOpts.filter(it => `${it.label} ${it.sub || ''}`.toLowerCase().includes(q));
+    const rawOpts = buildOptions(kind, col);
+    const allOpts = (kind === 'fabric') ? rawOpts : sortListByDropdownMode(rawOpts, it => it.label);
+    const filtered = !q
+      ? allOpts
+      : allOpts.filter(it => (it._q !== undefined ? it._q : `${it.label} ${it.sub || ''}`.toLowerCase()).includes(q));
     lastItems = filtered;
+    const curVal = String(activeInput.value || '').trim();
+    const initialCount = Math.min(filtered.length, COMBO_BATCH_SIZE);
+    renderedCount = initialCount;
+    let listHtml = '';
+    if (filtered.length) {
+      for (let idx = 0; idx < initialCount; idx++) {
+        listHtml += buildItemRowHTML(filtered[idx], idx, curVal);
+      }
+      if (initialCount < filtered.length) {
+        const rem = filtered.length - initialCount;
+        listHtml += `<div class="mto-combo-more" data-combo-more="1">⬇ แสดงเพิ่มอีก ${Math.min(COMBO_BATCH_SIZE, rem)} รายการ (เหลืออีก ${rem} รายการ — หรือพิมพ์เพื่อค้นหาทันที)</div>`;
+      }
+    } else {
+      listHtml = `<div class="mto-combo-empty">ไม่พบในฐานข้อมูล — พิมพ์ระบุเองได้ทันที</div>`;
+    }
     const mode = getDropdownSortMode();
     m.innerHTML = `
       <div class="mto-combo-menu-hd">
-        <span>พบ ${filtered.length} รายการ</span>
+        <span>พบ ${filtered.length} รายการ${initialCount < filtered.length ? ` (แสดง ${initialCount} แรก)` : ''}</span>
         <span class="mto-combo-sort-btns">
           <button type="button" class="mto-combo-sort-btn ${mode === 'order' ? 'active' : ''}" data-combo-sort="order" title="แสดงตามลำดับในฐานข้อมูล">📋 ตามลำดับ</button>
           <button type="button" class="mto-combo-sort-btn ${mode === 'az' ? 'active' : ''}" data-combo-sort="az" title="เรียงชื่อ A → Z / ก → ฮ">🔤 A-Z</button>
         </span>
       </div>
-      <div class="mto-combo-list">
-        ${filtered.length
-          ? filtered.map((it, idx) => `<div class="mto-combo-item ${String(activeInput.value || '').trim() === it.value ? 'is-selected' : ''}" data-combo-idx="${idx}"><b>${esc(it.label)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ''}</div>`).join('')
-          : `<div class="mto-combo-empty">ไม่พบในฐานข้อมูล — พิมพ์ระบุเองได้ทันที</div>`
-        }
-      </div>
+      <div class="mto-combo-list">${listHtml}</div>
     `;
     m.hidden = false;
     positionMenu();
@@ -4429,11 +4538,11 @@ function applyFabricPickFromDb(pop, col, pickedId) {
     if (w && w.calcMode !== 'manual') autoCalculateWindow(w, sh);
   });
   autoUpdateSheetFabricTableQty(sh);
-  renderWindowsEditor();
+  if (!rightOnlyMode) renderWindowsEditor();
   syncSheetInputs();
   renderPreview();
-  touchAndSave();
   renderActivePopoverContent({ preserveScroll: true });
+  scheduleBackgroundAutoSave(400);
   return true;
 }
 
@@ -5343,7 +5452,10 @@ function renderActivePopoverContent(opts = {}) {
 
     bodyHTML = `
       <section class="pop-sec-card">
-        <div class="pop-sec-title"><span class="pop-sec-badge">${colTitles[col] || ''}</span><b>เลือกจาก Dropdown, พิมพ์ค้นหา หรือระบุเองในช่องเดียว</b></div>
+        <div class="pop-sec-title" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span class="inline" style="gap:6px"><span class="pop-sec-badge">${colTitles[col] || ''}</span><b>เลือกจาก Dropdown, พิมพ์ค้นหา หรือระบุเองในช่องเดียว</b></span>
+          <button type="button" class="danger" data-act="clearFabricCol" data-col="${col}" title="ยกเลิกและล้างข้อมูลช่องนี้ให้ว่างเปล่า" style="padding:3px 9px;font-size:11.5px">🗑️ ล้างข้อมูลช่องนี้</button>
+        </div>
         ${ctx.lastPickedMsg ? `<div style="margin-bottom:6px;padding:4px 8px;background:#dcfce7;border:1px solid #86efac;border-radius:6px;color:#166534;font-size:12px;font-weight:600">${esc(ctx.lastPickedMsg)}</div>` : ''}
         ${(col === 'blackout' || col === 'sheer' || col === 'other') ? `
           <div class="opts" style="padding:6px 8px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:6px;margin-bottom:6px">
