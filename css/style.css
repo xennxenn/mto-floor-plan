@@ -1302,12 +1302,43 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
   padding: 6px;
   margin-bottom: 8px;
 }
+.pdf-imp-img-wrap {
+  position: relative;
+  user-select: none;
+  cursor: crosshair;
+  overflow: hidden;
+  border-radius: 4px;
+}
 .pdf-imp-page-card img {
   width: 100%;
   height: auto;
   display: block;
   border: 1px solid #e2e8f0;
   border-radius: 4px;
+  pointer-events: none;
+}
+.pdf-imp-crop-rect {
+  position: absolute;
+  border: 2px dashed #dc2626;
+  background: rgba(239, 68, 68, 0.14);
+  pointer-events: none;
+  z-index: 5;
+}
+.pdf-imp-prog-bar {
+  width: 100%;
+  height: 7px;
+  background: #dbeafe;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.pdf-imp-prog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1d4ed8, #3b82f6);
+  transition: width 0.2s ease;
+}
+.pdf-imp-active-target {
+  outline: 2px solid #2563eb !important;
+  background: #eff6ff !important;
 }
 .pdf-imp-review {
   border: 1px solid #cbd5e1;

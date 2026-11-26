@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=23">
+  <link rel="stylesheet" href="css/style.css?v=24">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -537,23 +537,37 @@
     </div>
   </div>
 
-  <!-- ================= PDF HANDWRITING / SCAN IMPORT MODAL ================= -->
+  <!-- ================= PDF HANDWRITING / SCAN IMPORT MODAL (Non-AI Local OCR) ================= -->
   <div id="pdfImportModal" class="modal no-print" hidden>
-    <div class="modal-box" style="width:96vw;max-width:1360px">
+    <div class="modal-box" style="width:96vw;max-width:1380px">
       <div class="dash-head" style="margin-bottom:8px">
-        <h3>📄 นำเข้าแปลนงานจาก PDF (ลายมือเขียน / สแกน) → สร้างออเดอร์อัตโนมัติ</h3>
+        <h3>📄 นำเข้าแปลนงานจาก PDF (ระบบอ่านลายมือในเครื่อง ไม่ใช้ AI — เน้นตัวเลขและภาษาไทย)</h3>
         <button type="button" id="pdfImpClose">✕ ปิด</button>
       </div>
       <div class="subcard" style="margin-bottom:8px;background:#f0f7ff;border:1px solid #bfdbfe">
         <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
           <div class="inline" style="flex-wrap:wrap;gap:6px">
             <label class="btn primary" style="margin:0">📂 เลือกไฟล์ PDF แปลนงาน<input type="file" id="pdfImpFileInput" accept="application/pdf,.pdf" hidden></label>
-            <input type="password" id="pdfImpGeminiKey" placeholder="Gemini API Key (สำหรับ AI อ่านลายมืออัตโนมัติ)" style="width:280px">
-            <button type="button" id="pdfImpRunAiBtn" class="primary">🤖 อ่านลายมือจาก PDF อัตโนมัติ (AI)</button>
+            <select id="pdfImpLayoutMode" style="width:auto;font-size:12px" title="เลือกรูปแบบเอกสาร PDF เพื่อความแม่นยำสูงสุด">
+              <option value="mto_form">📋 แบบฟอร์มแปลน MTO (4 ช่องมาตรฐาน)</option>
+              <option value="freeform">📝 กระดาษจด / สเก็ตช์ทั่วไป</option>
+            </select>
+            <select id="pdfImpInkMode" style="width:auto;font-size:12px" title="ปรับความเข้มหมึกก่อนอ่าน OCR">
+              <option value="normal">✒️ หมึกปกติ (ปากกา)</option>
+              <option value="faint">✏️ ลายมือจาง / ดินสอ (เพิ่มความเข้ม)</option>
+              <option value="bold">🧹 เส้นตารางเยอะ (ตัดเส้นตาราง)</option>
+            </select>
+            <button type="button" id="pdfImpRunOcrBtn" class="primary">🔍 อ่านตัวเลข &amp; ภาษาไทยจาก PDF (OCR)</button>
           </div>
           <button type="button" id="pdfImpCreateBtn" class="primary" style="background:#15803d;border-color:#15803d">✔ สร้างออเดอร์และเปิดแก้ไขบนแปลน</button>
         </div>
+        <div id="pdfImpProgressWrap" hidden style="margin-top:6px">
+          <div class="pdf-imp-prog-bar"><div id="pdfImpProgressFill" class="pdf-imp-prog-fill" style="width:0%"></div></div>
+        </div>
         <div id="pdfImpStatus" hidden style="margin-top:6px;padding:5px 9px;border-radius:6px;border:1px solid #86efac;font-size:12px;font-weight:600"></div>
+        <div id="pdfImpCropHint" style="margin-top:5px;font-size:11.5px;color:#1e40af">
+          💡 <b>ทิป:</b> คลิกที่ช่องกรอกฝั่งขวาช่องใดก็ได้ แล้ว <b>ลากกรอบคลุมตัวเลขหรือคำภาษาไทยบนภาพ PDF ฝั่งซ้าย</b> เพื่ออ่านเฉพาะจุดลงช่องนั้นได้ทันที (ไม่ต้องใช้ AI / ไม่ต้องใช้ API Key)
+        </div>
       </div>
       <div class="pdf-imp-layout">
         <div id="pdfImpPreview" class="pdf-imp-preview"></div>
@@ -571,11 +585,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=23"></script>
-  <script src="js/plan.js?v=23"></script>
-  <script src="js/render.js?v=23"></script>
-  <script src="js/sync.js?v=23"></script>
-  <script src="js/pdf-import.js?v=23"></script>
-  <script src="js/app.js?v=23"></script>
+  <script src="js/db.js?v=24"></script>
+  <script src="js/plan.js?v=24"></script>
+  <script src="js/render.js?v=24"></script>
+  <script src="js/sync.js?v=24"></script>
+  <script src="js/pdf-import.js?v=24"></script>
+  <script src="js/app.js?v=24"></script>
 </body>
 </html>
