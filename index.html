@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=30">
+  <link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -28,6 +28,8 @@
       </button>
       <button id="btnMasterDb" class="admin-only-db" hidden title="ตั้งค่าฐานข้อมูลระบบ (เฉพาะผู้ดูแลระบบ)">🗄️ ฐานข้อมูล</button>
       <span id="orderActions" class="actions" hidden>
+        <button type="button" id="btnOrderUndo" class="ghost" disabled title="ย้อนกลับการแก้ไขในใบงานนี้ (Ctrl+Z)">↶ ย้อนกลับ</button>
+        <button type="button" id="btnOrderRedo" class="ghost" disabled title="ทำซ้ำการแก้ไขในใบงานนี้ (Ctrl+Y)">↷ ทำซ้ำ</button>
         <button id="btnSaveJson" title="ส่งออกออเดอร์นี้เป็นไฟล์ JSON">💾 ส่งออก</button>
         <button id="btnPrint" title="พิมพ์ / บันทึกเป็น PDF ผ่านเบราว์เซอร์">🖨️ พิมพ์</button>
         <button id="btnPdf" class="primary" title="ดาวน์โหลดไฟล์ PDF">📄 PDF</button>
@@ -592,11 +594,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=30"></script>
-  <script src="js/plan.js?v=30"></script>
-  <script src="js/render.js?v=30"></script>
-  <script src="js/sync.js?v=30"></script>
-  <script src="js/pdf-import.js?v=30"></script>
-  <script src="js/app.js?v=30"></script>
+  <script src="js/db.js?v=31"></script>
+  <script src="js/plan.js?v=31"></script>
+  <script src="js/render.js?v=31"></script>
+  <script src="js/sync.js?v=31"></script>
+  <script src="js/pdf-import.js?v=31"></script>
+  <script src="js/app.js?v=31"></script>
 </body>
 </html>

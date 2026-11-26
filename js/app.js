@@ -452,6 +452,138 @@ let autoSaveIntervalId = null;
 let autoSaveDirty = false;
 let bgAutoSaveTimer = null;
 
+/* =========================================================
+   Order Workspace Undo / Redo History Manager
+   ========================================================= */
+const ORDER_HISTORY_MAX = 50;
+const orderHist = {
+  orderId: null,
+  undo: [],
+  redo: [],
+  current: '',
+  timer: null,
+  applying: false,
+};
+
+function serializeOrderForHistory(ord) {
+  if (!ord) return '';
+  try {
+    const clone = Object.assign({}, ord, { updatedAt: '' });
+    return JSON.stringify(clone);
+  } catch (e) {
+    return '';
+  }
+}
+
+function updateOrderUndoRedoButtons() {
+  const btnU = document.getElementById('btnOrderUndo');
+  const btnR = document.getElementById('btnOrderRedo');
+  if (btnU) {
+    btnU.disabled = orderHist.undo.length === 0;
+    btnU.title = orderHist.undo.length
+      ? `ย้อนกลับการแก้ไขในใบงานนี้ (Ctrl+Z) • ย้อนได้ ${orderHist.undo.length} ขั้น`
+      : 'ยังไม่มีรายการให้ย้อนกลับ';
+  }
+  if (btnR) {
+    btnR.disabled = orderHist.redo.length === 0;
+    btnR.title = orderHist.redo.length
+      ? `ทำซ้ำการแก้ไขในใบงานนี้ (Ctrl+Y) • ทำซ้ำได้ ${orderHist.redo.length} ขั้น`
+      : 'ยังไม่มีรายการให้ทำซ้ำ';
+  }
+}
+
+function resetOrderHistory(ord) {
+  clearTimeout(orderHist.timer);
+  orderHist.timer = null;
+  orderHist.orderId = ord ? ord.id : null;
+  orderHist.undo = [];
+  orderHist.redo = [];
+  orderHist.current = ord ? serializeOrderForHistory(ord) : '';
+  updateOrderUndoRedoButtons();
+}
+
+function commitOrderHistorySnapshot() {
+  if (orderHist.applying) return;
+  const ord = currentOrder();
+  if (!ord) return;
+  if (orderHist.orderId !== ord.id) {
+    resetOrderHistory(ord);
+    return;
+  }
+  const snap = serializeOrderForHistory(ord);
+  if (!snap || snap === orderHist.current) return;
+  if (orderHist.current) {
+    orderHist.undo.push(orderHist.current);
+    if (orderHist.undo.length > ORDER_HISTORY_MAX) orderHist.undo.shift();
+  }
+  orderHist.current = snap;
+  orderHist.redo = [];
+  updateOrderUndoRedoButtons();
+}
+
+function scheduleOrderHistorySnapshot(delayMs = 420) {
+  if (orderHist.applying) return;
+  clearTimeout(orderHist.timer);
+  orderHist.timer = setTimeout(() => {
+    orderHist.timer = null;
+    commitOrderHistorySnapshot();
+  }, delayMs);
+}
+
+function applyOrderHistorySnapshot(snapStr) {
+  if (!snapStr || !activeOrderId) return false;
+  const idx = orders.findIndex(o => o.id === activeOrderId);
+  if (idx < 0) return false;
+  try {
+    const restored = normalizeOrder(JSON.parse(snapStr), idx + 1);
+    restored.updatedAt = new Date().toISOString();
+    orderHist.applying = true;
+    orders[idx] = restored;
+    activeSheetIdx = Math.max(0, Math.min(activeSheetIdx, restored.sheets.length - 1));
+    const maxPages = Math.max(0, expandOrderPages(restored).length - 1);
+    currentPreviewPageIdx = Math.max(0, Math.min(currentPreviewPageIdx, maxPages));
+    renderAllWorkspace();
+    const pop = document.getElementById('pdfQuickPopover');
+    if (pop && !pop.hidden && typeof refreshActivePopover === 'function') {
+      refreshActivePopover();
+    }
+    orderHist.applying = false;
+    updateOrderUndoRedoButtons();
+    scheduleBackgroundAutoSave(800);
+    return true;
+  } catch (e) {
+    orderHist.applying = false;
+    console.warn('Undo/Redo restore failed:', e);
+    return false;
+  }
+}
+
+function undoOrderChange() {
+  if (orderHist.timer) {
+    clearTimeout(orderHist.timer);
+    orderHist.timer = null;
+    commitOrderHistorySnapshot();
+  }
+  if (!orderHist.undo.length) return false;
+  const prevSnap = orderHist.undo.pop();
+  if (orderHist.current) orderHist.redo.push(orderHist.current);
+  orderHist.current = prevSnap;
+  return applyOrderHistorySnapshot(prevSnap);
+}
+
+function redoOrderChange() {
+  if (orderHist.timer) {
+    clearTimeout(orderHist.timer);
+    orderHist.timer = null;
+    commitOrderHistorySnapshot();
+  }
+  if (!orderHist.redo.length) return false;
+  const nextSnap = orderHist.redo.pop();
+  if (orderHist.current) orderHist.undo.push(orderHist.current);
+  orderHist.current = nextSnap;
+  return applyOrderHistorySnapshot(nextSnap);
+}
+
 function runWhenIdle(fn) {
   if (typeof requestIdleCallback === 'function') {
     requestIdleCallback(() => fn(), { timeout: 2000 });
@@ -500,6 +632,7 @@ function scheduleBackgroundAutoSave(delayMs = 2500) {
   autoSaveDirty = true;
   const ord = currentOrder();
   if (ord) ord.updatedAt = new Date().toISOString();
+  scheduleOrderHistorySnapshot(420);
   clearTimeout(bgAutoSaveTimer);
   bgAutoSaveTimer = setTimeout(() => {
     bgAutoSaveTimer = null;
@@ -712,6 +845,7 @@ function showDashboard() {
   document.getElementById('btnHome').hidden = true;
   document.getElementById('topOrderBadge').hidden = true;
   document.getElementById('orderActions').hidden = true;
+  resetOrderHistory(null);
   renderDashboard();
 }
 
@@ -721,6 +855,7 @@ function openOrder(orderId, mode = 'sheet', sheetIdx = 0) {
   if (!ord || !canAccessOrder(ord)) return;
   applyUserRoleUI();
   activeOrderId = ord.id;
+  resetOrderHistory(ord);
   // ถ้ายังไม่ได้กรอกชื่อลูกค้าเลย ให้เปิดแท็บข้อมูลลูกค้าก่อน
   activeTabMode = (!ord.customer.name && mode === 'auto') ? 'customer' : (mode === 'customer' ? 'customer' : 'sheet');
   activeSheetIdx = Math.max(0, Math.min(sheetIdx, ord.sheets.length - 1));
@@ -2437,6 +2572,7 @@ function renderPreview() {
 function touchAndSave() {
   const ord = currentOrder();
   if (ord) ord.updatedAt = new Date().toISOString();
+  commitOrderHistorySnapshot();
   saveOrders();
 }
 
@@ -5279,10 +5415,33 @@ function openPdfQuickPopover(ctx, clientX, clientY) {
   positionPopoverNear(pop, clientX, clientY);
 }
 
-// ปิด Popover เมื่อคลิกพื้นที่ว่างนอกใบงานหรือกด Escape
+// ปิด Popover เมื่อคลิกพื้นที่ว่างนอกใบงานหรือกด Escape + คีย์ลัด Undo (Ctrl+Z) / Redo (Ctrl+Y)
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closePdfQuickPopover();
+  if (e.key === 'Escape') { closePdfQuickPopover(); return; }
+  if (!activeOrderId) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod || e.altKey) return;
+  // หากเปิด Modal อื่น (วาดแปลน / ฐานข้อมูล / นำเข้า PDF) หรือกำลังพิมพ์ในช่องข้อความ ให้ใช้ Undo ของช่องนั้นเอง
+  const modalOpen = ['planModal', 'dbModal', 'pdfImportModal', 'syncModal', 'sheetOrderModal']
+    .some(id => { const el = document.getElementById(id); return el && !el.hidden; });
+  if (modalOpen) return;
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  const k = String(e.key || '').toLowerCase();
+  if (k === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    undoOrderChange();
+  } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+    e.preventDefault();
+    redoOrderChange();
+  }
 });
+
+const btnOrderUndoEl = document.getElementById('btnOrderUndo');
+if (btnOrderUndoEl) btnOrderUndoEl.addEventListener('click', () => undoOrderChange());
+const btnOrderRedoEl = document.getElementById('btnOrderRedo');
+if (btnOrderRedoEl) btnOrderRedoEl.addEventListener('click', () => redoOrderChange());
 
 function scrollAndFlashEditor(targetEl, focusSelector) {
   if (!targetEl || rightOnlyMode) return;

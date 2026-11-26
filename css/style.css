@@ -36,6 +36,7 @@ button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 button.primary:hover { background: #1a5fcc; }
 button.ghost { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.25); color: #fff; }
 button.ghost:hover { background: rgba(255,255,255,.22); }
+button.ghost:disabled, button:disabled { opacity: 0.42; cursor: not-allowed; }
 button.danger { color: #c62828; border-color: #e7b3b3; }
 button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
 button.wide { width: 100%; justify-content: center; margin: 6px 0; }
