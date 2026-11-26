@@ -1502,3 +1502,47 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #9cc3ff; border-c
   .page { display: flex !important; margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
   .page:last-child { break-after: auto; page-break-after: auto; }
 }
+
+/* v33: Master DB Row Actions (Duplicate + Delete) & Width Formula Multi-Style Pills */
+.db-row-acts {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.db-dup-btn {
+  padding: 2px 5px !important;
+  font-size: 11px !important;
+  background: #eff6ff !important;
+  border: 1px solid #93c5fd !important;
+  color: #1d4ed8 !important;
+  border-radius: 4px !important;
+  cursor: pointer;
+}
+.db-dup-btn:hover {
+  background: #dbeafe !important;
+}
+.wf-style-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
+}
+.wf-style-pill {
+  padding: 2px 6px !important;
+  font-size: 10.5px !important;
+  line-height: 1.25;
+  border-radius: 999px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wf-style-pill.is-on {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+  color: #fff !important;
+  font-weight: 700;
+}

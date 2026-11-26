@@ -109,6 +109,9 @@ const RealtimeSync = (() => {
     if (data.rev && data.rev === lastRev) return;
     if (data.clientId && data.clientId === CLIENT_ID) return;
     if (isPushing || pushTimer || (typeof autoSaveDirty !== 'undefined' && autoSaveDirty)) return; // ป้องกันข้อมูลเก่าจาก Cloud มาทับการแก้ไขที่กำลังพิมพ์หรือรอซิงค์ในเครื่อง
+    const dbModalEl = document.getElementById('dbModal');
+    const dbModalOpen = !!(dbModalEl && !dbModalEl.hidden);
+    if (dbModalOpen) return; // ระหว่างกำลังเปิด/กรอกข้อมูลในหน้าต่างฐานข้อมูล ไม่ให้รีเฟรชทับหรือทำให้หน้ากระตุก
     const remoteMs = data.updatedAt ? Date.parse(data.updatedAt) : 0;
     if (lastLocalActivityMs && remoteMs && remoteMs < lastLocalActivityMs - 1000) return;
 

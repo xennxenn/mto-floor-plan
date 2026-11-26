@@ -879,10 +879,34 @@ function normalizeCurtainItem(c, idx) {
   return item;
 }
 
+function parseCurtainStylesList(styleVal) {
+  if (Array.isArray(styleVal)) {
+    return Array.from(new Set(styleVal.map(x => String(x || '').trim()).filter(x => x && x !== '*')));
+  }
+  const s = String(styleVal || '').trim();
+  if (!s || s === '*') return [];
+  return Array.from(new Set(s.split(/[,;\n/|]+/).map(x => x.trim()).filter(x => x && x !== '*')));
+}
+
+function matchesCurtainStyleRule(ruleStyle, targetStyle) {
+  const t = String(targetStyle || '').trim();
+  if (!t) return true;
+  const r = String(ruleStyle || '').trim();
+  if (!r || r === '*') return true;
+  const list = parseCurtainStylesList(r);
+  if (!list.length) return true;
+  return list.some(st => st === '*' || st === t || t.includes(st));
+}
+
 function normalizeWidthFormulaItem(wf, idx) {
   const def = defaultMasterDB().widthFormulas[0];
-  const style = (wf && wf.curtainStyle) || 'ม่านจีบ';
-  const defSubType = getDefaultSubCalcType(style);
+  const rawStyle = (wf && wf.curtainStyle) || 'ม่านจีบ';
+  const styleList = parseCurtainStylesList(rawStyle);
+  const style = (String(rawStyle).trim() === '*' || !styleList.length)
+    ? (String(rawStyle).trim() === '*' ? '*' : 'ม่านจีบ')
+    : styleList.join(', ');
+  const primaryStyle = styleList[0] || style;
+  const defSubType = getDefaultSubCalcType(primaryStyle);
   const item = Object.assign({
     id: 'wf_' + (idx + 1),
     curtainStyle: style,
@@ -898,16 +922,17 @@ function normalizeWidthFormulaItem(wf, idx) {
     widthExp: defSubType === 'gathered' ? '((RW / P) + OV + SR)' : '((RW * G) / P)',
     roundMode: 'ceil_int',
   }, def, wf || {});
+  item.curtainStyle = style;
   item.pieces = '*'; // จำนวนผืนดึงจากบานหน้าต่าง/ประตูนั้นๆ เสมอ ไม่กำหนดในฐานข้อมูลความกว้าง
   if (!item.rodType) item.rodType = '*';
   if (!item.railTracks) item.railTracks = '*';
   if (!item.layerType || !['opaque', 'sheer', 'both'].includes(item.layerType)) item.layerType = 'both';
   if (!item.subCalcType || !['gathered', 'stretched'].includes(item.subCalcType)) {
-    item.subCalcType = getDefaultSubCalcType(item.curtainStyle);
+    item.subCalcType = getDefaultSubCalcType(primaryStyle);
   }
   if (item.subCalcType === 'gathered' && (item.widthExp === '((RW + OV + SR) / P)' || item.widthExp === '(RW + OV + SR)')) {
     item.widthExp = '((RW / P) + OV + SR)';
-  } else if (item.subCalcType === 'stretched' && item.curtainStyle === 'ม่านตาไก่' && item.widthExp === '((RW + OV + SR) / P)') {
+  } else if (item.subCalcType === 'stretched' && primaryStyle === 'ม่านตาไก่' && item.widthExp === '((RW + OV + SR) / P)') {
     item.widthExp = '((RW * G) / P)';
   }
   return item;
@@ -1336,18 +1361,15 @@ function getWidthFormulasForStyle(curtainStyle, pieces = '', railTracks = '', ro
     return lt === 'both' || lt === '*' || lt === layerType;
   };
   const matched = all.filter(f => {
-    const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
+    const matchStyle = matchesCurtainStyleRule(f.curtainStyle, curtainStyle);
     const matchTracks = !railTracks || !f.railTracks || String(f.railTracks) === '*' || String(f.railTracks) === String(railTracks);
     const matchRod = !rodType || !f.rodType || f.rodType === '*' || f.rodType === rodType;
     return matchStyle && matchTracks && matchRod && matchLayerFn(f);
   });
   if (matched.length) return matched;
-  const byStyleLayer = all.filter(f => {
-    const matchStyle = !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle);
-    return matchStyle && matchLayerFn(f);
-  });
+  const byStyleLayer = all.filter(f => matchesCurtainStyleRule(f.curtainStyle, curtainStyle) && matchLayerFn(f));
   if (byStyleLayer.length) return byStyleLayer;
-  const byStyle = all.filter(f => !curtainStyle || !f.curtainStyle || f.curtainStyle === '*' || f.curtainStyle === curtainStyle || curtainStyle.includes(f.curtainStyle));
+  const byStyle = all.filter(f => matchesCurtainStyleRule(f.curtainStyle, curtainStyle));
   return byStyle.length ? byStyle : all;
 }
 
@@ -1573,7 +1595,7 @@ function isBlindOrRollerStyle(styleName) {
 
 /**
  * คำนวณพื้นที่รวม (ตร.ม.) และจำนวนผืนจากรายการกำหนดขนาดต่อผืนเองของม่านม้วน/มู่ลี่ (w.blindPieces)
- * - ขั้นต่ำ 1.5 ตร.ม./ผืน ตามฐานข้อมูล
+ * - คิดแยกแต่ละผืน (แม้มีขนาดเท่ากัน 2 ผืน) ขั้นต่ำ 1.5 ตร.ม./ผืน และปัดเศษทศนิยมขึ้นเป็น 1 ตำแหน่งทุกผืน
  */
 function calcBlindPiecesTotalSqm(w) {
   const pieces = Array.isArray(w && w.blindPieces) ? w.blindPieces : [];
@@ -1582,7 +1604,7 @@ function calcBlindPiecesTotalSqm(w) {
   const blindRule = (typeof masterDB !== 'undefined' && masterDB.blinds || []).find(bl => bl.curtainStyle === style)
     || { minSqm: 1.5, roundMode: 'ceil_1dec' };
   const minSqm = Math.max(1.5, parseFloat(blindRule.minSqm) || 1.5);
-  const roundMode = blindRule.roundMode || 'ceil_1dec';
+  const ceil1 = v => Math.ceil((v - 1e-9) * 10) / 10;
   let totalWidth = 0;
   let totalSqm = 0;
   let validCount = 0;
@@ -1593,14 +1615,14 @@ function calcBlindPiecesTotalSqm(w) {
     if (wn > 0 && hn > 0) {
       validCount++;
       const sqm = Math.max(minSqm, (wn / 100) * (hn / 100));
-      const rounded = parseFloat(applyRoundMode(sqm, roundMode)) || sqm;
+      const rounded = ceil1(sqm);
       totalSqm += rounded;
-      return applyRoundMode(sqm, roundMode);
+      return String(rounded);
     }
     return '';
   });
   totalWidth = Math.round(totalWidth * 100) / 100;
-  totalSqm = Math.round(totalSqm * 100) / 100;
+  totalSqm = Math.round(totalSqm * 10) / 10;
   return {
     count: validCount,
     totalWidth,
@@ -1761,22 +1783,22 @@ function computeCurtainLayerByWidthHeight(w, wf, hf, opts = {}) {
 
   const effPieces = hasUnequalSplit ? 2 : P;
 
-  // 3) กรณีเป็นม่านม้วน / มู่ลี่ -> คำนวณเป็นตารางเมตร ขั้นต่ำ 1.5 ตร.ม./ผืน
+  // 3) กรณีเป็นม่านม้วน / มู่ลี่ -> คิดแยกทีละชุด (แม้ขนาดเดียวกัน 2 ผืน) ขั้นต่ำ 1.5 ตร.ม./ผืน และปัดเศษทศนิยมขึ้นเป็น 1 ตำแหน่งทุกชุด
   const passedBlind = opts.blindItem || opts.blindRule || null;
   if (isBlindOrRollerStyle(styleName) || passedBlind) {
     const blindRule = passedBlind || (masterDB.blinds || []).find(bl => bl.curtainStyle === styleName) || { minSqm: 1.5, roundMode: 'ceil_1dec' };
     const minSqm = Math.max(1.5, num(blindRule.minSqm) || 1.5);
+    const ceil1 = v => Math.ceil((v - 1e-9) * 10) / 10;
     let totalSqm = 0;
     if (hasUnequalSplit && (splitL > 0 || splitR > 0)) {
-      const sqmL = (splitL > 0 && vars.HC > 0) ? Math.max(minSqm, (splitL / 100) * (vars.HC / 100)) : 0;
-      const sqmR = (splitR > 0 && vars.HC > 0) ? Math.max(minSqm, (splitR / 100) * (vars.HC / 100)) : 0;
-      totalSqm = sqmL + sqmR;
+      const sqmL = (splitL > 0 && vars.HC > 0) ? ceil1(Math.max(minSqm, (splitL / 100) * (vars.HC / 100))) : 0;
+      const sqmR = (splitR > 0 && vars.HC > 0) ? ceil1(Math.max(minSqm, (splitR / 100) * (vars.HC / 100))) : 0;
+      totalSqm = Math.round((sqmL + sqmR) * 10) / 10;
     } else if (vars.WC > 0 && vars.HC > 0) {
-      const rawSqmPerPiece = (vars.WC / 100) * (vars.HC / 100);
-      const sqmPerPiece = Math.max(minSqm, rawSqmPerPiece);
-      totalSqm = sqmPerPiece * effPieces;
+      const sqmPerPiece = ceil1(Math.max(minSqm, (vars.WC / 100) * (vars.HC / 100)));
+      totalSqm = Math.round((sqmPerPiece * effPieces) * 10) / 10;
     }
-    const t = totalSqm > 0 ? applyRoundMode(totalSqm, blindRule.roundMode || 'ceil_1dec') : '';
+    const t = totalSqm > 0 ? String(totalSqm) : '';
     return {
       a, b, n: (RW > 0 || RH > 0 || hasUnequalSplit) ? String(effPieces) : '', t,
       RW, RH, unit1: 'ผืน', unit2: 'ตร.ม.',
@@ -2880,13 +2902,60 @@ const MasterDBModal = (() => {
     `;
   }
 
-  function render() {
+  function dupDelBtns(list, i) {
+    return `<span class="db-row-acts"><button type="button" class="db-dup-btn" data-db-dup="${list}.${i}" title="ทำซ้ำรายการนี้">📋</button><button type="button" class="danger" data-db-del="${list}.${i}" title="ลบรายการนี้">✕</button></span>`;
+  }
+
+  function renderWidthStylePicker(wf, i) {
+    const raw = String((wf && wf.curtainStyle) || '*').trim();
+    const isAll = !raw || raw === '*';
+    const picked = isAll ? [] : parseCurtainStylesList(raw);
+    const curtainNames = Array.from(new Set((masterDB.curtains || []).map(c => String((c && c.name) || '').trim()).filter(Boolean)));
+    picked.forEach(st => { if (!curtainNames.includes(st)) curtainNames.push(st); });
+    return `
+      <div class="wf-style-pills" data-wf-style-row="${i}">
+        <button type="button" class="wf-style-pill ${isAll ? 'is-on' : ''}" data-db-wf-style-all="${i}" title="ใช้กับรูปแบบผ้าม่านทั้งหมด">${isAll ? '✓ ' : ''}ทั้งหมด (*)</button>
+        ${curtainNames.map(name => {
+          const on = !isAll && picked.includes(name);
+          return `<button type="button" class="wf-style-pill ${on ? 'is-on' : ''}" data-db-wf-style="${i}" data-style="${escH(name)}">${on ? '✓ ' : '+ '}${escH(name)}</button>`;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function formatWidthGatherText(styleVal) {
+    const raw = String(styleVal || '*').trim();
+    if (!raw || raw === '*') return 'ตามรูปแบบม่าน';
+    const list = parseCurtainStylesList(raw);
+    if (!list.length) return 'ตามรูปแบบม่าน';
+    if (list.length === 1) return `${getStdCurtainParams(list[0]).gatherRatio} เท่า`;
+    const ratios = Array.from(new Set(list.map(st => String(getStdCurtainParams(st).gatherRatio))));
+    return `${ratios.join(' / ')} เท่า`;
+  }
+
+  function render(opts = {}) {
     const body = document.getElementById('dbBody');
+    if (!body) return;
     document.querySelectorAll('[data-dbtab]').forEach(b => b.classList.toggle('active', b.dataset.dbtab === activeTab));
 
+    // เก็บตำแหน่งสโครลและช่องที่โฟกัสอยู่ เพื่อไม่ให้หน้าต่างกระตุกหรือเลื่อนกลับด้านบนเวลาเพิ่ม/ทำซ้ำ/ลบ/แก้ไขข้อมูล
+    const modalBox = body.closest ? body.closest('.modal-box') : null;
+    const prevBodyTop = body.scrollTop || 0;
+    const prevBodyLeft = body.scrollLeft || 0;
+    const prevModalTop = modalBox ? (modalBox.scrollTop || 0) : 0;
+    const prevTblScrolls = Array.from(body.querySelectorAll('.db-tbl-scroll')).map(el => ({
+      top: el.scrollTop || 0,
+      left: el.scrollLeft || 0,
+    }));
+    const activeEl = document.activeElement;
+    const activeEditKey = (activeEl && body.contains(activeEl) && activeEl.dataset && activeEl.dataset.dbEdit) ? activeEl.dataset.dbEdit : '';
+    const activeSelStart = (activeEl && typeof activeEl.selectionStart === 'number') ? activeEl.selectionStart : null;
+    const activeSelEnd = (activeEl && typeof activeEl.selectionEnd === 'number') ? activeEl.selectionEnd : null;
+
+    let contentHtml = '';
     if (activeTab === 'staff') {
       const allBranches = getAllBranchesList();
-      body.innerHTML = `
+      contentHtml = `
         <p class="hint" style="margin-bottom:8px">จัดการบัญชีผู้ใช้งาน รายชื่อพนักงาน และสาขาทั้งหมดในระบบ (เฉพาะแอดมินเท่านั้นที่สามารถเข้าถึงและแก้ไขฐานข้อมูลได้)</p>
         <div class="subcard" style="margin-bottom:8px;background:#f0f7ff;border:1px solid #bfdbfe;font-size:12px">
           <b>🏢 จัดการรายชื่อสาขาทั้งหมดในระบบ (${allBranches.length} สาขา):</b>
@@ -2914,7 +2983,7 @@ const MasterDBModal = (() => {
                 <th style="min-width:160px">ชื่อพนักงาน</th>
                 <th style="width:120px">แผนก</th>
                 <th style="min-width:260px">สาขา (คลิกเลือกได้หลายสาขา หรือพิมพ์คั่นด้วย ,)</th>
-                <th style="width:45px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -2943,7 +3012,7 @@ const MasterDBModal = (() => {
                       </div>
                     ` : ''}
                   </td>
-                  <td class="c"><button type="button" class="danger" data-db-del="staff.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('staff', i)}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -2952,14 +3021,14 @@ const MasterDBModal = (() => {
         <button type="button" class="primary" style="margin-top:8px" data-db-add="staff">➕ เพิ่มพนักงาน / ผู้ใช้งาน</button>
       `;
     } else if (activeTab === 'fabrics') {
-      body.innerHTML = `
+      contentHtml = `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <b>🧵 ฐานข้อมูลผ้า (สำหรับดึงขนาดหน้าผ้า <code>FW_FAB</code> และระยะลายผ้า <code>YR</code> ไปคำนวณปริมาณผ้าอัตโนมัติ):</b><br>
           กำหนด ชื่อผ้า, ดีไซน์ผ้า, ขนาดหน้าผ้า (ซม.), Y-Repeat (ซม.) และเกรนที่ใช้คำนวณ<br>
           <span style="color:#b42318;font-weight:700">* เงื่อนไขสำคัญ: เฉพาะผ้าที่มีขนาดหน้าผ้าเกิน 270 ซม. ขึ้นไป (&gt; 270 ซม.) เท่านั้น ถึงสามารถเลือกใช้คำนวณได้ทั้งเกรนม่านทึบและเกรนม่านโปร่ง</span>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:900px">
+          <table class="ed-tbl" style="min-width:930px">
             <thead>
               <tr>
                 <th style="min-width:220px">ชื่อผ้า</th>
@@ -2967,7 +3036,7 @@ const MasterDBModal = (() => {
                 <th style="width:130px">ขนาดหน้าผ้า FW_FAB (ซม.)</th>
                 <th style="width:120px">Y-Repeat YR (ซม.)</th>
                 <th style="width:280px">เกรนการคำนวณผ้า</th>
-                <th style="width:45px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -2987,7 +3056,7 @@ const MasterDBModal = (() => {
                       <option value="sheer" ${mode === 'sheer' ? 'selected' : ''} ${allowSheer ? '' : 'disabled'}>เกรนม่านโปร่ง (หน้าผ้า &gt; 270 ซม.)</option>
                     </select>
                   </td>
-                  <td class="c"><button type="button" class="danger" data-db-del="fabrics.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('fabrics', i)}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -2997,10 +3066,10 @@ const MasterDBModal = (() => {
       `;
     } else if (activeTab === 'widthFormulas') {
       const wfAll = masterDB.widthFormulas || [];
-      body.innerHTML = renderStdParamsBanner() + renderVariableReferenceCard('width') + `
+      contentHtml = renderStdParamsBanner() + renderVariableReferenceCard('width') + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-            <b>📐 ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (ไม่ต้องระบุจำนวนผืน — ดึงจำนวนผืน <code>P</code> จากบานนั้นๆ และดึงระยะย่น <code>G</code> จากฐานข้อมูลกลางอัตโนมัติ):</b>
+            <b>📐 ฐานข้อมูลขนาดความกว้างผ้าม่านต่อผืน (เลือกได้มากกว่า 1 รูปแบบผ้าม่านต่อสูตร • ดึงจำนวนผืน <code>P</code> จากบานนั้นๆ และดึงระยะย่น <code>G</code> จากฐานข้อมูลกลางอัตโนมัติ):</b>
             <div class="inline">
               <button type="button" data-db-goto="curtains">🎀 แก้ไขค่ามาตรฐานกลาง (ระยะย่น G)</button>
               <button type="button" class="${widthLayerFilter === 'all' ? 'primary' : ''}" data-db-wlayer-filter="all">ทั้งหมด (${wfAll.length})</button>
@@ -3009,47 +3078,47 @@ const MasterDBModal = (() => {
               <button type="button" class="${widthLayerFilter === 'both' ? 'primary' : ''}" data-db-wlayer-filter="both">ทั้งม่านทึบและม่านโปร่ง</button>
             </div>
           </div>
-          • <b>แบบย่นสำเร็จ (ม่านจีบ / ม่านลอน)</b>: <code>((RW / P) + OV + SR)</code> | <b>แบบขึงตึง (รูปแบบม่านที่เหลือ)</b>: <code>((RW * G) / P)</code><br>
-          • <b>จำนวนผืน (<code>P</code>)</b> ดึงจากบานที่กำหนดจริงในใบงาน และ <b>ระยะย่น (<code>G</code>)</b> ดึงจากฐานข้อมูลกลาง <button type="button" data-db-goto="curtains" style="padding:1px 6px;font-size:11px">🎀 รูปแบบผ้าม่าน &amp; ค่ามาตรฐาน</button> อัตโนมัติ
+          • <b>รูปแบบผ้าม่าน</b>: คลิกเลือกได้หลายรูปแบบพร้อมกันใน 1 สูตร (เช่น <code>✓ ม่านจีบ</code> + <code>✓ ม่านลอน</code>) หรือเลือก <code>ทั้งหมด (*)</code><br>
+          • <b>แบบย่นสำเร็จ (ม่านจีบ / ม่านลอน)</b>: <code>((RW / P) + OV + SR)</code> | <b>แบบขึงตึง (รูปแบบม่านที่เหลือ)</b>: <code>((RW * G) / P)</code>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1420px">
+          <table class="ed-tbl" style="min-width:1540px">
             <thead>
               <tr>
-                <th style="width:115px">รูปแบบผ้าม่าน</th>
-                <th style="width:180px">การคิดย่อย</th>
-                <th style="width:150px">ใช้คำนวณกับ</th>
+                <th style="min-width:215px">รูปแบบผ้าม่าน (เลือกได้หลายแบบ)</th>
+                <th style="width:175px">การคิดย่อย</th>
+                <th style="width:145px">ใช้คำนวณกับ</th>
                 <th style="width:115px">ประเภทรางม่าน</th>
                 <th style="width:95px">ชั้นราง (RT)</th>
-                <th style="min-width:290px">ชื่อเงื่อนไขการคำนวณความกว้าง</th>
-                <th style="width:120px">ระยะย่น G (ฐานกลาง)</th>
-                <th style="width:78px">เผื่อเกย (OV)</th>
-                <th style="width:82px">อ้อมข้าง (SR)</th>
-                <th style="width:190px">สูตรความกว้างต่อผืน (WC)</th>
-                <th style="width:155px">การปัดเศษ</th>
-                <th style="width:42px">ลบ</th>
+                <th style="min-width:265px">ชื่อเงื่อนไขการคำนวณความกว้าง</th>
+                <th style="width:115px">ระยะย่น G (ฐานกลาง)</th>
+                <th style="width:76px">เผื่อเกย (OV)</th>
+                <th style="width:80px">อ้อมข้าง (SR)</th>
+                <th style="width:185px">สูตรความกว้างต่อผืน (WC)</th>
+                <th style="width:150px">การปัดเศษ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
               ${wfAll.map((wf, i) => {
                 const lt = wf.layerType || 'both';
                 if (widthLayerFilter !== 'all' && lt !== widthLayerFilter) return '';
-                const subCalc = wf.subCalcType || getDefaultSubCalcType(wf.curtainStyle);
-                const stdP = getStdCurtainParams(wf.curtainStyle);
+                const firstStyle = parseCurtainStylesList(wf.curtainStyle)[0] || wf.curtainStyle;
+                const subCalc = wf.subCalcType || getDefaultSubCalcType(firstStyle);
                 return `
-                <tr>
-                  <td><select data-db-edit="widthFormulas.${i}.curtainStyle">${curtainSelectOpts(wf.curtainStyle)}</select></td>
+                <tr data-db-row="widthFormulas.${i}">
+                  <td class="wf-style-cell">${renderWidthStylePicker(wf, i)}</td>
                   <td><select data-db-edit="widthFormulas.${i}.subCalcType">${subCalcSelectOpts(subCalc)}</select></td>
                   <td><select data-db-edit="widthFormulas.${i}.layerType">${widthLayerSelectOpts(lt)}</select></td>
                   <td><select data-db-edit="widthFormulas.${i}.rodType">${rodSelectOpts(wf.rodType || '*')}</select></td>
                   <td><select data-db-edit="widthFormulas.${i}.railTracks">${railTrackSelectOpts(wf.railTracks || '*')}</select></td>
                   <td><input data-db-edit="widthFormulas.${i}.label" value="${escH(wf.label || '')}" placeholder="ชื่อเงื่อนไข"></td>
-                  <td class="c" style="background:#f8fafc;font-weight:700;color:#0b3a8c" title="ดึงจากฐานข้อมูลกลาง (รูปแบบผ้าม่าน)">${escH(stdP.gatherRatio)} เท่า</td>
+                  <td class="c wf-gather-cell" style="background:#f8fafc;font-weight:700;color:#0b3a8c" title="ดึงจากฐานข้อมูลกลาง (รูปแบบผ้าม่าน)">${escH(formatWidthGatherText(wf.curtainStyle))}</td>
                   <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.overlap" value="${escH(wf.overlap ?? 8)}"></td>
                   <td><input type="number" step="any" data-db-edit="widthFormulas.${i}.sideReturn" value="${escH(wf.sideReturn ?? 8)}"></td>
                   <td><input data-db-edit="widthFormulas.${i}.widthExp" value="${escH(wf.widthExp || '((RW / P) + OV + SR)')}"></td>
                   <td><select data-db-edit="widthFormulas.${i}.roundMode">${roundModeSelectOpts(wf.roundMode || 'ceil_int')}</select></td>
-                  <td class="c"><button type="button" class="danger" data-db-del="widthFormulas.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('widthFormulas', i)}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -3062,14 +3131,14 @@ const MasterDBModal = (() => {
         </div>
       `;
     } else if (activeTab === 'heightFormulas') {
-      body.innerHTML = renderVariableReferenceCard('height') + `
+      contentHtml = renderVariableReferenceCard('height') + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <b>📏 ฐานข้อมูลการคำนวณขนาดความสูงผ้าม่าน (เชื่อมโยงกับกลุ่มรางม่านและรายการรางม่าน • มาตรฐานลอยจากพื้น <code>FL_BASE = 1</code> ซม.):</b><br>
           • กำหนด <b>กลุ่มรางม่าน</b> (จับกลุ่มรางที่มีระยะลดความสูงเท่ากันในแท็บรางม่าน) หรือระบุ <b>รายการรางม่าน</b> เฉพาะรุ่นได้โดยไม่ต้องระบุจำนวนผืน<br>
           • <b>ความสูงราง (<code>RH</code>) = สูงเฟรม (<code>H</code>) + เผื่อบน (<code>ET</code>) + เผื่อล่าง (<code>EB</code>)</b>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1420px">
+          <table class="ed-tbl" style="min-width:1460px">
             <thead>
               <tr>
                 <th style="width:110px">รูปแบบผ้าม่าน</th>
@@ -3082,7 +3151,7 @@ const MasterDBModal = (() => {
                 <th style="min-width:250px">ชื่อเงื่อนไขความสูง</th>
                 <th style="width:155px">สูตรความสูงผ้า (HC)</th>
                 <th style="width:150px">การปัดเศษ</th>
-                <th style="width:42px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -3092,13 +3161,13 @@ const MasterDBModal = (() => {
                   ? (masterDB.rails || []).filter(r => String(r.railGroup || '').trim() === grp).map(r => r.name).filter(Boolean)
                   : [];
                 return `
-                <tr>
+                <tr data-db-row="heightFormulas.${i}">
                   <td><select data-db-edit="heightFormulas.${i}.curtainStyle">${curtainSelectOpts(hf.curtainStyle)}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.rodType">${rodSelectOpts(hf.rodType)}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.railGroup">${railGroupSelectOpts(grp)}</select></td>
                   <td>
                     <select data-db-edit="heightFormulas.${i}.railName">${railNameSelectOpts(hf.railName || '*', grp)}</select>
-                    ${grpRails.length ? `<div style="font-size:10.5px;color:#0b5ed7;margin-top:2px;line-height:1.25">ในกลุ่ม: ${escH(grpRails.join(', '))}</div>` : ''}
+                    <div class="hf-grp-rails" style="font-size:10.5px;color:#0b5ed7;margin-top:2px;line-height:1.25${grpRails.length ? '' : ';display:none'}">${grpRails.length ? `ในกลุ่ม: ${escH(grpRails.join(', '))}` : ''}</div>
                   </td>
                   <td><select data-db-edit="heightFormulas.${i}.railTracks">${railTrackSelectOpts(hf.railTracks || '*')}</select></td>
                   <td><select data-db-edit="heightFormulas.${i}.hookSize">${hookSelectOpts(hf.hookSize)}</select></td>
@@ -3106,7 +3175,7 @@ const MasterDBModal = (() => {
                   <td><input data-db-edit="heightFormulas.${i}.label" value="${escH(hf.label || '')}"></td>
                   <td><input data-db-edit="heightFormulas.${i}.heightExp" value="${escH(hf.heightExp || 'RH - FL_BASE')}"></td>
                   <td><select data-db-edit="heightFormulas.${i}.roundMode">${roundModeSelectOpts(hf.roundMode || 'none')}</select></td>
-                  <td class="c"><button type="button" class="danger" data-db-del="heightFormulas.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('heightFormulas', i)}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -3118,7 +3187,7 @@ const MasterDBModal = (() => {
       const rules = masterDB.fabricCalcRules || [];
       const opaqueCount = rules.filter(r => r.grainType !== 'sheer').length;
       const sheerCount = rules.filter(r => r.grainType === 'sheer').length;
-      body.innerHTML = renderStdParamsBanner() + renderVariableReferenceCard('fabric') + `
+      contentHtml = renderStdParamsBanner() + renderVariableReferenceCard('fabric') + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
             <b>🧮 ฐานข้อมูลการคำนวณปริมาณผ้า (ดึง ระยะย่น, พับริม, พับบนล่างมาตรฐาน/ประหยัด จากฐานข้อมูลกลางแหล่งเดียว):</b>
@@ -3148,7 +3217,7 @@ const MasterDBModal = (() => {
                 <th style="width:195px">สูตรจำนวน Repeat (YR_CNT)</th>
                 <th style="width:280px">สูตรปริมาณผ้า (หลา)</th>
                 <th style="width:145px">การปัดเศษหลา</th>
-                <th style="width:42px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -3178,7 +3247,7 @@ const MasterDBModal = (() => {
                   <td><input data-db-edit="fabricCalcRules.${i}.yRepeatCountExp" value="${escH(r.yRepeatCountExp || '')}" style="font-family:monospace;font-size:11.5px"></td>
                   <td><input data-db-edit="fabricCalcRules.${i}.qtyExp" value="${escH(r.qtyExp || '')}" style="font-family:monospace;font-size:11.5px"></td>
                   <td><select data-db-edit="fabricCalcRules.${i}.roundMode">${roundModeSelectOpts(r.roundMode || 'ceil_1dec')}</select></td>
-                  <td class="c"><button type="button" class="danger" data-db-del="fabricCalcRules.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('fabricCalcRules', i)}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -3194,7 +3263,7 @@ const MasterDBModal = (() => {
     } else if (activeTab === 'rails') {
       const railsAll = masterDB.rails || [];
       const railGroupsList = Array.from(new Set(railsAll.map(r => String(r.railGroup || '').trim()).filter(Boolean)));
-      body.innerHTML = `
+      contentHtml = `
         <datalist id="dlRailGroups">${railGroupsList.map(g => `<option value="${escH(g)}"></option>`).join('')}</datalist>
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <b>🛤️ ฐานข้อมูลรางม่าน (แยกออกจากอุปกรณ์เสริม • กำหนดกลุ่มรางม่านที่มีขนาด/ระยะลดความสูงเดียวกัน + หน่วยขาย เมตร หรือ ชุด):</b><br>
@@ -3202,7 +3271,7 @@ const MasterDBModal = (() => {
           • กรณีขายเป็น <b>เมตร</b>: กำหนดขั้นต่ำต่อรางได้ เช่น <b>1.00 เมตร</b> | กรณีขายเป็น <b>ชุด</b>: เช่น <b>2.00</b> เมตร/ชุด
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1460px">
+          <table class="ed-tbl" style="min-width:1490px">
             <thead>
               <tr>
                 <th style="min-width:210px">ชื่อรางม่าน</th>
@@ -3214,7 +3283,7 @@ const MasterDBModal = (() => {
                 <th style="min-width:230px">การแบ่งชุดตามความยาวราง (เมตร=ชุด)</th>
                 <th style="width:95px">สีมาตรฐาน</th>
                 <th style="width:160px">รายละเอียด / ขนาด</th>
-                <th style="width:45px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -3229,7 +3298,7 @@ const MasterDBModal = (() => {
                   <td><input data-db-edit="rails.${i}.setRanges" value="${escH(rl.setRanges || '')}" placeholder="เช่น 0-2.00=1, 2.01-2.99=1, 3.00-4.00=2"></td>
                   <td><input data-db-edit="rails.${i}.defaultColor" value="${escH(rl.defaultColor || '')}" placeholder="เช่น ขาว, ดำ, เงิน"></td>
                   <td><input data-db-edit="rails.${i}.spec" value="${escH(rl.spec || '')}" placeholder="เช่น 28 มม."></td>
-                  <td class="c"><button type="button" class="danger" data-db-del="rails.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('rails', i)}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -3241,13 +3310,13 @@ const MasterDBModal = (() => {
       `;
     } else if (activeTab === 'accessories') {
       const accAll = masterDB.accessories || [];
-      body.innerHTML = `
+      contentHtml = `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <b>🪝 ฐานข้อมูลอุปกรณ์เสริม (แยกออกจากฐานข้อมูลรางม่าน • ขายเป็นชิ้น):</b><br>
           ประกอบด้วย ด้ามจูง, ตะขอเกี่ยวสายรวบ, ห่วงตาไก่, หัวปิดราง, ขาจับราง และอุปกรณ์เสริมอื่นๆ โดยกำหนดหน่วยขายเป็น <b>ชิ้น</b> ทั้งหมด
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1050px">
+          <table class="ed-tbl" style="min-width:1080px">
             <thead>
               <tr>
                 <th style="min-width:240px">ชื่ออุปกรณ์เสริม</th>
@@ -3256,7 +3325,7 @@ const MasterDBModal = (() => {
                 <th style="width:120px">หน่วยขาย</th>
                 <th style="width:120px">สีมาตรฐาน</th>
                 <th style="min-width:200px">รายละเอียด / ขนาด</th>
-                <th style="width:45px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -3268,7 +3337,7 @@ const MasterDBModal = (() => {
                   <td class="c"><span class="pill" style="background:#e6f4ea;color:#137333;font-weight:700">ชิ้น</span></td>
                   <td><input data-db-edit="accessories.${i}.defaultColor" value="${escH(ac.defaultColor || '')}" placeholder="เช่น เงิน, ขาว, ใส"></td>
                   <td><input data-db-edit="accessories.${i}.spec" value="${escH(ac.spec || '')}" placeholder="เช่น 120 ซม."></td>
-                  <td class="c"><button type="button" class="danger" data-db-del="accessories.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('accessories', i)}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -3278,16 +3347,16 @@ const MasterDBModal = (() => {
         </div>
       `;
     } else if (activeTab === 'blinds') {
-      body.innerHTML = `
+      contentHtml = `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <div class="inline" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
             <b>🪟 ฐานข้อมูลมู่ลี่ ม่านม้วน ม่านปรับแสง (แยกช่องชื่อรุ่น และช่องรหัสสินค้า 1 รุ่นใส่ได้หลายรหัส):</b>
             <button type="button" data-db-goto="blindCords">🎨 จัดการชุดสีเชือกเทป / สีเชือกสลิง &amp; กล่องบังราง (แยกชุดข้อมูล)</button>
           </div>
-          • กรอก <b>ชื่อรุ่น</b> (เช่น <code>P100</code>) และ <b>รหัสสินค้า</b> หลายรหัสในช่องเดียวคั่นด้วย <code>,</code> (เช่น <code>P101, P102, P103</code>) — ที่หน้าแปลนงานจะให้เลือกรุ่นก่อนแล้วค่อยเลือกรหัสของรุ่นนั้นอัตโนมัติ • ขายขั้นต่ำ <b>1.5 ตร.ม./ผืน</b>
+          • กรอก <b>ชื่อรุ่น</b> (เช่น <code>P100</code>) และ <b>รหัสสินค้า</b> หลายรหัสในช่องเดียวคั่นด้วย <code>,</code> (เช่น <code>P101, P102, P103</code>) — ที่หน้าแปลนงานจะให้เลือกรุ่นก่อนแล้วค่อยเลือกรหัสของรุ่นนั้นอัตโนมัติ • ขายขั้นต่ำ <b>1.5 ตร.ม./ผืน</b> (คิดแยกแต่ละชุด ปัดขึ้นทศนิยม 1 ตำแหน่งทุกชุด)
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1080px">
+          <table class="ed-tbl" style="min-width:1110px">
             <thead>
               <tr>
                 <th style="width:145px">รูปแบบม่าน</th>
@@ -3295,7 +3364,7 @@ const MasterDBModal = (() => {
                 <th style="min-width:340px">รหัสสินค้า (ใส่หลายรหัสคั่นด้วย , เช่น P101, P102, P103)</th>
                 <th style="width:125px">ขั้นต่ำ (ตร.ม./ผืน)</th>
                 <th style="width:170px">การปัดเศษ</th>
-                <th style="width:45px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -3306,7 +3375,7 @@ const MasterDBModal = (() => {
                   <td><input data-db-edit="blinds.${i}.codes" value="${escH(bl.codes || '')}" placeholder="เช่น P101, P102, P103"></td>
                   <td><input type="number" step="0.1" min="1.5" data-db-edit="blinds.${i}.minSqm" value="${escH(bl.minSqm ?? 1.5)}"></td>
                   <td><select data-db-edit="blinds.${i}.roundMode">${roundModeSelectOpts(bl.roundMode || 'ceil_1dec')}</select></td>
-                  <td class="c"><button type="button" class="danger" data-db-del="blinds.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('blinds', i)}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -3318,7 +3387,7 @@ const MasterDBModal = (() => {
       const tapeRows = cordsAll.map((c, i) => ({ c, i })).filter(({ c }) => c.cordType !== 'เชือกสลิง');
       const slingRows = cordsAll.map((c, i) => ({ c, i })).filter(({ c }) => c.cordType === 'เชือกสลิง');
       const valRows = masterDB.blindValances || [];
-      body.innerHTML = `
+      contentHtml = `
         <div class="subcard" style="margin-bottom:8px;font-size:12px">
           <b>🎨 ฐานข้อมูลสีเชือกเทป, สีเชือกสลิง และสีกล่องบังรางมู่ลี่ (แยกชุดข้อมูลอิสระจากรุ่นมู่ลี่):</b><br>
           • แยกชุดข้อมูล <b>สีเชือกเทป</b> และ <b>สีเชือกสลิง</b> ออกจากกันชัดเจน เมื่อเลือกประเภทเชือกที่หน้าแปลนงาน ระบบจะแสดงเฉพาะสีของประเภทเชือกนั้นให้เลือกทันที
@@ -3330,13 +3399,13 @@ const MasterDBModal = (() => {
               <button type="button" class="primary" data-db-add="blindCords" data-cordtype="เชือกเทป" style="padding:2px 8px;font-size:11.5px">➕ เพิ่มสีเชือกเทป</button>
             </div>
             <table class="ed-tbl">
-              <thead><tr><th>ชื่อสีเชือกเทป</th><th style="width:85px">รหัส</th><th style="width:38px">ลบ</th></tr></thead>
+              <thead><tr><th>ชื่อสีเชือกเทป</th><th style="width:85px">รหัส</th><th style="width:68px">จัดการ</th></tr></thead>
               <tbody>
                 ${tapeRows.map(({ c, i }) => `
                   <tr>
                     <td><input data-db-edit="blindCords.${i}.name" value="${escH(c.name || '')}" placeholder="เช่น สีครีม"></td>
                     <td><input data-db-edit="blindCords.${i}.code" value="${escH(c.code || '')}" placeholder="TP-01"></td>
-                    <td class="c"><button type="button" class="danger" data-db-del="blindCords.${i}">✕</button></td>
+                    <td class="c">${dupDelBtns('blindCords', i)}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
@@ -3347,13 +3416,13 @@ const MasterDBModal = (() => {
               <button type="button" class="primary" data-db-add="blindCords" data-cordtype="เชือกสลิง" style="padding:2px 8px;font-size:11.5px">➕ เพิ่มสีเชือกสลิง</button>
             </div>
             <table class="ed-tbl">
-              <thead><tr><th>ชื่อสีเชือกสลิง</th><th style="width:85px">รหัส</th><th style="width:38px">ลบ</th></tr></thead>
+              <thead><tr><th>ชื่อสีเชือกสลิง</th><th style="width:85px">รหัส</th><th style="width:68px">จัดการ</th></tr></thead>
               <tbody>
                 ${slingRows.map(({ c, i }) => `
                   <tr>
                     <td><input data-db-edit="blindCords.${i}.name" value="${escH(c.name || '')}" placeholder="เช่น สีเทา"></td>
                     <td><input data-db-edit="blindCords.${i}.code" value="${escH(c.code || '')}" placeholder="SL-01"></td>
-                    <td class="c"><button type="button" class="danger" data-db-del="blindCords.${i}">✕</button></td>
+                    <td class="c">${dupDelBtns('blindCords', i)}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
@@ -3364,13 +3433,13 @@ const MasterDBModal = (() => {
               <button type="button" class="primary" data-db-add="blindValances" style="padding:2px 8px;font-size:11.5px">➕ เพิ่มสีกล่อง</button>
             </div>
             <table class="ed-tbl">
-              <thead><tr><th>ชื่อสีกล่องบังราง</th><th style="width:85px">รหัส</th><th style="width:38px">ลบ</th></tr></thead>
+              <thead><tr><th>ชื่อสีกล่องบังราง</th><th style="width:85px">รหัส</th><th style="width:68px">จัดการ</th></tr></thead>
               <tbody>
                 ${valRows.map((v, i) => `
                   <tr>
                     <td><input data-db-edit="blindValances.${i}.name" value="${escH(v.name || '')}" placeholder="เช่น สีเดียวกับใบ"></td>
                     <td><input data-db-edit="blindValances.${i}.code" value="${escH(v.code || '')}" placeholder="VL-01"></td>
-                    <td class="c"><button type="button" class="danger" data-db-del="blindValances.${i}">✕</button></td>
+                    <td class="c">${dupDelBtns('blindValances', i)}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
@@ -3379,14 +3448,14 @@ const MasterDBModal = (() => {
       `;
     } else if (activeTab === 'curtains') {
       const calcBehaviorOpts = sel => CALC_BEHAVIOR_MODES.map(([v, t]) => `<option value="${escH(v)}" ${(sel || 'curtain') === v ? 'selected' : ''}>${escH(t)}</option>`).join('');
-      body.innerHTML = renderStdParamsBanner() + `
+      contentHtml = renderStdParamsBanner() + `
         <div class="subcard" style="margin-bottom:8px;font-size:12px;background:#eef6ff;border:1px solid #93c5fd">
           <b>🎀 ฐานข้อมูลกลาง (แหล่งเดียวที่ใช้คำนวณทั้งระบบ): โหมดการคิดขนาด • ระยะย่น • เผื่อพับริม • เผื่อพับขอบบนล่างมาตรฐาน/ประหยัด</b><br>
           • <b>โหมดการคิดขนาด/จำนวนผืน</b>: กำหนดได้แต่ละรูปแบบว่าจะให้ <b>คำนวณตามสูตรผ้าม่าน (หลา)</b> หรือ <b>กำหนดขนาดต่อผืนเองแบบม่านม้วน/มู่ลี่ (ตร.ม.)</b><br>
           • <b>การคิดย่อยแบบย่นสำเร็จ (<code>gathered</code>)</b>: ม่านจีบ / ม่านลอน | ที่เหลือใช้ <b>แบบขึงตึง (<code>stretched</code>)</b>
         </div>
         <div class="db-tbl-scroll">
-          <table class="ed-tbl" style="min-width:1360px">
+          <table class="ed-tbl" style="min-width:1390px">
             <thead>
               <tr>
                 <th style="min-width:140px">ชื่อรูปแบบผ้าม่าน</th>
@@ -3399,7 +3468,7 @@ const MasterDBModal = (() => {
                 <th style="width:100px">พับริม HEM_SIDE</th>
                 <th style="width:90px">เกย OV</th>
                 <th style="width:95px">อ้อมข้าง SR</th>
-                <th style="width:45px">ลบ</th>
+                <th style="width:74px">จัดการ</th>
               </tr>
             </thead>
             <tbody>
@@ -3415,7 +3484,7 @@ const MasterDBModal = (() => {
                   <td><input type="number" step="any" data-db-edit="curtains.${i}.stdSideHem" value="${escH(c.stdSideHem ?? 10)}"></td>
                   <td><input type="number" step="any" data-db-edit="curtains.${i}.stdOverlap" value="${escH(c.stdOverlap ?? 8)}"></td>
                   <td><input type="number" step="any" data-db-edit="curtains.${i}.stdSideReturn" value="${escH(c.stdSideReturn ?? 8)}"></td>
-                  <td class="c"><button type="button" class="danger" data-db-del="curtains.${i}">✕</button></td>
+                  <td class="c">${dupDelBtns('curtains', i)}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -3423,37 +3492,65 @@ const MasterDBModal = (() => {
         <button type="button" class="primary" style="margin-top:8px" data-db-add="curtains">➕ เพิ่มรูปแบบผ้าม่าน</button>
       `;
     } else if (activeTab === 'hooks') {
-      body.innerHTML = `
+      contentHtml = `
         <p class="hint" style="margin-bottom:8px">กำหนดรายการขนาดตะขอ (แสดงให้เลือกเมื่อรูปแบบม่านเป็นม่านจีบ หรือ ม่านลอน)</p>
         <table class="ed-tbl">
-          <thead><tr><th>ขนาดตะขอ</th><th style="width:60px">ลบ</th></tr></thead>
+          <thead><tr><th>ขนาดตะขอ</th><th style="width:82px">จัดการ</th></tr></thead>
           <tbody>
             ${masterDB.hooks.map((h, i) => `
               <tr>
                 <td><input data-db-edit="hooks.${i}.name" value="${escH(h.name)}" placeholder="เช่น No.5"></td>
-                <td class="c"><button type="button" class="danger" data-db-del="hooks.${i}">✕</button></td>
+                <td class="c">${dupDelBtns('hooks', i)}</td>
               </tr>`).join('')}
           </tbody>
         </table>
         <button type="button" class="primary" style="margin-top:8px" data-db-add="hooks">➕ เพิ่มขนาดตะขอ</button>
       `;
     } else if (activeTab === 'remarks') {
-      body.innerHTML = `
+      contentHtml = `
         <p class="hint" style="margin-bottom:8px">กำหนดข้อความหมายเหตุสำหรับเลือกแสดงกำกับตามตำแหน่งรอบบานหน้าต่าง/ประตู (เช่น ชนแอร์, ปลั๊กไฟ, บิ้วอิน, ตู้, เตียง)</p>
         <table class="ed-tbl">
-          <thead><tr><th>ข้อความหมายเหตุ</th><th style="width:60px">ลบ</th></tr></thead>
+          <thead><tr><th>ข้อความหมายเหตุ</th><th style="width:82px">จัดการ</th></tr></thead>
           <tbody>
             ${masterDB.remarks.map((r, i) => `
               <tr>
                 <td><input data-db-edit="remarks.${i}.name" value="${escH(r.name)}" placeholder="เช่น ชนแอร์"></td>
-                <td class="c"><button type="button" class="danger" data-db-del="remarks.${i}">✕</button></td>
+                <td class="c">${dupDelBtns('remarks', i)}</td>
               </tr>`).join('')}
           </tbody>
         </table>
         <button type="button" class="primary" style="margin-top:8px" data-db-add="remarks">➕ เพิ่มข้อความหมายเหตุ</button>
       `;
     }
-    body.innerHTML = renderImportBox(activeTab) + body.innerHTML;
+    body.innerHTML = renderImportBox(activeTab) + contentHtml;
+
+    if (opts.resetScroll) {
+      body.scrollTop = 0;
+      body.scrollLeft = 0;
+      if (modalBox) modalBox.scrollTop = 0;
+    } else {
+      body.scrollTop = prevBodyTop;
+      body.scrollLeft = prevBodyLeft;
+      if (modalBox) modalBox.scrollTop = prevModalTop;
+      const newTbls = Array.from(body.querySelectorAll('.db-tbl-scroll'));
+      newTbls.forEach((el, ti) => {
+        if (prevTblScrolls[ti]) {
+          el.scrollTop = prevTblScrolls[ti].top;
+          el.scrollLeft = prevTblScrolls[ti].left;
+        }
+      });
+      if (activeEditKey) {
+        const nextInp = body.querySelector(`[data-db-edit="${activeEditKey}"]`);
+        if (nextInp && typeof nextInp.focus === 'function') {
+          try {
+            nextInp.focus({ preventScroll: true });
+            if (activeSelStart !== null && typeof nextInp.setSelectionRange === 'function') {
+              nextInp.setSelectionRange(activeSelStart, activeSelEnd ?? activeSelStart);
+            }
+          } catch (err) {}
+        }
+      }
+    }
   }
 
   function onEditChange(e) {
@@ -3475,11 +3572,24 @@ const MasterDBModal = (() => {
       let val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
       masterDB[list][+idx][field] = val;
       if (list === 'fabrics' && field === 'fabricWidth') {
-        if (!canFabricUseSheerGrain(val)) {
+        const allowSheer = canFabricUseSheerGrain(val);
+        if (!allowSheer) {
           masterDB.fabrics[+idx].calcMode = 'opaque';
         }
+        // อัปเดตเฉพาะช่อง select เกรนในแถวเดียวกัน (ไม่ re-render ทั้งหน้าต่าง เพื่อไม่ให้หน้ากระตุก/หลุดโฟกัส)
+        const tr = e.target.closest('tr');
+        const modeSel = tr && tr.querySelector(`select[data-db-edit="fabrics.${idx}.calcMode"]`);
+        if (modeSel) {
+          const curMode = allowSheer ? (masterDB.fabrics[+idx].calcMode || 'both') : 'opaque';
+          modeSel.disabled = !allowSheer;
+          modeSel.title = allowSheer ? '' : 'ขนาดหน้าผ้าต้องเกิน 270 ซม. จึงจะเลือกเกรนม่านโปร่งได้';
+          modeSel.innerHTML = `
+            <option value="opaque" ${curMode === 'opaque' ? 'selected' : ''}>เกรนม่านทึบเท่านั้น ${allowSheer ? '' : '(หน้าผ้า ≤ 270 ซม.)'}</option>
+            <option value="both" ${curMode === 'both' ? 'selected' : ''} ${allowSheer ? '' : 'disabled'}>ทั้งเกรนม่านทึบและเกรนม่านโปร่ง (หน้าผ้า &gt; 270 ซม.)</option>
+            <option value="sheer" ${curMode === 'sheer' ? 'selected' : ''} ${allowSheer ? '' : 'disabled'}>เกรนม่านโปร่ง (หน้าผ้า &gt; 270 ซม.)</option>
+          `;
+        }
         saveMasterDB();
-        render();
         return;
       }
       if (list === 'blinds' && field === 'model') {
@@ -3493,8 +3603,21 @@ const MasterDBModal = (() => {
           const inGrp = (masterDB.rails || []).some(r => String(r.railGroup || '').trim() === grp && String(r.name || '').trim() === curRail);
           if (!inGrp) masterDB.heightFormulas[+idx].railName = '*';
         }
+        // อัปเดตเฉพาะช่องรายการรางและข้อความในกลุ่มในแถวเดียวกัน (ไม่ re-render ทั้งหน้าต่าง เพื่อไม่ให้สโครลเด้งขึ้นบน)
+        const tr = e.target.closest('tr');
+        const railSel = tr && tr.querySelector(`select[data-db-edit="heightFormulas.${idx}.railName"]`);
+        if (railSel) {
+          railSel.innerHTML = railNameSelectOpts(masterDB.heightFormulas[+idx].railName || '*', grp);
+        }
+        const hintEl = tr && tr.querySelector('.hf-grp-rails');
+        if (hintEl) {
+          const grpRails = (grp && grp !== '*')
+            ? (masterDB.rails || []).filter(r => String(r.railGroup || '').trim() === grp).map(r => r.name).filter(Boolean)
+            : [];
+          hintEl.textContent = grpRails.length ? `ในกลุ่ม: ${grpRails.join(', ')}` : '';
+          hintEl.style.display = grpRails.length ? '' : 'none';
+        }
         saveMasterDB();
-        render();
         return;
       }
       saveMasterDB();
@@ -3531,7 +3654,7 @@ const MasterDBModal = (() => {
         importStatusMsg = '';
         branchStatusMsg = '';
         showPasteBox = false;
-        render();
+        render({ resetScroll: true });
       });
     });
     const commitNewBranchesFromInput = (shouldRender = true) => {
@@ -3583,7 +3706,7 @@ const MasterDBModal = (() => {
         activeTab = gotoBtn.dataset.dbGoto || 'curtains';
         importStatusMsg = '';
         showPasteBox = false;
-        render();
+        render({ resetScroll: true });
         return;
       }
       const sortBtn = e.target.closest('[data-db-sort]');
@@ -3702,15 +3825,83 @@ const MasterDBModal = (() => {
         if (st && br) {
           const cur = String(st.branch || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean);
           const idx = cur.indexOf(br);
+          const isNowOn = idx < 0;
           if (idx >= 0) cur.splice(idx, 1);
           else cur.push(br);
           st.branch = cur.join(', ');
+          // อัปเดตเฉพาะช่องสาขาและปุ่มในแถวเดิมโดยไม่ re-render ทั้งหน้าต่าง (ไม่กระตุกสโครล)
+          const td = togStBr.closest('td');
+          const inp = td && td.querySelector(`input[data-db-edit="staff.${si}.branch"]`);
+          if (inp) inp.value = st.branch;
+          togStBr.textContent = (isNowOn ? '✓ ' : '+ ') + br;
+          togStBr.style.cssText = `padding:1px 6px;font-size:10.5px;border-radius:999px;${isNowOn ? 'background:#1d4ed8;color:#fff;border-color:#1d4ed8;font-weight:700' : 'background:#f8fafc;color:#475569;border-color:#cbd5e1'}`;
           saveMasterDB();
           if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
             RealtimeSync.flushNow();
           }
-          render();
           if (onUpdate) onUpdate();
+        }
+        return;
+      }
+      const wfStyleAllBtn = e.target.closest('[data-db-wf-style-all]');
+      if (wfStyleAllBtn) {
+        const wi = +wfStyleAllBtn.dataset.dbWfStyleAll;
+        const wf = masterDB.widthFormulas && masterDB.widthFormulas[wi];
+        if (wf) {
+          wf.curtainStyle = '*';
+          const tr = wfStyleAllBtn.closest('tr');
+          const styleCell = tr && tr.querySelector('.wf-style-cell');
+          const gatherCell = tr && tr.querySelector('.wf-gather-cell');
+          if (styleCell) styleCell.innerHTML = renderWidthStylePicker(wf, wi);
+          if (gatherCell) gatherCell.textContent = formatWidthGatherText(wf.curtainStyle);
+          saveMasterDB();
+        }
+        return;
+      }
+      const wfStyleBtn = e.target.closest('[data-db-wf-style]');
+      if (wfStyleBtn) {
+        const wi = +wfStyleBtn.dataset.dbWfStyle;
+        const stName = wfStyleBtn.dataset.style;
+        const wf = masterDB.widthFormulas && masterDB.widthFormulas[wi];
+        if (wf && stName) {
+          const curList = (String(wf.curtainStyle || '').trim() === '*') ? [] : parseCurtainStylesList(wf.curtainStyle);
+          const idx = curList.indexOf(stName);
+          if (idx >= 0) curList.splice(idx, 1);
+          else curList.push(stName);
+          wf.curtainStyle = curList.length ? curList.join(', ') : '*';
+          const tr = wfStyleBtn.closest('tr');
+          const styleCell = tr && tr.querySelector('.wf-style-cell');
+          const gatherCell = tr && tr.querySelector('.wf-gather-cell');
+          if (styleCell) styleCell.innerHTML = renderWidthStylePicker(wf, wi);
+          if (gatherCell) gatherCell.textContent = formatWidthGatherText(wf.curtainStyle);
+          saveMasterDB();
+        }
+        return;
+      }
+      const dupBtn = e.target.closest('[data-db-dup]');
+      if (dupBtn) {
+        const [list, idxStr] = dupBtn.dataset.dbDup.split('.');
+        const idx = +idxStr;
+        if (Array.isArray(masterDB[list]) && masterDB[list][idx]) {
+          const clone = JSON.parse(JSON.stringify(masterDB[list][idx]));
+          clone.id = 'dup_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+          if (list === 'staff') {
+            clone.username = '';
+            clone.password = '';
+            clone.role = 'staff';
+            if (clone.name && !String(clone.name).includes('(สำเนา)')) clone.name = `${clone.name} (สำเนา)`;
+          } else if (clone.label && !String(clone.label).includes('(สำเนา)')) {
+            clone.label = `${clone.label} (สำเนา)`;
+          } else if (clone.name && !clone.label && !String(clone.name).includes('(สำเนา)')) {
+            clone.name = `${clone.name} (สำเนา)`;
+          } else if (clone.model && !clone.label && !String(clone.model).includes('(สำเนา)')) {
+            clone.model = `${clone.model} (สำเนา)`;
+            clone.group = clone.model;
+            clone.name = clone.model;
+          }
+          masterDB[list].splice(idx + 1, 0, clone);
+          saveMasterDB();
+          render();
         }
         return;
       }
@@ -3818,7 +4009,7 @@ const MasterDBModal = (() => {
       return;
     }
     activeTab = tab;
-    render();
+    render({ resetScroll: true });
     document.getElementById('dbModal').hidden = false;
   }
 

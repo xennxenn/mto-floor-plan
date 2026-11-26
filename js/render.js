@@ -924,48 +924,68 @@ function rCalc(t, r, u1, u2, rowKey = '', manualFlags = null) {
 }
 
 function buildGroupedBlindCalcRows(w) {
-  const pieces = Array.isArray(w.blindPieces) ? w.blindPieces : [];
-  if (!pieces.length) return null;
-  const style = (w.curtainStyle1 || w.curtainStyle2 || '').trim();
+  const style = String((w && (w.curtainStyle1 || w.curtainStyle2)) || '').trim();
+  const isBlind1 = (typeof isBlindOrRollerStyle === 'function') && isBlindOrRollerStyle(w && w.curtainStyle1);
   const blindRule = (typeof masterDB !== 'undefined' && masterDB.blinds || []).find(bl => bl.curtainStyle === style)
     || { minSqm: 1.5, roundMode: 'ceil_1dec' };
   const minSqm = Math.max(1.5, parseFloat(blindRule.minSqm) || 1.5);
+  const ceil1 = v => Math.ceil((v - 1e-9) * 10) / 10;
+  const calcPieceSqmStr = (wn, hn) => {
+    if (wn <= 0 || hn <= 0) return '';
+    const sqm = ceil1(Math.max(minSqm, (wn / 100) * (hn / 100)));
+    return String(sqm);
+  };
 
-  // จัดกลุ่มผืนที่ขนาดความกว้างและความสูงซ้ำกัน เช่น ผืนที่ 2/ผืนที่ 3
-  const groups = [];
-  const keyMap = new Map();
-  pieces.forEach((p, idx) => {
-    const pw = String(p && p.w !== undefined ? p.w : '').trim();
-    const ph = String(p && p.h !== undefined ? p.h : '').trim();
-    const key = (pw || ph) ? `${pw}x${ph}` : `__empty_${idx}`;
-    if (pw && ph && keyMap.has(key)) {
-      keyMap.get(key).indices.push(idx + 1);
-    } else {
-      const grp = { w: pw, h: ph, indices: [idx + 1] };
-      groups.push(grp);
-      if (pw && ph) keyMap.set(key, grp);
-    }
-  });
+  const pieces = Array.isArray(w && w.blindPieces) ? w.blindPieces : [];
+  // 1) กรณีกำหนดขนาดต่อผืน (w.blindPieces): แสดงและคำนวณแยกทีละชุด (แม้ขนาดเท่ากัน 2 ผืนก็คิดแยกทีละผืน และปัดขึ้นทศนิยม 1 ตำแหน่งทุกผืน)
+  if (pieces.length) {
+    return pieces.map((p, idx) => {
+      const pw = String(p && p.w !== undefined ? p.w : '').trim();
+      const ph = String(p && p.h !== undefined ? p.h : '').trim();
+      const wn = parseFloat(pw) || 0;
+      const hn = parseFloat(ph) || 0;
+      return {
+        label: `ผืนที่ ${idx + 1}`,
+        row: {
+          a: pw,
+          b: ph,
+          n: (pw || ph) ? '1' : '',
+          t: calcPieceSqmStr(wn, hn),
+        },
+        key: `blind_${idx}`,
+      };
+    });
+  }
 
-  return groups.map((grp, gi) => {
-    const lbl = grp.indices.map(n => `ผืนที่ ${n}`).join('/');
-    const wn = parseFloat(grp.w) || 0;
-    const hn = parseFloat(grp.h) || 0;
-    const cnt = grp.indices.length;
-    let sqmStr = '';
-    if (wn > 0 && hn > 0) {
-      const sqmPerPiece = Math.max(minSqm, (wn / 100) * (hn / 100));
-      const totalSqm = sqmPerPiece * cnt;
-      sqmStr = (typeof applyRoundMode === 'function')
-        ? applyRoundMode(totalSqm, blindRule.roundMode || 'ceil_1dec')
-        : String(Math.ceil((totalSqm - 1e-9) * 10) / 10);
+  // 2) กรณีมู่ลี่/ม่านม้วนชั้นเดียวที่ไม่ได้สร้าง blindPieces แต่ระบุจำนวนตั้งแต่ 2 ผืนขึ้นไป (ขนาดเดียวกัน หรือแบ่งซ้าย/ขวา):
+  //    ให้แตกแสดงตารางแยกทีละชุด (ผืนที่ 1, ผืนที่ 2, ...) และปัดขึ้นทศนิยม 1 ตำแหน่งแยกทุกชุด
+  const mf = (w && w.manualFields) || {};
+  if (isBlind1 && !(w && w.curtainStyle2) && w && w.calcMode !== 'manual' && !mf.boT) {
+    const bo = w.blackout || {};
+    const cnt = parseInt(bo.n, 10) || 0;
+    const rawA = String(bo.a || '').replace(/\*/g, '').trim();
+    const rawB = String(bo.b || '').replace(/\*/g, '').trim();
+    if (cnt >= 2 && rawA && rawB) {
+      const aParts = rawA.includes('/') ? rawA.split('/').map(s => s.trim()) : null;
+      const hn = parseFloat(rawB) || 0;
+      return Array.from({ length: cnt }, (_, idx) => {
+        const pw = (aParts && aParts[idx]) ? aParts[idx] : (aParts ? aParts[0] : rawA);
+        const wn = parseFloat(pw) || 0;
+        return {
+          label: `ผืนที่ ${idx + 1}`,
+          row: {
+            a: pw,
+            b: rawB,
+            n: '1',
+            t: calcPieceSqmStr(wn, hn),
+          },
+          key: `blind_${idx}`,
+        };
+      });
     }
-    return {
-      label: lbl,
-      row: { a: grp.w, b: grp.h, n: (grp.w || grp.h) ? String(cnt) : '', t: sqmStr },
-      key: `blind_${gi}`,
-    };
-  });
+  }
+
+  return null;
 }
 
 function rWinCell(w, n, winIdx = 0) {
