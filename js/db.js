@@ -1529,9 +1529,15 @@ const getFabricCalcRulesForStyle = getFabricCalcRulesForWindow;
 function getRailsForStyle(curtainStyle, rodType = '') {
   const all = masterDB.rails || [];
   if (!curtainStyle && !rodType) return all;
+  const rt = String(rodType || '').trim();
+  // หากระบุประเภทรางม่านชัดเจน (เช่น รางม่านจีบ / รางม่านลอน / รางโชว์) ให้ดึงรางทั้งหมดในประเภทนั้นมาก่อนเสมอ
+  if (rt) {
+    const byRod = all.filter(r => !r.rodCategory || r.rodCategory === '*' || r.rodCategory === rt);
+    if (byRod.length) return byRod;
+  }
   const matched = all.filter(r => {
     const matchStyle = !curtainStyle || !r.curtainStyle || r.curtainStyle === '*' || r.curtainStyle === curtainStyle || curtainStyle.includes(r.curtainStyle);
-    const matchRod = !rodType || !r.rodCategory || r.rodCategory === '*' || r.rodCategory === rodType;
+    const matchRod = !rt || !r.rodCategory || r.rodCategory === '*' || r.rodCategory === rt;
     return matchStyle && matchRod;
   });
   return matched.length ? matched : all;

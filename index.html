@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=29">
+  <link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
   <!-- ================= TOP BAR ================= -->
@@ -82,8 +82,11 @@
         </div>
       </div>
 
-      <div class="dash-filter">
-        <input id="orderSearch" placeholder="🔍 ค้นหาจากเลขที่เอกสาร, ชื่อลูกค้า, สถานที่ติดตั้ง, เบอร์โทร, พนักงาน, สาขา...">
+      <div class="dash-filter" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="orderSearch" style="flex:1;min-width:220px" placeholder="🔍 ค้นหาจากเลขที่เอกสาร, ชื่อลูกค้า, สถานที่ติดตั้ง, เบอร์โทร, พนักงาน, สาขา...">
+        <select id="orderStaffFilter" class="admin-only-db" style="width:auto;min-width:210px;padding:7px 10px;font-size:13.5px" title="กรองรายการออเดอร์ตามพนักงานขาย (เฉพาะแอดมิน)">
+          <option value="">👤 พนักงานทั้งหมด</option>
+        </select>
       </div>
 
       <div class="tbl-wrap">
@@ -589,11 +592,11 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="js/db.js?v=29"></script>
-  <script src="js/plan.js?v=29"></script>
-  <script src="js/render.js?v=29"></script>
-  <script src="js/sync.js?v=29"></script>
-  <script src="js/pdf-import.js?v=29"></script>
-  <script src="js/app.js?v=29"></script>
+  <script src="js/db.js?v=30"></script>
+  <script src="js/plan.js?v=30"></script>
+  <script src="js/render.js?v=30"></script>
+  <script src="js/sync.js?v=30"></script>
+  <script src="js/pdf-import.js?v=30"></script>
+  <script src="js/app.js?v=30"></script>
 </body>
 </html>

@@ -555,7 +555,58 @@ function renderDashboard() {
   const q = (document.getElementById('orderSearch').value || '').trim().toLowerCase();
   const tbody = document.getElementById('ordersTableBody');
   const accessible = orders.filter(o => canAccessOrder(o));
+
+  // Filter พนักงานขายสำหรับแอดมิน
+  const staffFilterEl = document.getElementById('orderStaffFilter');
+  let selectedStaff = '';
+  if (staffFilterEl) {
+    const isAdmin = isAdminUser();
+    staffFilterEl.hidden = !isAdmin;
+    if (isAdmin) {
+      const prevVal = staffFilterEl.value || '';
+      const countByStaff = new Map();
+      let emptyStaffCount = 0;
+      accessible.forEach(o => {
+        const sn = String((o.staff && o.staff.name) || '').trim();
+        if (sn) countByStaff.set(sn, (countByStaff.get(sn) || 0) + 1);
+        else emptyStaffCount++;
+      });
+      // รวมรายชื่อพนักงานทั้งหมดจากฐานข้อมูล + ออเดอร์ที่มีอยู่
+      const allStaffNames = new Set(countByStaff.keys());
+      (masterDB.staff || []).forEach(s => {
+        const sn = String((s && s.name) || '').trim();
+        if (sn) allStaffNames.add(sn);
+      });
+      const sortedNames = Array.from(allStaffNames).sort((a, b) => a.localeCompare(b, 'th'));
+      const opts = [
+        `<option value="">👤 พนักงานทั้งหมด (${accessible.length})</option>`,
+        ...sortedNames.map(sn => {
+          const cnt = countByStaff.get(sn) || 0;
+          return `<option value="${esc(sn)}">${esc(sn)} (${cnt})</option>`;
+        }),
+      ];
+      if (emptyStaffCount > 0) {
+        opts.push(`<option value="__EMPTY__">(ยังไม่ระบุพนักงาน) (${emptyStaffCount})</option>`);
+      }
+      staffFilterEl.innerHTML = opts.join('');
+      if (prevVal && (sortedNames.includes(prevVal) || (prevVal === '__EMPTY__' && emptyStaffCount > 0))) {
+        staffFilterEl.value = prevVal;
+      }
+      selectedStaff = staffFilterEl.value || '';
+    } else {
+      staffFilterEl.value = '';
+    }
+  }
+
   const filtered = accessible.filter(o => {
+    if (selectedStaff) {
+      const sn = String((o.staff && o.staff.name) || '').trim();
+      if (selectedStaff === '__EMPTY__') {
+        if (sn) return false;
+      } else if (sn !== selectedStaff) {
+        return false;
+      }
+    }
     if (!q) return true;
     const hay = [o.staff.orderNo, o.customer.name, o.customer.mobile, o.customer.building, o.customer.road, o.staff.name, o.staff.branch]
       .map(x => String(x || '').toLowerCase()).join(' ');
@@ -1277,6 +1328,60 @@ function resolveWindowLayerConfig(w, sh, layerNo) {
   return { style, rodType, railModel, railGroup: finalMeta.railGroup || '', hookSize, isMixedStyle };
 }
 
+/**
+ * ซิงค์รุ่นรางม่านที่เลือกจากหน้าต่าง/ประตู (ทั้งชั้นที่ 1 และชั้นที่ 2) ไปแสดงในตาราง ROD TYPE ของใบแปลน
+ * - รองรับกรณีชั้น 1 และชั้น 2 เลือกคนละประเภทราง (เช่น รางม่านลอน + รางม่านจีบ -> แสดงครบทั้ง 2 ช่องบนแปลน)
+ * - รองรับกรณีชั้น 1 และชั้น 2 อยู่ประเภทเดียวกันแต่คนละรุ่น (เช่น รุ่น A / รุ่น B)
+ */
+function syncSheetRodsFromWindows(sh, forceReplaceCats = null) {
+  if (!sh || !sh.rods) return;
+  const catMap = { 'รางม่านจีบ': 'pleat', 'รางโชว์': 'show', 'รางม่านลอน': 'wave', 'รางม่านพับ': 'fold' };
+  const byCat = { pleat: [], show: [], wave: [], fold: [] };
+  const colorByCat = { pleat: '', show: '', wave: '', fold: '' };
+
+  const addRailEntry = (railName, fallbackRodType) => {
+    const n = String(railName || '').trim();
+    if (!n) return;
+    const nLow = n.toLowerCase();
+    const railObj = (masterDB.rails || []).find(r => String(r.name || '').trim().toLowerCase() === nLow);
+    const cat = (railObj && railObj.rodCategory) || fallbackRodType || '';
+    const rk = catMap[cat];
+    if (!rk || !byCat[rk]) return;
+    const canonicalName = (railObj && railObj.name) || n;
+    if (!byCat[rk].includes(canonicalName)) byCat[rk].push(canonicalName);
+    if (!colorByCat[rk] && railObj && railObj.defaultColor) colorByCat[rk] = railObj.defaultColor;
+  };
+
+  (sh.windows || []).forEach(win => {
+    if (!win) return;
+    if (win.railModel) {
+      const nat1 = (typeof inferNaturalRodTypeForStyle === 'function') ? inferNaturalRodTypeForStyle(win.curtainStyle1) : '';
+      addRailEntry(win.railModel, win.rodType || nat1);
+    }
+    if (win.railModel2) {
+      const nat2 = (typeof inferNaturalRodTypeForStyle === 'function') ? inferNaturalRodTypeForStyle(win.curtainStyle2 || win.curtainStyle1) : '';
+      addRailEntry(win.railModel2, win.rodType2 || nat2 || win.rodType);
+    }
+  });
+
+  ['pleat', 'show', 'wave', 'fold'].forEach(rk => {
+    const picked = byCat[rk];
+    if (!sh.rods[rk]) return;
+    if (picked.length) {
+      if (forceReplaceCats && forceReplaceCats.has(rk)) {
+        sh.rods[rk].model = picked.join(' / ');
+      } else {
+        const curParts = String(sh.rods[rk].model || '').split(/\s*\/\s*/).map(s => s.trim()).filter(Boolean);
+        picked.forEach(p => { if (!curParts.includes(p)) curParts.push(p); });
+        sh.rods[rk].model = curParts.join(' / ');
+      }
+      if (!sh.rods[rk].color && colorByCat[rk]) sh.rods[rk].color = colorByCat[rk];
+    } else if (forceReplaceCats && forceReplaceCats.has(rk)) {
+      sh.rods[rk].model = '';
+    }
+  });
+}
+
 function autoCalculateWindow(w, sh) {
   if (!w) return;
   if (!w.manualFields || typeof w.manualFields !== 'object') w.manualFields = {};
@@ -1514,19 +1619,9 @@ function autoCalculateWindow(w, sh) {
     }
   }
 
-  // ซิงค์รุ่นรางและอัปเดตผลรวมจำนวนหลาในตารางผ้าของหน้าห้อง
+  // ซิงค์รุ่นราง (ทั้งชั้นที่ 1 และชั้นที่ 2) และอัปเดตผลรวมจำนวนหลาในตารางผ้าของหน้าห้อง
   if (sh) {
-    if (w.railModel && sh.rods) {
-      const railObj = (masterDB.rails || []).find(r => r.name === w.railModel);
-      if (railObj) {
-        const catMap = { 'รางม่านจีบ': 'pleat', 'รางโชว์': 'show', 'รางม่านลอน': 'wave', 'รางม่านพับ': 'fold' };
-        const rk = catMap[railObj.rodCategory || w.rodType] || 'pleat';
-        if (sh.rods[rk] && !sh.rods[rk].model) {
-          sh.rods[rk].model = railObj.name;
-          if (!sh.rods[rk].color && railObj.defaultColor) sh.rods[rk].color = railObj.defaultColor;
-        }
-      }
-    }
+    syncSheetRodsFromWindows(sh, null);
     if (w.specialType === 'gable' && w.gable) {
       if (w.blackout && w.blackout.t && !w.gable.boQty) {
         w.gable.boQty = String(extractYardsFromCalcText(w.blackout.t) || w.blackout.t);
@@ -1610,9 +1705,14 @@ function windowEditorHTML(w, i, planOpenings) {
   const rodTypeOpts = `<option value="">-- เลือกประเภทรางม่าน --</option>` +
     ['รางม่านจีบ', 'รางโชว์', 'รางม่านลอน', 'รางม่านพับ'].map(rt => `<option value="${esc(rt)}">${esc(rt)}</option>`).join('');
 
-  const railList = getRailsForStyle(w.curtainStyle1, w.rodType);
-  const railModelOpts = `<option value="">-- เลือกรุ่นรางและอุปกรณ์ (${railList.length} รายการ) --</option>` +
-    railList.map(r => `<option value="${esc(r.name)}">${esc(r.name)} (${esc(r.rodCategory || '-')}${r.curtainStyle ? ' • ' + esc(r.curtainStyle) : ''})</option>`).join('');
+  const cfgEd1 = resolveWindowLayerConfig(w, sh, 1);
+  const cfgEd2 = resolveWindowLayerConfig(w, sh, 2);
+  const railList = getRailsForStyle(w.curtainStyle1, cfgEd1.rodType);
+  const railModelOpts = `<option value="">-- อัตโนมัติตามตารางราง (${esc(cfgEd1.railModel || 'ไม่ระบุ')}) --</option>` +
+    railList.map(r => `<option value="${esc(r.name)}">${esc(r.name)}${r.railGroup ? ' [' + esc(r.railGroup) + ']' : ''} (${esc(r.rodCategory || '-')})</option>`).join('');
+  const railList2 = getRailsForStyle(w.curtainStyle2 || w.curtainStyle1, cfgEd2.rodType);
+  const railModelOpts2Ed = `<option value="">-- อัตโนมัติตามรางชั้น 2 (${esc(cfgEd2.railModel || 'ไม่ระบุ')}) --</option>` +
+    railList2.map(r => `<option value="${esc(r.name)}">${esc(r.name)}${r.railGroup ? ' [' + esc(r.railGroup) + ']' : ''} (${esc(r.rodCategory || '-')})</option>`).join('');
 
   // Req #9 & #10: ดึงตำแหน่งจากจุดในแปลนห้องเท่านั้น (กำหนดเองได้เฉพาะเมื่อแปลนห้องยังไม่ได้วางจุด) และป้องกันตำแหน่งซ้ำกัน
   const hasPlanPoints = planOpenings.length > 0;
@@ -1779,15 +1879,32 @@ function windowEditorHTML(w, i, planOpenings) {
           <select ${b('rodType')}>${rodTypeOpts}</select>
         </span>
       </label>
-      <label>รุ่นรางและอุปกรณ์เสริม
+      <label>รุ่นราง ชั้นที่ 1
         <span class="inline">
           <select ${b('railModel')}>${railModelOpts}</select>
           <button type="button" data-act="openDbRails" ${dbBtnAttr} title="ฐานข้อมูลรางม่านและอุปกรณ์เสริม">🗄️</button>
         </span>
       </label>
+      ${isTwoLayer ? `
+      <label>ประเภทราง & รุ่นราง ชั้นที่ 2 <small>(แยกจากชั้น 1 ได้)</small>
+        <span class="inline">
+          <select ${b('rodType2')} style="max-width:125px">
+            <option value="">อัตโนมัติ (${esc(cfgEd2.rodType || '-')})</option>
+            ${['รางม่านจีบ', 'รางโชว์', 'รางม่านลอน', 'รางม่านพับ'].map(rt => `<option value="${esc(rt)}">${esc(rt)}</option>`).join('')}
+          </select>
+          <select ${b('railModel2')}>${railModelOpts2Ed}</select>
+        </span>
+      </label>
+      ` : ''}
       <label>ขนาดตะขอ ${needHook ? '<b>(ม่านจีบ/ลอน)</b>' : '<small>(เฉพาะม่านจีบ/ลอน)</small>'}
         <span class="inline">
           <select ${b('hookSize')} ${needHook ? '' : 'disabled'}>${hookOpts}</select>
+          ${isTwoLayer ? `
+            <select ${b('hookSize2')} ${curtainNeedsHook(w.curtainStyle2 || w.curtainStyle1, '') ? '' : 'disabled'} title="ขนาดตะขอ ชั้นที่ 2">
+              <option value="">ชั้น 2: ตามชั้น 1</option>
+              ${masterDB.hooks.map(h => `<option value="${esc(h.name)}">ชั้น 2: ${esc(h.name)}</option>`).join('')}
+            </select>
+          ` : ''}
           <button type="button" data-act="openDbHooks" ${dbBtnAttr} title="เพิ่ม/แก้ไขขนาดตะขอ">🗄️</button>
         </span>
       </label>
@@ -2415,6 +2532,15 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
           if (field === 'railModel2' && w.railModel2 && typeof resolveRailMetaByName === 'function') {
             const rm2 = resolveRailMetaByName(w.railModel2);
             if (rm2.rodCategory) w.rodType2 = rm2.rodCategory;
+          }
+          if (field === 'railModel' || field === 'railModel2') {
+            const catMap = { 'รางม่านจีบ': 'pleat', 'รางโชว์': 'show', 'รางม่านลอน': 'wave', 'รางม่านพับ': 'fold' };
+            const touchCats = new Set();
+            const rt1 = w.rodType || (typeof inferNaturalRodTypeForStyle === 'function' ? inferNaturalRodTypeForStyle(w.curtainStyle1) : '');
+            const rt2 = w.rodType2 || (typeof inferNaturalRodTypeForStyle === 'function' ? inferNaturalRodTypeForStyle(w.curtainStyle2 || w.curtainStyle1) : '');
+            if (catMap[rt1]) touchCats.add(catMap[rt1]);
+            if (catMap[rt2]) touchCats.add(catMap[rt2]);
+            syncSheetRodsFromWindows(sh, touchCats);
           }
           if (field === 'pieces1' && isBlindOrRollerStyle(w.curtainStyle1) && +w.pieces1 >= 2) {
             const cnt = Math.min(12, Math.max(1, +w.pieces1));
@@ -4400,6 +4526,13 @@ function renderActivePopoverContent(opts = {}) {
           </label>
           ` : `<div></div><div></div>`}
         </div>
+        ${(cfg1.railModel || (showLayer2Box && cfg2.railModel)) ? `
+          <div style="margin-top:6px;padding:4px 8px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:6px;font-size:11.5px;color:#1e3a8a">
+            🛤️ <b>รางม่านที่ใช้ (ซิงค์ลงใบแปลนอัตโนมัติ):</b>
+            ชั้น 1: <b>${esc(cfg1.rodType || '-')} ${esc(cfg1.railModel || '(ยังไม่เลือกรุ่น)')}</b>
+            ${showLayer2Box ? ` • ชั้น 2: <b>${esc(cfg2.rodType || '-')} ${esc(cfg2.railModel || '(ยังไม่เลือกรุ่น)')}</b>` : ''}
+          </div>
+        ` : ''}
 
         ${showBlindPiecePanel ? buildBlindPiecesEditorHTML(w, i) : ''}
 
@@ -5553,6 +5686,8 @@ document.getElementById('btnMasterDb').addEventListener('click', () => {
   if (isAdminUser()) MasterDBModal.open('staff');
 });
 document.getElementById('orderSearch').addEventListener('input', renderDashboard);
+const orderStaffFilterEl = document.getElementById('orderStaffFilter');
+if (orderStaffFilterEl) orderStaffFilterEl.addEventListener('change', renderDashboard);
 
 const existingCustSel = document.getElementById('existingCustomerSelect');
 if (existingCustSel) {
