@@ -118,14 +118,22 @@ const PdfHandwritingImporter = (() => {
     return String(Math.round(n * 10) / 10);
   }
 
-  function normalizeOcrNumber(raw, { min = 0, max = 9999 } = {}) {
+  function normalizeOcrNumber(raw, { min = 0, max = 9999, aggressive = false } = {}) {
     let s = toArabicDigits(String(raw || '').trim());
     s = s
       .replace(/[OoQD]/g, '0')
       .replace(/[lI|!]/g, '1')
       .replace(/[Zz]/g, '2')
       .replace(/[Ss]/g, '5')
-      .replace(/[Bb]/g, '8')
+      .replace(/[Bb]/g, '8');
+    if (aggressive) {
+      s = s
+        .replace(/[A]/g, '4')
+        .replace(/[G]/g, '6')
+        .replace(/[T]/g, '7')
+        .replace(/[gq]/g, '9');
+    }
+    s = s
       .replace(/[,]/g, '.')
       .replace(/[^\d.]/g, '');
     const parts = s.split('.');
@@ -319,16 +327,18 @@ const PdfHandwritingImporter = (() => {
   }
 
   /**
-   * คืนค่าความเข้มหมึกน้ำเงินแบบ Anti-Aliased (0 = ไม่ใช่หมึกน้ำเงิน/พื้นขาว, 1..255 = เข้มสุด)
-   * ช่วยให้ขอบลายมือเนียนและไม่ถมรูตัวเลข 0, 4, 6, 8, 9 (เหมาะกับ Tesseract 5 LSTM ที่สุด)
+   * คืนค่าความเข้มหมึกน้ำเงินแบบ Jet-Black Anti-Aliased (0 = ไม่ใช่หมึกน้ำเงิน/พื้นขาว, 1..255 = เข้มสุด)
+   * แกนเส้นปากกาน้ำเงินจะถูกบูสต์เป็นสีดำสนิท (255) เพื่อไม่ให้ Tesseract Otsu ตัดเส้นจางหายไป
+   * ขณะที่ขอบเส้นยังคงความเนียน anti-aliased ไม่ถมรูตัวเลข 0, 4, 6, 8, 9
    */
   function blueInkStrength(r, g, b) {
     const br = b - r;
     const bg = b - g;
-    if (b < 45 || r >= 225 || br < 11 || bg < 2) return 0;
-    const chrom = Math.min(255, (br - 8) * 3.4);
-    const dark = Math.min(255, (240 - r) * 1.45);
-    return Math.max(60, Math.min(255, Math.round(0.62 * chrom + 0.38 * dark)));
+    if (b < 42 || r >= 228 || br < 11 || bg < 2) return 0;
+    // บูสต์ความเข้มให้แกนหมึกเป็น 255 (ดำสนิท) แม้เป็นหมึกน้ำเงินค่อนข้างอ่อน
+    const chrom = Math.min(255, (br - 8) * 7.2);
+    const dark = Math.min(255, (242 - r) * 2.3);
+    return Math.max(115, Math.min(255, Math.round(0.68 * chrom + 0.32 * dark)));
   }
 
   function detectHasBlueInk(canvas) {
@@ -613,10 +623,10 @@ const PdfHandwritingImporter = (() => {
       for (let i = words.length - 1; i >= 0; i--) {
         const w = words[i];
         const gapX = c.minX - w.maxX;
-        if (gapX > Math.max(11, Math.min(w.h, c.h) * 0.72) || gapX < -Math.min(w.w, c.w)) continue;
+        if (gapX > Math.max(13, Math.min(w.h, c.h) * 0.85) || gapX < -Math.min(w.w, c.w)) continue;
         const ovY = Math.min(w.maxY, c.maxY) - Math.max(w.minY, c.minY);
         const minH = Math.min(w.h, c.h);
-        if (ovY >= minH * 0.32 && (Math.max(w.maxX, c.maxX) - Math.min(w.minX, c.minX)) < sw * 0.32) {
+        if (ovY >= minH * 0.28 && (Math.max(w.maxX, c.maxX) - Math.min(w.minX, c.minX)) < sw * 0.34) {
           w.minX = Math.min(w.minX, c.minX);
           w.maxX = Math.max(w.maxX, c.maxX);
           w.minY = Math.min(w.minY, c.minY);
@@ -684,7 +694,7 @@ const PdfHandwritingImporter = (() => {
   /**
    * วาด Word Blob ลงบน Canvas สีเทาเนียน (Anti-Aliased) ขนาดสูง ~42px พร้อมขอบขาว 26px รอบด้าน
    */
-  function renderBlobToOcrCanvas(inkGray, sw, sh, blob, targetH = 42, pad = 26) {
+  function renderBlobToOcrCanvas(inkGray, sw, sh, blob, targetH = 46, pad = 28) {
     const x0 = Math.max(0, blob.minX - 2);
     const y0 = Math.max(0, blob.minY - 2);
     const x1 = Math.min(sw - 1, blob.maxX + 2);
@@ -700,15 +710,15 @@ const PdfHandwritingImporter = (() => {
     for (let y = 0; y < th; y++) {
       for (let x = 0; x < tw; x++) {
         const str = inkGray[(y0 + y) * sw + (x0 + x)];
-        // คงความเนียน anti-aliased ของหมึกปากกา (0=ขาว -> 255, 255=เข้ม -> 12)
-        const v = str > 0 ? Math.max(8, 255 - Math.round(str * 1.05)) : 255;
+        // แกนเส้นหมึกเข้มดำสนิท (0..18) ขอบเนียน anti-aliased
+        const v = str > 0 ? Math.max(0, 255 - Math.round(str * 1.15)) : 255;
         const o = (y * tw + x) * 4;
         td[o] = v; td[o + 1] = v; td[o + 2] = v; td[o + 3] = 255;
       }
     }
     tctx.putImageData(timg, 0, 0);
 
-    const effScale = Math.max(1.15, Math.min(2.8, targetH / Math.max(12, th)));
+    const effScale = Math.max(1.2, Math.min(3.0, targetH / Math.max(12, th)));
     const drawW = Math.round(tw * effScale);
     const drawH = Math.round(th * effScale);
     const out = document.createElement('canvas');
@@ -720,7 +730,53 @@ const PdfHandwritingImporter = (() => {
     ctx.imageSmoothingEnabled = true;
     if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(tmp, 0, 0, tw, th, pad, pad, out.width - pad * 2, out.height - pad * 2);
+
+    // เพิ่มคอนทราสต์อ่อนๆ หลัง scale เพื่อให้เส้นปากกาคมชัดในสายตา Tesseract 5 LSTM
+    const fimg = ctx.getImageData(0, 0, out.width, out.height);
+    const fd = fimg.data;
+    for (let i = 0; i < out.width * out.height; i++) {
+      const o = i * 4;
+      const g = fd[o];
+      if (g < 245) {
+        const boosted = g < 170 ? Math.max(0, Math.round(g * 0.35)) : Math.min(255, Math.round((g - 170) * 3.0));
+        fd[o] = boosted; fd[o + 1] = boosted; fd[o + 2] = boosted;
+      }
+    }
+    ctx.putImageData(fimg, 0, 0);
     return out;
+  }
+
+  /**
+   * อ่านตัวเลขลายมือแบบ Multi-Pass (PSM 7 -> PSM 13 Raw Line -> PSM 7 No-Whitelist)
+   * แก้ปัญหา Tesseract 5 LSTM ข้ามเลขนำหน้าหรือคืนค่าว่างเมื่อลายมือเอียง (เช่น 479, 272, 500, 149.5)
+   */
+  async function recognizeNumericCanvas(workerEng, canvas, blobAspect = 1.0, range = { min: 1, max: 6505 }) {
+    const expectMinDigits = blobAspect >= 1.55 ? 2 : 1;
+    const scoreVal = v => {
+      if (!v) return 0;
+      const digs = v.replace(/[^\d]/g, '').length;
+      return digs * 10 + (v.includes('.') ? 3 : 0);
+    };
+
+    // Pass 1: PSM 7 + numeric whitelist
+    await workerEng.setParameters({ tessedit_char_whitelist: '0123456789.', tessedit_pageseg_mode: '7' });
+    let r1 = await workerEng.recognize(canvas);
+    let best = normalizeOcrNumber(r1.data.text, range);
+    if (best && best.replace(/[^\d]/g, '').length >= expectMinDigits) return best;
+
+    // Pass 2: PSM 13 (Raw single line — ไม่โดน heuristic ตัดลายมือเอียงทิ้ง)
+    await workerEng.setParameters({ tessedit_char_whitelist: '0123456789.', tessedit_pageseg_mode: '13' });
+    let r2 = await workerEng.recognize(canvas);
+    let v2 = normalizeOcrNumber(r2.data.text, range);
+    if (scoreVal(v2) > scoreVal(best)) best = v2;
+    if (best && best.replace(/[^\d]/g, '').length >= expectMinDigits) return best;
+
+    // Pass 3: PSM 7 without whitelist + aggressive digit mapping (O->0, l->1, A->4, S->5, B->8, g/q->9)
+    await workerEng.setParameters({ tessedit_char_whitelist: '', tessedit_pageseg_mode: '7' });
+    let r3 = await workerEng.recognize(canvas);
+    let v3 = normalizeOcrNumber(r3.data.text, { ...range, aggressive: true });
+    if (scoreVal(v3) > scoreVal(best)) best = v3;
+    return best || '';
   }
 
   /**
@@ -1273,7 +1329,7 @@ const PdfHandwritingImporter = (() => {
       const detHook = detectHookSize(hookRaw, true);
       if (detHook) wObj.hookSize = detHook;
 
-      // 3c. Connected-Component Word-Blob OCR (สำหรับโหมดหมึกน้ำเงิน)
+      // 3c. Connected-Component Word-Blob OCR (แยกโซนไดอะแกรม ry: 0..0.77 ออกจากแถวรางม่าน ry: 0.775..0.858)
       const blobDebug = [];
       if (useBlue) {
         const sx = Math.max(0, Math.floor(q.x * pg.canvas.width));
@@ -1284,51 +1340,63 @@ const PdfHandwritingImporter = (() => {
 
         const len = sw * sh;
         const inkGray = new Uint8Array(len);
-        const bin = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          const idx = i * 4;
-          const str = blueInkStrength(sd[idx], sd[idx + 1], sd[idx + 2]);
-          if (str > 0) { inkGray[i] = str; bin[i] = 1; }
+        const binDiag = new Uint8Array(len);
+        const diagCutY = Math.floor(sh * 0.775);
+
+        for (let y = 0; y < sh; y++) {
+          for (let x = 0; x < sw; x++) {
+            const p = y * sw + x;
+            const idx = p * 4;
+            const str = blueInkStrength(sd[idx], sd[idx + 1], sd[idx + 2]);
+            if (str > 0) {
+              inkGray[p] = str;
+              if (y < diagCutY) binDiag[p] = 1;
+            }
+          }
         }
 
-        const blobs = segmentInkBlobs(bin, sw, sh);
+        const blobs = segmentInkBlobs(binDiag, sw, sh);
         const numBlobs = [];
 
-        await workerEng.setParameters({
-          tessedit_char_whitelist: '0123456789.',
-          tessedit_pageseg_mode: '7',
-        });
-
         for (const b of blobs) {
-          // ข้ามแถบ checkbox และแถวใต้รางม่านลึกๆ (แถวผ้าทึบ/โปร่งด้านล่าง ry > 0.89)
-          if (b.ry > 0.89) continue;
           // ตรวจเลขบานมุมซ้ายบน (rx < 0.15, ry < 0.14)
           if (b.rx < 0.15 && b.ry < 0.14) {
-            const c = renderBlobToOcrCanvas(inkGray, sw, sh, b, 42, 24);
-            const r = await workerEng.recognize(c);
-            const dig = normalizeOcrNumber(r.data.text, { min: 1, max: 20 });
+            const c = renderBlobToOcrCanvas(inkGray, sw, sh, b, 44, 24);
+            const dig = await recognizeNumericCanvas(workerEng, c, 0.8, { min: 1, max: 20 });
             if (dig && !dig.includes('.')) { wObj.planNo = dig; wObj.label = 'W' + dig; }
             continue;
           }
-          // ข้ามแถวหัวรูปแบบม่านและแถบติ๊กเช็คบ็อกซ์ (ry < 0.18 && rx < 0.54)
           if (b.ry < 0.18 && b.rx < 0.54) continue;
-          // ข้ามแถบเช็คบ็อกซ์ (rx: 0.21..0.44, ry: 0.08..0.24)
           if (b.rx >= 0.21 && b.rx <= 0.44 && b.ry >= 0.08 && b.ry <= 0.24) continue;
-          // ข้ามเลขตะขอแถวบน (ry < 0.11)
           if (b.ry < 0.11) continue;
 
-          const c = renderBlobToOcrCanvas(inkGray, sw, sh, b, 44, 28);
-          let res = await workerEng.recognize(c);
-          let val = normalizeOcrNumber(res.data.text, { min: 1, max: 6505 });
-          if (!val && b.area >= 30) {
-            await workerEng.setParameters({ tessedit_char_whitelist: '0123456789.', tessedit_pageseg_mode: '8' });
-            res = await workerEng.recognize(c);
-            val = normalizeOcrNumber(res.data.text, { min: 1, max: 6505 });
-            await workerEng.setParameters({ tessedit_char_whitelist: '0123456789.', tessedit_pageseg_mode: '7' });
-          }
+          const c = renderBlobToOcrCanvas(inkGray, sw, sh, b, 48, 28);
+          const aspect = b.w / Math.max(1, b.h);
+          const val = await recognizeNumericCanvas(workerEng, c, aspect, { min: 1, max: 6505 });
           if (val) {
             numBlobs.push({ val, n: parseFloat(val), rx: b.rx, ry: b.ry });
             blobDebug.push(`${val}@(${(b.rx * 100).toFixed(0)},${(b.ry * 100).toFixed(0)})`);
+          } else if (b.area >= 24) {
+            blobDebug.push(`?@(${(b.rx * 100).toFixed(0)},${(b.ry * 100).toFixed(0)})`);
+          }
+        }
+
+        // แยกอ่านแถวที่ 1 ของตารางคำนวณ (รางม่าน: railW x railH = tracks) ที่ ry = 0.778..0.858
+        // เพื่อตัดแถวผ้าทึบ/โปร่งที่ซ้อนติดกันด้านล่างออก 100% (แก้ปัญหา 500/166/266 แตะกัน!)
+        const railCells = [
+          { key: 'railW',      rx: 0.15, rw: 0.21, range: { min: 20, max: 6505 }, fType: 'dim',  aspect: 2.0 },
+          { key: 'railH',      rx: 0.37, rw: 0.19, range: { min: 20, max: 6505 }, fType: 'dim',  aspect: 2.0 },
+          { key: 'railTracks', rx: 0.56, rw: 0.12, range: { min: 1,  max: 6 },    fType: 'int',  aspect: 0.8 },
+        ];
+        for (const rc of railCells) {
+          const meta = cropAndPreprocess(pg.canvas, rel(rc.rx, 0.778, rc.rw, 0.080), inkMode, 2.2, {
+            hasBlueInk: pg.hasBlueInk, autoTrim: true, targetTextH: 48, minInkPixels: 14, padding: 26, returnMeta: true,
+          });
+          if (!meta || !meta.canvas) continue;
+          const v = await recognizeNumericCanvas(workerEng, meta.canvas, rc.aspect, rc.range);
+          if (v) {
+            wObj[rc.key] = rc.fType === 'int' ? String(Math.round(parseFloat(v))) : fixLikelyDecimal(v, rc.fType);
+            blobDebug.push(`${rc.key}=${wObj[rc.key]}`);
           }
         }
 
@@ -1562,20 +1630,14 @@ const PdfHandwritingImporter = (() => {
         return;
       }
 
-      let raw = '';
+      let finalVal = '';
       if (isNumericField) {
-        await workerEng.setParameters({ tessedit_char_whitelist: '0123456789.+- ', tessedit_pageseg_mode: '7' });
-        const res = await workerEng.recognize(meta.canvas);
-        raw = String(res.data.text || '').trim();
+        finalVal = await recognizeNumericCanvas(workerEng, meta.canvas, normRect.w / Math.max(0.01, normRect.h), { min: 0, max: 9999 });
       } else {
         await workerTha.setParameters({ tessedit_pageseg_mode: '7', tessedit_char_whitelist: '' });
         const res = await workerTha.recognize(meta.canvas);
-        raw = String(res.data.text || '').trim();
+        finalVal = toArabicDigits(String(res.data.text || '').trim()).replace(/\s+/g, ' ').trim();
       }
-
-      const finalVal = isNumericField
-        ? normalizeOcrNumber(raw, { min: 0, max: 9999 })
-        : toArabicDigits(raw).replace(/\s+/g, ' ').trim();
 
       if (finalVal) {
         activeTargetInput.value = finalVal;
