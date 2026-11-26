@@ -119,7 +119,9 @@ const RealtimeSync = (() => {
         orders = data.orders.map((o, i) => normalizeOrder(o, i + 1));
         try { localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders)); } catch (e) {}
       }
-      if (data.masterDB && typeof data.masterDB === 'object') {
+      const dbModalEl = document.getElementById('dbModal');
+      const dbModalOpen = !!(dbModalEl && !dbModalEl.hidden);
+      if (data.masterDB && typeof data.masterDB === 'object' && !dbModalOpen) {
         masterDB = normalizeMasterDBObject(data.masterDB);
         try { localStorage.setItem(DB_KEY, JSON.stringify(masterDB)); } catch (e) {}
         refreshRemarksDatalist();
@@ -480,6 +482,7 @@ const RealtimeSync = (() => {
 
   function schedulePush() {
     if (isApplyingRemote) return;
+    lastLocalActivityMs = Date.now();
     if (bc) {
       try { bc.postMessage(buildPayload()); } catch (e) {}
     }
@@ -488,9 +491,9 @@ const RealtimeSync = (() => {
     pushTimer = setTimeout(() => { pushTimer = null; pushToCloudNow(); }, 1500);
   }
 
-  function flushNow() {
+  function flushNow(force = false) {
     if (isApplyingRemote) return;
-    if (pushTimer) {
+    if (pushTimer || force) {
       clearTimeout(pushTimer);
       pushTimer = null;
       pushToCloudNow();

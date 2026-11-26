@@ -1086,17 +1086,29 @@ function computePageFabricQtySums(sheet, pageWins) {
         return (!isNaN(n) && Number.isFinite(n)) ? n : 0;
       })();
 
+  const hasProductInCol = colObj => !!(
+    colObj && (
+      String(colObj.name || '').trim() ||
+      String(colObj.design || '').trim() ||
+      String(colObj.group || '').trim()
+    )
+  );
+
   const matchColForLayer = (w, layerNo) => {
+    const style = String(layerNo === 1 ? (w.curtainStyle1 || '') : (w.curtainStyle2 || w.curtainStyle1 || '')).trim();
     const explicitCol = layerNo === 1 ? w.fabricCol1 : w.fabricCol2;
-    if (explicitCol && sums[explicitCol] !== undefined) return explicitCol;
-    const style = String(layerNo === 1 ? (w.curtainStyle1 || '') : (w.curtainStyle2 || w.curtainStyle1 || ''));
-    if (/ม่านม้วน/.test(style)) return 'roller';
-    if (/มู่ลี่|ม่านปรับแสง/.test(style)) return 'blinds';
+    // ม่านม้วน -> ROLLER BLINDS และ มู่ลี่/ม่านปรับแสง -> BAMBOO BLINDS เสมอ (ยกเว้นผู้ใช้เลือก OTHER เอง)
+    if (/ม่านม้วน/.test(style)) return explicitCol === 'other' ? 'other' : 'roller';
+    if (/มู่ลี่|ม่านปรับแสง/.test(style)) return explicitCol === 'other' ? 'other' : 'blinds';
+
+    if (explicitCol && (explicitCol === 'blackout' || explicitCol === 'sheer' || explicitCol === 'other')) {
+      return explicitCol;
+    }
     const fabId = layerNo === 1 ? w.fabricId1 : w.fabricId2;
     if (fabId && typeof masterDB !== 'undefined' && Array.isArray(masterDB.fabrics)) {
       const fabObj = masterDB.fabrics.find(x => x.id === fabId);
       if (fabObj && fabObj.name) {
-        for (const ck of ['blackout', 'sheer', 'other', 'roller', 'blinds']) {
+        for (const ck of ['blackout', 'sheer', 'other']) {
           if (f[ck] && String(f[ck].name || '').trim() === String(fabObj.name).trim()) {
             if (!f[ck].design || !fabObj.design || String(f[ck].design).trim() === String(fabObj.design).trim()) {
               return ck;
@@ -1110,14 +1122,18 @@ function computePageFabricQtySums(sheet, pageWins) {
 
   wins.forEach(w => {
     if (!w) return;
-    const bpSum = (Array.isArray(w.blindPieces) && w.blindPieces.length && typeof calcBlindPiecesTotalSqm === 'function')
+    const style1 = String(w.curtainStyle1 || '').trim();
+    const isBlind1 = /ม่านม้วน|มู่ลี่|ม่านปรับแสง/.test(style1);
+    const bpSum = (isBlind1 && Array.isArray(w.blindPieces) && w.blindPieces.length && typeof calcBlindPiecesTotalSqm === 'function')
       ? calcBlindPiecesTotalSqm(w).totalSqm
       : 0;
     const y1 = bpSum > 0 ? bpSum : parseYds(w.blackout && w.blackout.t);
     if (y1 > 0) {
       const col1 = matchColForLayer(w, 1);
       if (col1 && sums[col1] !== undefined) {
-        if ((f[col1] && String(f[col1].name || '').trim()) || w.fabricCol1 === col1 || col1 === 'roller' || col1 === 'blinds' || col1 === 'blackout') {
+        // สำหรับม่านม้วน/มู่ลี่ รวมพื้นที่ (ตร.ม.) ลงช่องของตัวเองเสมอ
+        // สำหรับผ้าม่าน (blackout/sheer/other) รวมยอดเฉพาะคอลัมน์ที่มีการกรอกข้อมูลผ้าไว้จริงเท่านั้น เพื่อไม่ให้ขึ้นเลขลอยในช่องที่ยังไม่ได้ใส่ผ้า
+        if (col1 === 'roller' || col1 === 'blinds' || hasProductInCol(f[col1])) {
           sums[col1] = Math.round((sums[col1] + y1) * 100) / 100;
         }
       }
@@ -1126,7 +1142,7 @@ function computePageFabricQtySums(sheet, pageWins) {
     if (y2 > 0) {
       const col2 = matchColForLayer(w, 2);
       if (col2 && sums[col2] !== undefined) {
-        if ((f[col2] && String(f[col2].name || '').trim()) || w.fabricCol2 === col2 || col2 === 'sheer') {
+        if (col2 === 'roller' || col2 === 'blinds' || hasProductInCol(f[col2])) {
           sums[col2] = Math.round((sums[col2] + y2) * 100) / 100;
         }
       }
@@ -1157,8 +1173,8 @@ function rFabric(sheet, pageWins) {
       val = parts.join(' / ');
     } else if (key === 'qty') {
       const autoSum = sums[ck];
-      if (autoSum > 0 && (!c.manualQty || !String(c.qty || '').trim())) {
-        val = String(autoSum);
+      if (!c.manualQty) {
+        val = autoSum > 0 ? String(autoSum) : '';
       } else if (String(val || '').includes('/')) {
         val = String(extractYardsFromCalcText(val) || '');
       }

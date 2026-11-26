@@ -802,7 +802,9 @@ function createNewPlanForCustomer(sourceOrder) {
     ord.ownerUsername = u.username || '';
     ord.staff.name = u.name || sourceOrder.staff.name || '';
     ord.staff.dept = u.dept || sourceOrder.staff.dept || '';
-    ord.staff.branch = u.branch || sourceOrder.staff.branch || '';
+    const uBrs = (typeof getStaffBranchList === 'function') ? getStaffBranchList(u) : [];
+    const allBrs = (typeof getAllBranchesList === 'function') ? getAllBranchesList() : [];
+    ord.staff.branch = uBrs[0] || allBrs[0] || sourceOrder.staff.branch || '';
   } else {
     ord.staff.name = sourceOrder.staff.name || '';
     ord.staff.dept = sourceOrder.staff.dept || '';
@@ -1613,17 +1615,25 @@ function autoCalculateWindow(w, sh) {
   if (w.backLayerHeightDeduct === undefined || w.backLayerHeightDeduct === '') {
     w.backLayerHeightDeduct = '1';
   }
-  // Req #6: กรณีม่าน 2 ชั้น ให้ Default ผ้าม่านชั้นที่ 1 เป็นม่านทึบ และชั้นที่ 2 เป็นม่านโปร่ง (แต่แก้ไขเลือกเองได้)
-  if (!w.fabricCol1) w.fabricCol1 = 'blackout';
-  if (isTwoLayer && !w.fabricCol2) w.fabricCol2 = 'sheer';
+  const style1 = String(w.curtainStyle1 || '').trim();
+  const style2 = String(w.curtainStyle2 || '').trim();
+  const isSingleBlindWindow = isBlindOrRollerStyle(style1) && !style2 && !isTwoLayer;
+
+  // จัดคอลัมน์สินค้าให้ตรงประเภท (ม่านม้วน -> roller, มู่ลี่/ม่านปรับแสง -> blinds, ผ้าม่าน -> blackout/sheer)
+  const syncColByStyle = (curCol, st, fallback) => {
+    if (/ม่านม้วน/.test(st)) return curCol === 'other' ? 'other' : 'roller';
+    if (/มู่ลี่|ม่านปรับแสง/.test(st)) return curCol === 'other' ? 'other' : 'blinds';
+    if (!curCol || (st && !isBlindOrRollerStyle(st) && (curCol === 'roller' || curCol === 'blinds'))) return fallback;
+    return curCol;
+  };
+  w.fabricCol1 = syncColByStyle(w.fabricCol1, style1, 'blackout');
+  if (isTwoLayer) {
+    w.fabricCol2 = syncColByStyle(w.fabricCol2, style2, 'sheer');
+  }
 
   const backDeductVal = isTwoLayer ? (parseFloat(w.backLayerHeightDeduct) || 0) : 0;
   const extraDeduct1 = (isTwoLayer && w.backLayerTarget === 'layer1') ? backDeductVal : 0;
   const extraDeduct2 = (isTwoLayer && w.backLayerTarget !== 'layer1') ? backDeductVal : 0;
-
-  const style1 = String(w.curtainStyle1 || '').trim();
-  const style2 = String(w.curtainStyle2 || '').trim();
-  const isSingleBlindWindow = isBlindOrRollerStyle(style1) && !style2 && !isTwoLayer;
 
   const rw1 = (w.unequalLayerRail && numClean(w.railW1) > 0) ? numClean(w.railW1) : rw;
   const rw2 = (w.unequalLayerRail && numClean(w.railW2) > 0) ? numClean(w.railW2) : rw;
@@ -2647,18 +2657,24 @@ function changed(sheetPath, sharedPath, fromPopover = false) {
           if (!typingInWinEd) renderWindowsEditor();
           syncSheetInputs();
         } else if (/^(curtainStyle1|curtainStyle2|pieces1|pieces2|railTracks|rodType|rodType2|hookSize|hookSize2|noRail|noRailStatus|noRailDeductPreset|railCountUnit|railUnit|floorMode|backLayerHeightDeduct|backLayerTarget|fabricCol1|fabricCol2|specialType|gable\.type|gable\.hemClearanceType|sideJoin\.type|yardMode1|yardMode2|box|mount|wallCeilingAttach|paneStyle|cornerShape|calcMode|fabricId1|grainType1|fabricRuleId1|blindId1|fabricId2|grainType2|fabricRuleId2|widthFormulaId1|heightFormulaId1|widthFormulaId2|heightFormulaId2|railModel|railModel2|unequalSplit|unequalSplitTarget|unequalLayerRail)$/.test(field)) {
-          // เลือกรูปแบบม่านแล้วปรับประเภทราง/จำนวนผืนมาตรฐานให้อัตโนมัติ และล้างสูตรความสูงที่เลือกค้างไว้เพื่อให้จับคู่สูตรใหม่อัตโนมัติ
+          // เลือกรูปแบบม่านแล้วปรับประเภทราง/จำนวนผืน/คอลัมน์สินค้าให้อัตโนมัติ และล้างสูตรความสูงที่เลือกค้างไว้เพื่อให้จับคู่สูตรใหม่อัตโนมัติ
           if (field === 'curtainStyle1' && w.curtainStyle1) {
             const natRod = (typeof inferNaturalRodTypeForStyle === 'function') ? inferNaturalRodTypeForStyle(w.curtainStyle1) : '';
             if (natRod && !(w.rodType === 'รางโชว์' && /ม่านจีบ|ม่านตาไก่|หูกระเช้า/.test(w.curtainStyle1))) {
               w.rodType = natRod;
             }
             if (!w.pieces1 && !isBlindOrRollerStyle(w.curtainStyle1)) w.pieces1 = '2';
+            if (/ม่านม้วน/.test(w.curtainStyle1)) w.fabricCol1 = 'roller';
+            else if (/มู่ลี่|ม่านปรับแสง/.test(w.curtainStyle1)) w.fabricCol1 = 'blinds';
+            else if (w.fabricCol1 === 'roller' || w.fabricCol1 === 'blinds') w.fabricCol1 = 'blackout';
             w.heightFormulaId1 = '';
           }
           if (field === 'curtainStyle2') {
             const natRod2 = (typeof inferNaturalRodTypeForStyle === 'function') ? inferNaturalRodTypeForStyle(w.curtainStyle2) : '';
             w.rodType2 = natRod2 || '';
+            if (/ม่านม้วน/.test(w.curtainStyle2 || '')) w.fabricCol2 = 'roller';
+            else if (/มู่ลี่|ม่านปรับแสง/.test(w.curtainStyle2 || '')) w.fabricCol2 = 'blinds';
+            else if (w.fabricCol2 === 'roller' || w.fabricCol2 === 'blinds') w.fabricCol2 = 'sheer';
             w.heightFormulaId2 = '';
           }
           if (field === 'railModel' && w.railModel && typeof resolveRailMetaByName === 'function') {
@@ -3737,17 +3753,20 @@ const MtoCombo = (() => {
       return ['สีเดียวกับใบมู่ลี่', 'ขาว', 'ครีม', 'น้ำตาลเข้ม', 'เงิน', 'ดำ'].map(v => ({ value: v, label: v, sub: '' }));
     }
     if (kind === 'staffBranch') {
-      const staffName = ord && ord.staff ? ord.staff.name : '';
-      const assigned = (typeof getStaffBranchList === 'function') ? getStaffBranchList(staffName) : [];
-      const curUser = getCurrentUser();
-      const userBranches = (curUser && typeof getStaffBranchList === 'function') ? getStaffBranchList(curUser) : [];
-      const primary = assigned.length ? assigned : userBranches;
       const allBranches = (typeof getAllBranchesList === 'function') ? getAllBranchesList() : [];
+      const allSet = new Set(allBranches);
+      const staffName = ord && ord.staff ? ord.staff.name : '';
+      const assigned = ((typeof getStaffBranchList === 'function') ? getStaffBranchList(staffName) : [])
+        .filter(b => !allBranches.length || allSet.has(b));
+      const curUser = getCurrentUser();
+      const userBranches = ((curUser && typeof getStaffBranchList === 'function') ? getStaffBranchList(curUser) : [])
+        .filter(b => !allBranches.length || allSet.has(b));
+      const primary = assigned.length ? assigned : userBranches;
       const primarySet = new Set(primary);
       const out = [];
       primary.forEach(b => out.push({ value: b, label: b, sub: 'สาขาที่กำหนดให้พนักงาน' }));
       allBranches.forEach(b => {
-        if (!primarySet.has(b)) out.push({ value: b, label: b, sub: 'สาขาในระบบ' });
+        if (!primarySet.has(b)) out.push({ value: b, label: b, sub: 'สาขาในฐานข้อมูล' });
       });
       return out;
     }
@@ -3965,7 +3984,8 @@ const MtoCombo = (() => {
           delete e.target.dataset.skipAutoCombo;
           return;
         }
-        open(wrap, false);
+        // เปิดแสดงรายการทั้งหมดในฐานข้อมูลก่อนเสมอ (และค่อยกรองเมื่อผู้ใช้เริ่มพิมพ์) เพื่อให้เลือกสาขา/สินค้าอื่นได้ทันทีโดยไม่ต้องลบข้อความเดิม
+        open(wrap, true);
       }
     });
     document.addEventListener('input', e => {
@@ -4168,7 +4188,8 @@ function ensureQuickPopoverEl() {
       if (st && ord) {
         ord.staff.name = st.name || '';
         ord.staff.dept = st.dept || '';
-        ord.staff.branch = st.branch || '';
+        const brs = (typeof getStaffBranchList === 'function') ? getStaffBranchList(st) : [];
+        ord.staff.branch = brs[0] || st.branch || '';
         renderActivePopoverContent({ preserveScroll: true });
         syncSharedInputs();
         changed(null, 'staff.name');
@@ -5893,7 +5914,9 @@ document.getElementById('btnNewOrder').addEventListener('click', () => {
     ord.ownerUsername = u.username || '';
     ord.staff.name = u.name || '';
     ord.staff.dept = u.dept || '';
-    ord.staff.branch = u.branch || '';
+    const uBrs = (typeof getStaffBranchList === 'function') ? getStaffBranchList(u) : [];
+    const allBrs = (typeof getAllBranchesList === 'function') ? getAllBranchesList() : [];
+    ord.staff.branch = uBrs[0] || allBrs[0] || '';
   }
   orders.unshift(ord);
   saveOrders();

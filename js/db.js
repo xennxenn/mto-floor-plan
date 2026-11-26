@@ -1106,13 +1106,16 @@ function getStaffBranchList(staffNameOrObj) {
 function getAllBranchesList() {
   const set = new Set();
   if (typeof masterDB !== 'undefined') {
-    (Array.isArray(masterDB.branches) ? masterDB.branches : []).forEach(b => {
-      const s = String(b || '').trim();
-      if (s) set.add(s);
-    });
-    (Array.isArray(masterDB.staff) ? masterDB.staff : []).forEach(st => {
-      String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => set.add(b));
-    });
+    if (Array.isArray(masterDB.branches)) {
+      masterDB.branches.forEach(b => {
+        const s = String(b || '').trim();
+        if (s) set.add(s);
+      });
+    } else {
+      (Array.isArray(masterDB.staff) ? masterDB.staff : []).forEach(st => {
+        String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => set.add(b));
+      });
+    }
   }
   return Array.from(set);
 }
@@ -1148,13 +1151,22 @@ function normalizeMasterDBObject(raw) {
 
   const normalizedStaff = ensureDefaultAdmin(Array.isArray(raw.staff) ? raw.staff : def.staff);
   const branchSet = new Set();
-  (Array.isArray(raw.branches) ? raw.branches : []).forEach(b => {
-    const s = String(b || '').trim();
-    if (s) branchSet.add(s);
-  });
-  normalizedStaff.forEach(st => {
-    String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => branchSet.add(b));
-  });
+  if (Array.isArray(raw.branches)) {
+    raw.branches.forEach(b => {
+      const s = String(b || '').trim();
+      if (s) branchSet.add(s);
+    });
+  } else {
+    normalizedStaff.forEach(st => {
+      String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => branchSet.add(b));
+    });
+    if (!branchSet.size) {
+      (def.branches || []).forEach(b => {
+        const s = String(b || '').trim();
+        if (s) branchSet.add(s);
+      });
+    }
+  }
 
   return {
     schemaVersion: 10,
@@ -1206,11 +1218,8 @@ let masterDB = (() => {
 
 function saveMasterDB() {
   masterDB.staff = ensureDefaultAdmin(masterDB.staff);
-  // ซิงค์รายการสาขาทั้งหมดจาก masterDB.branches + masterDB.staff
+  // คงรายการสาขาจาก masterDB.branches เป็นแหล่งข้อมูลหลักเพียงแหล่งเดียว (ไม่ดูดตัวอักษรระหว่างพิมพ์จากช่องพนักงานมาสร้างสาขาซ้ำ)
   const bSet = new Set(Array.isArray(masterDB.branches) ? masterDB.branches.map(b => String(b || '').trim()).filter(Boolean) : []);
-  (masterDB.staff || []).forEach(st => {
-    String((st && st.branch) || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => bSet.add(b));
-  });
   masterDB.branches = Array.from(bSet);
   masterDB.fabrics = (masterDB.fabrics || []).map((f, i) => normalizeFabricItem(f, i));
   masterDB.rails = (masterDB.rails || []).map((rl, i) => normalizeRailItem(rl, i));
@@ -2582,6 +2591,7 @@ const MasterDBModal = (() => {
   let activeTab = 'staff';
   let onUpdate = null;
   let importStatusMsg = '';
+  let branchStatusMsg = '';
   let showPasteBox = false;
   let importMode = 'append'; // 'append' | 'replace'
   let fabricGrainFilter = 'all'; // 'all' | 'opaque' | 'sheer'
@@ -2881,9 +2891,10 @@ const MasterDBModal = (() => {
         <div class="subcard" style="margin-bottom:8px;background:#f0f7ff;border:1px solid #bfdbfe;font-size:12px">
           <b>🏢 จัดการรายชื่อสาขาทั้งหมดในระบบ (${allBranches.length} สาขา):</b>
           <div class="inline" style="margin-top:5px;flex-wrap:wrap;gap:6px">
-            <input id="dbNewBranchInput" placeholder="พิมพ์ชื่อสาขาใหม่ เช่น สาขาเมกาบางนา" style="max-width:280px">
+            <input id="dbNewBranchInput" placeholder="พิมพ์ชื่อสาขาใหม่ เช่น สาขาเมกาบางนา (กด Enter หรือคลิกเพิ่ม)" style="max-width:320px">
             <button type="button" class="primary" data-db-add-branch="1">➕ เพิ่มสาขา</button>
           </div>
+          ${branchStatusMsg ? `<div style="margin-top:5px;padding:3px 8px;background:#dcfce7;border:1px solid #86efac;border-radius:4px;color:#166534;font-size:11.5px;font-weight:600">${escH(branchStatusMsg)}</div>` : ''}
           <div class="inline" style="margin-top:6px;flex-wrap:wrap;gap:5px">
             ${allBranches.length ? allBranches.map(br => `
               <span class="pill" style="background:#fff;border:1px solid #93c5fd;color:#1e3a8a;padding:2px 8px;display:inline-flex;align-items:center;gap:5px">
@@ -3518,13 +3529,51 @@ const MasterDBModal = (() => {
       b.addEventListener('click', () => {
         activeTab = b.dataset.dbtab;
         importStatusMsg = '';
+        branchStatusMsg = '';
         showPasteBox = false;
         render();
       });
     });
+    const commitNewBranchesFromInput = (shouldRender = true) => {
+      const inp = document.getElementById('dbNewBranchInput');
+      const val = String((inp && inp.value) || '').trim();
+      if (!val) return false;
+      if (!Array.isArray(masterDB.branches)) masterDB.branches = [];
+      const added = [];
+      val.split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => {
+        if (!masterDB.branches.includes(b)) {
+          masterDB.branches.push(b);
+          added.push(b);
+        }
+      });
+      if (inp) inp.value = '';
+      if (added.length) {
+        branchStatusMsg = `✔ เพิ่มสาขา "${added.join(', ')}" และบันทึกเรียบร้อยแล้ว`;
+      } else {
+        branchStatusMsg = `ℹ️ สาขา "${val}" มีอยู่ในระบบแล้ว`;
+      }
+      saveMasterDB();
+      if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
+        RealtimeSync.flushNow();
+      }
+      if (shouldRender) render();
+      if (onUpdate) onUpdate();
+      return true;
+    };
     document.getElementById('dbClose').addEventListener('click', () => {
+      // หากมีชื่อสาขาค้างอยู่ในช่องเพิ่มสาขาก่อนกดปิด ให้บันทึกให้อัตโนมัติด้วย
+      commitNewBranchesFromInput(false);
+      if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
+        RealtimeSync.flushNow();
+      }
       modal.hidden = true;
       if (onUpdate) onUpdate();
+    });
+    modal.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && e.target && e.target.id === 'dbNewBranchInput') {
+        e.preventDefault();
+        commitNewBranchesFromInput(true);
+      }
     });
     modal.addEventListener('input', onEditChange);
     modal.addEventListener('change', onEditChange);
@@ -3625,16 +3674,7 @@ const MasterDBModal = (() => {
       }
       const addBranchBtn = e.target.closest('[data-db-add-branch]');
       if (addBranchBtn) {
-        const inp = document.getElementById('dbNewBranchInput');
-        const val = String((inp && inp.value) || '').trim();
-        if (!val) return;
-        if (!Array.isArray(masterDB.branches)) masterDB.branches = [];
-        val.split(/[,;\n/|]+/).map(s => s.trim()).filter(Boolean).forEach(b => {
-          if (!masterDB.branches.includes(b)) masterDB.branches.push(b);
-        });
-        saveMasterDB();
-        render();
-        if (typeof onUpdated === 'function') onUpdated();
+        commitNewBranchesFromInput(true);
         return;
       }
       const delBranchBtn = e.target.closest('[data-db-del-branch]');
@@ -3645,9 +3685,13 @@ const MasterDBModal = (() => {
           const list = String(st.branch || '').split(/[,;\n/|]+/).map(s => s.trim()).filter(b => b && b !== br);
           st.branch = list.join(', ');
         });
+        branchStatusMsg = `✔ ลบสาขา "${br}" และบันทึกเรียบร้อยแล้ว`;
         saveMasterDB();
+        if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
+          RealtimeSync.flushNow();
+        }
         render();
-        if (typeof onUpdated === 'function') onUpdated();
+        if (onUpdate) onUpdate();
         return;
       }
       const togStBr = e.target.closest('[data-db-toggle-stbranch]');
@@ -3662,8 +3706,11 @@ const MasterDBModal = (() => {
           else cur.push(br);
           st.branch = cur.join(', ');
           saveMasterDB();
+          if (typeof RealtimeSync !== 'undefined' && typeof RealtimeSync.flushNow === 'function') {
+            RealtimeSync.flushNow();
+          }
           render();
-          if (typeof onUpdated === 'function') onUpdated();
+          if (onUpdate) onUpdate();
         }
         return;
       }
